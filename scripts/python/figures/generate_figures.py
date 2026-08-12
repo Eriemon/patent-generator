@@ -613,6 +613,218 @@ def build_png_box_geometry_record(
         "center_y": float_center_y,
     }
 
+# 先把模块标题和功能说明整理成统一多行文本，避免 PNG 绘制循环里重复拼接包装逻辑。
+def build_module_png_box_text(dict_module: dict[str, str]) -> str:
+    """构造 PNG 模块框的多行正文文本。
+
+    参数：
+    - `dict_module`：当前模块的名称和功能说明记录。
+
+    返回：
+    - `str`：适合直接写入 matplotlib 文本节点的多行正文。
+
+    异常：
+    - 无。
+    """
+
+    # 先包装模块标题，保证名称不会沿水平方向撑破单列或双列框体。
+    list_module_name_lines = wrap_figure_text(dict_module["name"], MODULE_NAME_WRAP_WIDTH, MODULE_NAME_MAX_LINES)  # 当前模块标题文本行列表
+
+    # 先固定模块功能说明的单行宽度上限，避免长行调用再次触发风格门禁。
+    int_wrap_width = MODULE_FUNCTION_WRAP_WIDTH  # 当前模块功能说明单行宽度上限
+
+    # 再固定模块功能说明的最大行数，保证说明区不会继续向下拉长框体。
+    int_line_limit = MODULE_FUNCTION_MAX_LINES  # 当前模块功能说明最大保留行数
+
+    # 为了缩短 PNG 包装调用行，这里先缓存当前模块的功能说明原文。
+    str_module_function_source = dict_module["function"]  # PNG 模块功能说明原文
+
+    # 最后按宽度和行数约束包装功能说明，保证说明段落稳定落在边界内。
+    list_module_function_lines = wrap_figure_text(str_module_function_source, int_wrap_width, int_line_limit)  # 当前模块功能说明文本行列表
+
+    # 返回标题和说明拼接后的多行文本，供 PNG 框体正文直接复用。
+    return "\n".join([*list_module_name_lines, *list_module_function_lines])
+
+# 根据模块框左上角坐标推导 PNG 边界记录，避免绘制循环里重复展开中心点和边长常量。
+def build_module_png_box_geometry(float_box_x: float, float_box_y: float) -> dict[str, float]:
+    """构造单个 PNG 模块框的边界与中心坐标记录。
+
+    参数：
+    - `float_box_x`：模块框左上角横坐标。
+    - `float_box_y`：模块框左上角纵坐标。
+
+    返回：
+    - `dict[str, float]`：当前模块框的边界与中心坐标记录。
+
+    异常：
+    - 无。
+    """
+
+    # 先推导当前模块框底边纵坐标，供贴边箭头上下锚点复用。
+    float_box_bottom = float_box_y - MODULE_BOX_HEIGHT_PLOT + 0.72  # 当前模块框底边纵坐标
+
+    # 再推导当前模块框中心横坐标，供左右箭头沿中心线贴边连接。
+    float_box_center_x = float_box_x + MODULE_BOX_CENTER_OFFSET_X  # 当前模块框中心横坐标
+
+    # 最后推导当前模块框中心纵坐标，供上下箭头和文本中心线共用。
+    float_box_center_y = float_box_y - 0.255  # 当前模块框中心纵坐标
+
+    # 返回当前模块框的完整几何记录，供后续箭头连接阶段直接消费。
+    return build_png_box_geometry_record(
+        float_box_x,
+        float_box_bottom,
+        MODULE_BOX_WIDTH_PLOT,
+        MODULE_BOX_HEIGHT_PLOT,
+        float_box_center_x,
+        float_box_center_y,
+    )
+
+# 把模块框绘制和几何记录集中到 helper，避免主入口函数同时承担排版、落笔和收集三种职责。
+def draw_module_png_boxes(
+    obj_axes: Any,
+    list_modules: list[dict[str, str]],
+    int_columns: int,
+    float_height: float,
+    obj_font_properties: Any,
+    class_box_patch: Any,
+) -> list[dict[str, float]]:
+    """绘制系统模块图的所有模块框，并返回箭头连接所需的边界记录。
+
+    参数：
+    - `obj_axes`：当前模块图的 matplotlib 坐标轴对象。
+    - `list_modules`：结构化系统模块列表。
+    - `int_columns`：当前模块图列数。
+    - `float_height`：当前模块图画布高度。
+    - `obj_font_properties`：模块图正文使用的中文字体属性。
+    - `class_box_patch`：matplotlib 圆角矩形框类对象。
+
+    返回：
+    - `list[dict[str, float]]`：供后续箭头连接复用的模块框边界记录列表。
+
+    异常：
+    - 模块框绘制失败时由底层异常上抛。
+    """
+
+    # 收集每个模块框的边界和中心坐标，供相邻模块箭头沿边缘稳定连接。
+    list_boxes: list[dict[str, float]] = []  # 模块框边界与中心坐标列表
+
+    # 逐个模块绘制框体和正文，并同步登记后续箭头需要的几何信息。
+    for int_index, dict_module in enumerate(list_modules):
+
+        # 先读取当前模块在蛇形布局里的完整行列位置，后续再分别取出行号和列号。
+        tuple_grid_position = resolve_module_grid_position(int_index, int_columns)  # 当前模块在蛇形布局下的行列位置二元组
+
+        # 再单独读取当前模块所在行号，避免后续纵向坐标推导混入列方向语义。
+        int_row = tuple_grid_position[0]  # 当前模块框目标行号
+
+        # 继续读取当前模块所在列号，供横向排版和蛇形回折复用。
+        int_column = tuple_grid_position[1]  # 当前模块框目标列号
+
+        # 根据当前列号推导模块框左上角横坐标。
+        float_box_x = MODULE_BOX_LEFT + int_column * MODULE_BOX_COLUMN_GAP  # 当前模块框左上角横坐标
+
+        # 根据当前行号推导模块框左上角纵坐标。
+        float_box_y = float_height * MODULE_Y_AXIS_SCALE - MODULE_FIRST_ROW_OFFSET - int_row * MODULE_ROW_GAP  # 当前模块框左上角纵坐标
+
+        # 先把左上角坐标转换成圆角框构造器要求的左下角起点。
+        tuple_box_origin = (float_box_x, float_box_y - MODULE_BOX_HEIGHT_PLOT + 0.72)  # 当前模块框左下角坐标
+
+        # 先把当前模块框挂到画布，再把多行正文落在框体中央，保持 PNG 与 SVG 语义一致。
+        obj_axes.add_patch(
+            build_rounded_box_patch(
+                class_box_patch,
+                tuple_box_origin,
+                MODULE_BOX_WIDTH_PLOT,
+                MODULE_BOX_HEIGHT_PLOT,
+            )
+        )
+
+        # 再把当前模块标题和功能说明写到框体中央，保证模块框正文与 SVG 版本保持同义。
+        obj_axes.text(
+            float_box_x + MODULE_BOX_CENTER_OFFSET_X,
+            float_box_y - MODULE_BOX_CENTER_OFFSET_Y,
+            build_module_png_box_text(dict_module),
+            ha="center",
+            va="center",
+            fontsize=MODULE_TEXT_FONT_SIZE,
+            fontproperties=obj_font_properties,
+            linespacing=MODULE_TEXT_LINE_SPACING,
+        )
+
+        # 先固化当前模块框的边界和中心坐标，避免压入列表时再把几何推导混在一起。
+        dict_box_geometry = build_module_png_box_geometry(float_box_x, float_box_y)  # 当前模块框几何记录
+
+        # 再把当前模块框几何记录压入列表，供后续相邻模块贴边箭头直接复用。
+        list_boxes.append(dict_box_geometry)
+
+    # 返回完整的模块框几何记录，供箭头绘制阶段直接复用。
+    return list_boxes
+
+# 把相邻模块的箭头连接集中处理，避免主入口函数同时包含布局循环和连线分支。
+def draw_module_png_connections(
+    obj_axes: Any,
+    list_boxes: list[dict[str, float]],
+    dict_arrowprops: dict[str, Any],
+) -> None:
+    """给相邻模块框补画贴边箭头。
+
+    参数：
+    - `obj_axes`：当前模块图的 matplotlib 坐标轴对象。
+    - `list_boxes`：模块框边界与中心坐标列表。
+    - `dict_arrowprops`：统一箭头样式参数。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 箭头绘制失败时由底层异常上抛。
+    """
+
+    # 按模块顺序连接相邻框体，保持方法描述里的数据流和控制流可视化。
+    for int_index in range(1, len(list_boxes)):
+
+        # 先读取箭头起点对应的上一模块框边界与中心坐标。
+        dict_previous_box = list_boxes[int_index - 1]  # 上一模块框边界与中心坐标
+
+        # 再读取箭头终点对应的当前模块框边界与中心坐标。
+        dict_current_box = list_boxes[int_index]  # 当前模块框边界与中心坐标
+
+        # 同行模块使用水平箭头，避免对角线穿过正文；跨行模块沿上下边缘竖连。
+        if dict_previous_box["top"] == dict_current_box["top"]:
+
+            # 在上一模块位于左侧时，沿左右边缘追加水平向右箭头。
+            if dict_previous_box["center_x"] < dict_current_box["center_x"]:
+
+                # 把上一框右边缘连到下一框左边缘，保持同行顺序关系清晰。
+                obj_axes.annotate(
+                    "",
+                    xy=(dict_current_box["left"] - MODULE_ARROW_EDGE_PADDING, dict_current_box["center_y"]),
+                    xytext=(dict_previous_box["right"] + MODULE_ARROW_EDGE_PADDING, dict_previous_box["center_y"]),
+                    arrowprops=dict_arrowprops,
+                )
+
+            # 在上一模块位于右侧时，沿回折方向补画水平向左箭头。
+            else:
+
+                # 把上一框左边缘连回当前框右边缘，适配蛇形布局的回折阅读方向。
+                obj_axes.annotate(
+                    "",
+                    xy=(dict_current_box["right"] + MODULE_ARROW_EDGE_PADDING, dict_current_box["center_y"]),
+                    xytext=(dict_previous_box["left"] - MODULE_ARROW_EDGE_PADDING, dict_previous_box["center_y"]),
+                    arrowprops=dict_arrowprops,
+                )
+
+            # 同行连接已经完成，本轮无需再走跨行竖向箭头分支。
+            continue
+
+        # 跨行场景保持竖向贴边连接，保证蛇形布局换行后仍然清晰可读。
+        obj_axes.annotate(
+            "",
+            xy=(dict_current_box["center_x"], dict_current_box["top"] + MODULE_ARROW_EDGE_PADDING),
+            xytext=(dict_previous_box["center_x"], dict_previous_box["bottom"] - MODULE_ARROW_EDGE_PADDING),
+            arrowprops=dict_arrowprops,
+        )
+
 # 构造命令行参数解析器，统一声明案件目录和可选输入草稿参数。
 def build_parser() -> argparse.ArgumentParser:
     """构造附图入口的命令行解析器。
@@ -1327,10 +1539,13 @@ def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) 
     obj_figure, obj_axes = plt.subplots(figsize=(MODULE_PLOT_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 系统模块图画布和坐标轴
 
     # 解析当前 PNG 绘图要复用的中文字体属性，避免模块名和功能摘要退化成缺字方块。
-    obj_font_properties = build_png_cjk_font_properties()  # 系统模块图文本字体属性
+    obj_font = build_png_cjk_font_properties()  # 系统模块图文本字体属性
 
     # 固定模块图箭头样式参数，避免每次 annotate 都重复拼接同一套黑白样式。
     dict_arrowprops = build_arrowprops()  # 模块图箭头样式参数
+
+    # 固定圆角框类对象引用，避免附图绘制 helper 调用行过长。
+    class_box_patch = FancyBboxPatch  # 模块图圆角框类对象
 
     # 关闭坐标轴显示，保证模块图只保留结构框、标题和箭头。
     obj_axes.axis("off")
@@ -1350,139 +1565,14 @@ def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) 
         va="center",
         fontsize=FIGURE_TITLE_FONT_SIZE,
         fontweight="bold",
-        fontproperties=obj_font_properties,
+        fontproperties=obj_font,
     )
 
-    # 记录每个模块框的边界与中心坐标，供后续边缘锚点箭头复用。
-    list_boxes: list[dict[str, float]] = []  # 模块框边界与中心坐标列表
+    # 先把当前模块图的版面坐标固化成几何记录，保证连线阶段只消费记录而不再重算。
+    list_boxes = draw_module_png_boxes(obj_axes, list_modules, int_columns, float_height, obj_font, class_box_patch)  # 模块图几何记录列表
 
-    # 按模块顺序绘制模块框并记录其中心坐标。
-    for int_index, dict_module in enumerate(list_modules):
-
-        # 先拿到当前模块在 PNG 蛇形路径里的完整行列结果，后续再分别取出行号和列号。
-        tuple_grid_position = resolve_module_grid_position(int_index, int_columns)  # PNG 蛇形行列二元组
-
-        # 这里先读取纵向索引，只负责决定当前模块应该落在哪一行。
-        int_row = tuple_grid_position[0]  # 当前模块在 PNG 画布上的目标行号
-
-        # 这一位只负责控制蛇形回折时的左右摆放，不参与纵向排版节奏。
-        int_column = tuple_grid_position[1]  # 当前 PNG 模块的折返列位
-
-        # 根据列序号计算当前模块框左上角横坐标。
-        float_box_x = MODULE_BOX_LEFT + int_column * MODULE_BOX_COLUMN_GAP  # 当前模块框左上角横坐标
-
-        # 根据行序号计算当前模块框左上角纵坐标。
-        float_box_y = float_height * MODULE_Y_AXIS_SCALE - MODULE_FIRST_ROW_OFFSET - int_row * MODULE_ROW_GAP  # 当前模块框左上角纵坐标
-
-        # 先推导当前模块框左下角锚点，后续统一交给圆角框构造器使用。
-        tuple_box_origin = (float_box_x, float_box_y - MODULE_BOX_HEIGHT_PLOT + 0.72)  # 当前模块框左下角坐标
-
-        # 直接把当前模块框对象挂到画布，避免只转手一次的临时 patch 变量占用视觉空间。
-        obj_axes.add_patch(
-            build_rounded_box_patch(
-                FancyBboxPatch,
-                tuple_box_origin,
-                MODULE_BOX_WIDTH_PLOT,
-                MODULE_BOX_HEIGHT_PLOT,
-            )
-        )
-
-        # 先包装模块标题，保证 PNG 图里的名称不会沿水平方向撑破双列框体。
-        list_module_name_lines = wrap_figure_text(dict_module["name"], MODULE_NAME_WRAP_WIDTH, MODULE_NAME_MAX_LINES)  # 当前模块标题文本行列表
-
-        # 先提取当前模块说明原文，便于控制 PNG 文本节点的横向换行密度。
-        str_module_function_source = dict_module["function"]  # 当前 PNG 模块说明原文
-
-        # 先收拢 PNG 说明文本的每行宽度约束，避免 matplotlib 调用行超出长度门限。
-        int_wrap_chars = MODULE_FUNCTION_WRAP_WIDTH  # PNG 说明单行宽度上限
-
-        # 再收拢 PNG 说明文本的最大行数，保证说明区不会继续把图框向下拉长。
-        int_line_limit = MODULE_FUNCTION_MAX_LINES  # PNG 说明段落保留行数上限
-
-        # 再包装模块功能说明，让 PNG 双列框体里的说明文字稳定落在边界内。
-        list_module_function_lines = wrap_figure_text(str_module_function_source, int_wrap_chars, int_line_limit)  # PNG 说明分行结果
-
-        # 最后把标题和说明拼成多行正文文本，供 PNG 文本节点直接复用。
-        str_module_box_text = "\n".join([*list_module_name_lines, *list_module_function_lines])  # 当前模块框的多行正文文本
-
-        # 再把多行模块文本写入框体中央，保持 PNG 与 SVG 版本语义一致。
-        obj_axes.text(
-            float_box_x + MODULE_BOX_CENTER_OFFSET_X,
-            float_box_y - MODULE_BOX_CENTER_OFFSET_Y,
-            str_module_box_text,
-            ha="center",
-            va="center",
-            fontsize=MODULE_TEXT_FONT_SIZE,
-            fontproperties=obj_font_properties,
-            linespacing=MODULE_TEXT_LINE_SPACING,
-        )
-
-        # 先记录当前模块框底边纵坐标，供边界记录和后续箭头落点统一复用。
-        float_box_bottom = float_box_y - MODULE_BOX_HEIGHT_PLOT + 0.72  # 当前模块框底边纵坐标
-
-        # 再记录当前模块框中心横坐标，供文本居中和箭头贴边计算共享。
-        float_box_center_x = float_box_x + MODULE_BOX_CENTER_OFFSET_X  # 当前模块框中心横坐标
-
-        # 最后记录当前模块框中心纵坐标，供边界记录 helper 与文本节点共用。
-        float_box_center_y = float_box_y - 0.255  # 当前模块框中心纵坐标
-
-        # 直接把当前 PNG 模块框的边界记录压入列表，供后续 annotate 阶段串联相邻模块。
-        list_boxes.append(
-            build_png_box_geometry_record(
-                float_box_x,
-                float_box_bottom,
-                MODULE_BOX_WIDTH_PLOT,
-                MODULE_BOX_HEIGHT_PLOT,
-                # 最后两项传入当前模块框中心点，让后续箭头总能围绕真实中心线落笔。
-                float_box_center_x,
-                float_box_center_y,
-            )
-        )
-
-    # 按原模块顺序给相邻模块追加箭头，保持系统数据流关系可视化。
-    for int_index in range(1, len(list_boxes)):
-
-        # 读取上一模块框的边界与中心坐标，供后续确定箭头起点边缘。
-        dict_previous_box = list_boxes[int_index - 1]  # 上一模块框边界与中心坐标
-
-        # 读取本轮要接入的目标模块框边界，供后续确定箭头终点应贴哪一侧边缘。
-        dict_current_box = list_boxes[int_index]  # 当前模块框边界与中心坐标
-
-        # 在同一行时沿左右边缘连接模块，避免对角线穿过框体正文。
-        if dict_previous_box["top"] == dict_current_box["top"]:
-
-            # 在左到右场景下沿右边缘连到下一框左边缘。
-            if dict_previous_box["center_x"] < dict_current_box["center_x"]:
-
-                # 追加水平向右箭头，保持同一行模块的顺序关系清晰。
-                obj_axes.annotate(
-                    "",
-                    xy=(dict_current_box["left"] - MODULE_ARROW_EDGE_PADDING, dict_current_box["center_y"]),
-                    xytext=(dict_previous_box["right"] + MODULE_ARROW_EDGE_PADDING, dict_previous_box["center_y"]),
-                    arrowprops=dict_arrowprops,
-                )
-
-            # 在右到左场景下沿左边缘连回前一列，适配蛇形布局的回折阅读方向。
-            else:
-
-                # 追加水平向左箭头，避免箭头穿过上一行或当前行框体。
-                obj_axes.annotate(
-                    "",
-                    xy=(dict_current_box["right"] + MODULE_ARROW_EDGE_PADDING, dict_current_box["center_y"]),
-                    xytext=(dict_previous_box["left"] - MODULE_ARROW_EDGE_PADDING, dict_previous_box["center_y"]),
-                    arrowprops=dict_arrowprops,
-                )
-
-        # 在跨行场景下沿上下边缘做竖向连接，保持跨行箭头贴边可读。
-        else:
-
-            # 追加竖向箭头，把上一行模块的下边缘连到下一行模块的上边缘。
-            obj_axes.annotate(
-                "",
-                xy=(dict_current_box["center_x"], dict_current_box["top"] + MODULE_ARROW_EDGE_PADDING),
-                xytext=(dict_previous_box["center_x"], dict_previous_box["bottom"] - MODULE_ARROW_EDGE_PADDING),
-                arrowprops=dict_arrowprops,
-            )
+    # 再按相邻模块的边界和中心坐标补画贴边箭头，保持系统模块关系连贯可读。
+    draw_module_png_connections(obj_axes, list_boxes, dict_arrowprops)
 
     # 先确保输出目录存在，再把当前模块图写成白底 PNG 文件。
     path_output_png.parent.mkdir(parents=True, exist_ok=True)
