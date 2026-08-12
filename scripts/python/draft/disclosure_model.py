@@ -1,10 +1,11 @@
-"""构建来源、证据、数据、公式、术语和附图分离的版本三专利交底模型。"""
+"""构建来源、特征、证据和嵌入式审查分离的版本四专利交底模型。"""
 
 # 延迟解析类型注解，兼容技能支持的 Python 版本。
 from __future__ import annotations
 
 # 标准库负责深复制 JSON 数据并生成跨运行稳定的公式摘要。
 import hashlib
+import importlib.util
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -12,6 +13,61 @@ from typing import Any
 
 # 固定正式章节合同路径，使生成端与验证端读取同一份章节顺序和标题。
 PATH_SECTION_CONTRACT = Path(__file__).resolve().parents[3] / "assets" / "section_contract.json"  # 章节合同资产路径
+
+# 固定共享特征身份模块路径，供正文模型与 claims map 统一编号。
+PATH_FEATURE_IDENTITY = Path(__file__).resolve().parents[1] / "support" / "feature_identity.py"  # 稳定特征身份模块路径
+
+# 从共享模块加载唯一的稳定特征身份实现。
+def load_feature_identity_module() -> Any:
+    """加载稳定特征身份模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行源码的共享特征身份模块。
+
+    异常：
+    - `ImportError`：模块规格或加载器缺失时抛出。
+    """
+
+    # 根据正式文件路径创建共享身份模块加载规格。
+    obj_specification = importlib.util.spec_from_file_location(  # 共享身份模块加载规格
+        "readable_patent_feature_identity_for_disclosure",  # 正文模型侧隔离模块名称
+        PATH_FEATURE_IDENTITY,  # 共享身份模块正式路径
+    )
+
+    # 加载规格或加载器缺失时立即阻断，禁止正文模型回退到位置编号。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出符合项目日志合同的明确导入错误。
+        raise ImportError("> ERR: [Python] 无法加载 support/feature_identity.py。")
+
+    # 根据已验证规格创建本次调用独享的模块对象。
+    obj_module = importlib.util.module_from_spec(obj_specification)  # 共享特征身份模块对象
+
+    # 执行共享模块源码，使稳定身份函数可用。
+    obj_specification.loader.exec_module(obj_module)
+
+    # 返回已加载模块，调用方只使用其中的唯一公共身份函数。
+    return obj_module
+
+# 暴露共享身份函数，供生成器和测试使用同一公共合同。
+def build_stable_feature_id(dict_feature: Mapping[str, Any]) -> str:
+    """调用共享实现生成稳定特征编号。
+
+    参数：
+    - `dict_feature`：包含来源身份字段的技术特征记录。
+
+    返回：
+    - `str`：共享模块生成的稳定特征编号。
+
+    异常：
+    - `ImportError`：共享身份模块无法加载时抛出。
+    """
+
+    # 返回共享实现结果，禁止在正文模型侧复制摘要规则。
+    return str(load_feature_identity_module().build_stable_feature_id(dict_feature))
 
 # 复制 JSON 兼容对象，确保构建过程不会修改调用方持有的数据。
 def copy_json_value(obj_value: Any) -> Any:
@@ -91,6 +147,109 @@ def build_formula_registry(list_formulas: Sequence[Mapping[str, Any]]) -> list[d
     # 返回按输入顺序构建的公式登记表。
     return list_registry
 
+# 从既有正文证据映射派生稳定特征身份，不补写材料未声明的技术效果。
+def build_feature_registry(
+    dict_evidence_map: Mapping[str, Any],
+    list_sections: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """把正文特征映射转换为 Model 4.0 稳定特征登记表。
+
+    参数：
+    - `dict_evidence_map`：正文生成链已经形成的技术特征和精确证据映射。
+    - `list_sections`：可选的真实章节记录，用于建立章节到证据闭包。
+
+    返回：
+    - `list[dict[str, Any]]`：不猜测缺失技术效果的稳定特征记录。
+
+    异常：
+    - 无。
+    """
+
+    # 结果表只保留首个语义完全相同的来源特征。
+    list_registry: list[dict[str, Any]] = []  # 稳定技术特征登记表
+
+    # 摘要索引同时承担重复去重和不同内容碰撞检测。
+    dict_registry_by_id: dict[str, dict[str, Any]] = {}  # feature_id 到规范记录的索引
+
+    # 按来源映射顺序输出记录，但身份只由当前特征的稳定来源字段决定。
+    for dict_feature in dict_evidence_map.get("features", []):
+
+        # 损坏的非对象记录不具备技术特征语义。
+        if not isinstance(dict_feature, Mapping):
+
+            # 跳过损坏记录，后续模型门禁会报告覆盖缺口。
+            continue
+
+        # 读取材料链已提供的真实技术特征正文。
+        str_text = str(dict_feature.get("feature", "")).strip()  # 当前技术特征正文
+
+        # 空正文不能获得稳定 feature_id。
+        if not str_text:
+
+            # 跳过空占位，禁止生成伪技术特征。
+            continue
+
+        # 先读取特征的明确证据，章节绑定必须由实际章节证据反向派生。
+        list_evidence_ids = [  # 当前特征明确证据编号列表
+            str(obj_id)  # 当前特征证据编号
+            for obj_id in dict_feature.get("support_ids", [])  # 遍历材料链声明的证据
+        ]
+
+        # 只绑定实际引用特征证据的章节，禁止使用固定章节占位。
+        list_section_ids = [  # 当前特征真实章节编号列表
+            str(dict_section.get("id", ""))  # 当前真实章节编号
+            for dict_section in list_sections or []  # 遍历本轮真实章节
+            if isinstance(dict_section, Mapping)  # 排除损坏章节值
+            and {  # 构造当前章节证据集合
+                str(obj_id)  # 当前章节证据编号
+                for obj_id in dict_section.get("evidence_ids", [])  # 遍历章节证据
+            }  # 完成章节证据集合
+            & set(list_evidence_ids)  # 要求章节实际引用特征证据
+        ]
+
+        # 规范记录用于比较重复来源是否真的是同一技术特征。
+        dict_record = {
+            "feature_id": build_stable_feature_id(dict_feature),  # 绑定完整规范内容的稳定身份
+            "text": str_text,  # 当前技术特征原文
+            "section_ids": list_section_ids,  # 实际引用特征证据的章节
+            "evidence_ids": list_evidence_ids,  # 当前特征证据引用
+            "technical_effects": [  # 当前特征已登记技术效果
+                str(obj_effect)  # 当前非空技术效果文本
+                for obj_effect in dict_feature.get(  # 读取新版或兼容旧版效果字段
+                    "technical_effects",  # Model 4 技术效果字段
+                    dict_feature.get("effects", []),  # 兼容旧输入效果字段
+                )
+                if str(obj_effect).strip()  # 排除空白效果
+            ],
+        }  # 当前稳定技术特征记录
+
+        # 读取相同摘要已经登记的来源。
+        dict_existing = dict_registry_by_id.get(dict_record["feature_id"])  # 同摘要既有记录
+
+        # 完全相同的重复输入保持首次位置并跳过后续副本。
+        if dict_existing == dict_record:
+
+            # 相同内容摘要已经保留首次出现位置，无需重复登记。
+            continue
+
+        # 不同语义共享摘要说明身份函数发生碰撞，生成阶段必须停线。
+        if dict_existing is not None:
+
+            # 报告完整身份并拒绝产生无法区分的特征登记。
+            raise ValueError(
+                "> ERR: [Python] 稳定 feature_id 碰撞:"
+                f"{dict_record['feature_id']}"
+            )
+
+        # 首次出现的摘要进入稳定索引和输出顺序。
+        dict_registry_by_id[dict_record["feature_id"]] = dict_record  # 当前摘要对应的唯一特征
+
+        # 保持输入首次出现顺序供后续渲染稳定消费。
+        list_registry.append(dict_record)
+
+    # 返回保持来源顺序的稳定特征登记表。
+    return list_registry
+
 # 组合三个已确认事实域，形成 Markdown 与 DOCX 共同消费的中间真相层。
 def build_disclosure_model(
     list_sections: Sequence[Mapping[str, Any]],
@@ -98,7 +257,7 @@ def build_disclosure_model(
     dict_evidence_map: Mapping[str, Any],
     dict_registries: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """构建版本三结构化专利交底模型。
+    """构建版本四结构化专利交底模型。
 
     参数：
     - `list_sections`：按合同顺序排列的章节内容。
@@ -107,7 +266,7 @@ def build_disclosure_model(
     - `dict_registries`：来源、数据、术语、附图、交叉引用和待办登记表集合。
 
     返回：
-    - `dict[str, Any]`：不共享输入可变对象的版本三模型。
+    - `dict[str, Any]`：不共享输入可变对象的版本四模型。
 
     异常：
     - `TypeError`：任一输入不是 JSON 兼容数据时由复制逻辑上抛。
@@ -116,9 +275,45 @@ def build_disclosure_model(
     # 未传入附加登记表时保留显式空结构，供验证层判断是否需要补齐。
     dict_safe_registries = dict_registries if dict_registries is not None else {}  # 可读取附加登记表
 
+    # 原生输入摘要绑定本次构建消费的全部事实域，不使用固定占位摘要。
+    dict_native_input = {
+        "sections": list_sections,  # 当前十一章节事实
+        "formulas": list_formulas,  # 当前公式语义事实
+        "evidence_registry": dict_evidence_map,  # 当前证据映射
+        "registries": dict_safe_registries,  # 当前附加登记表
+    }  # 原生构建摘要载荷
+
+    # 规范 JSON 固定跨运行摘要输入。
+    str_native_input = json.dumps(dict_native_input, ensure_ascii=False, separators=(",", ":"), sort_keys=True)  # 原生构建规范文本
+
+    # 空技术效果需要显式人工确认，不能只依赖后置 validator 报错。
+    bool_pending_effects = any(  # 是否至少一个技术特征仍缺少可确认效果
+        isinstance(dict_feature, Mapping)  # 当前特征必须可解释
+        and not dict_feature.get("technical_effects")  # 当前特征尚无技术效果
+        for dict_feature in dict_safe_registries.get("feature_registry", [])  # 当前特征登记
+    )  # 是否存在待确认技术效果
+
+    # 人工待办从模型真实事实域派生，避免无数据案件永久等待。
+    list_pending_confirmations = [
+        "independent_claim_feature_sets",  # 独立权利要求特征集确认
+        "ai_applicability",  # AI 规则适用性确认
+    ]  # 原生模型必需人工确认类别
+
+    # 只有实际存在受管事实时才登记该类别。
+    if dict_safe_registries.get("data_registry"):
+
+        # 将受管事实类别放在人工确认队列首位。
+        list_pending_confirmations.insert(0, "governed_facts")
+
+    # 技术效果缺失时通过 recorder 专用确认目标关闭。
+    if bool_pending_effects:
+
+        # 追加逐特征技术效果确认类别。
+        list_pending_confirmations.append("feature_technical_effects")
+
     # 每类事实分别复制，避免渲染或验证阶段反向污染登记表。
     dict_model = {
-        "contract_version": "3.0",  # 当前结构化合同版本
+        "contract_version": "4.0",  # 当前结构化合同版本
         "source_manifest": copy_json_value(dict_safe_registries.get("source_manifest", [])),  # 材料来源及实际用途登记表
         "evidence_registry": copy_json_value(dict_evidence_map),  # 证据记录与精确引用关系
         "data_registry": copy_json_value(dict_safe_registries.get("data_registry", [])),  # 数值事实及人工批准状态
@@ -128,7 +323,54 @@ def build_disclosure_model(
         "figure_registry": copy_json_value(dict_safe_registries.get("figure_registry", [])),  # 附图来源与正文绑定记录
         "cross_references": copy_json_value(dict_safe_registries.get("cross_references", [])),  # 章节显式交叉引用
         "pending_items": copy_json_value(dict_safe_registries.get("pending_items", [])),  # 尚未关闭的人工处理项
-    }  # 版本三结构化交底模型
+        "feature_registry": copy_json_value(dict_safe_registries.get("feature_registry", [])),  # 稳定技术特征及支撑闭包
+        "rule_applicability": copy_json_value(  # 复制 AI 专项规则适用性
+            dict_safe_registries.get(  # 读取调用方提供的适用性状态
+                "rule_applicability",  # AI 专项规则适用性键
+                {"ai_applicability": "pending"},  # 未判定时保持待人工确认
+            )
+        ),  # AI 专项规则适用性
+        "semantic_review": copy_json_value(  # 复制嵌入式语义审查状态
+            dict_safe_registries.get(  # 读取调用方提供的嵌入式审查
+                "semantic_review",  # 嵌入式审查登记表键
+                {
+                    "agent_reviews": [],  # 尚未嵌入代理审查
+                    "human_confirmations": [],  # 尚未嵌入人工确认
+                    "agent_review_history": [],  # 已被替代的代理审查历史
+                    "human_confirmation_history": [],  # 已被替代的人工确认历史
+                    "pending_reviews": ["sections", "feature_registry"],  # 待代理审查事实域
+                    "pending_confirmations": list_pending_confirmations,  # 从真实事实域派生的人工待办
+                },
+            )
+        ),  # 嵌入式代理审查和人工确认
+        "migration": copy_json_value(  # 复制原生构建或显式迁移状态
+            dict_safe_registries.get(  # 读取调用方提供的迁移审计信息
+                "migration",  # 模型迁移状态键
+                {
+                    "state": "native",  # 当前模型由版本四生成器原生产出
+                    "source_contract_version": "4.0",  # 原生输入合同版本
+                    "input_sha256": hashlib.sha256(str_native_input.encode("utf-8")).hexdigest(),  # 原生输入摘要
+                },
+            )
+        ),  # 原生或迁移来源状态
+        "provenance": copy_json_value(  # 初始案件来源链副本
+            dict_safe_registries.get(  # 优先采用调用方提供的来源链
+                "provenance",  # 来源链登记字段
+                {
+                    "state": "pending",  # 等待 pipeline 完成案件封印
+                    "artifact_role": "initial",  # 初始模型工件角色
+                    "producer": "model4_pipeline",  # 封印后允许的生产者
+                    "case_id": "pending",  # 等待真实案件身份
+                    "parent_model_sha256": "0" * 64,  # 等待封印前模型摘要
+                    "root_model_sha256": "0" * 64,  # 等待全链根摘要
+                    "draft_sha256": "0" * 64,  # 等待正式正文摘要
+                    "preview_sha256": "0" * 64,  # 等待确认预览摘要
+                    "claims_sha256": "0" * 64,  # 等待 Claims Map 3 摘要
+                    "chain": [],  # 初始模型尚无审查跳转
+                },
+            )
+        ),  # pipeline 在 claims 生成后封印案件来源链
+    }  # 版本四结构化交底模型
 
     # 返回完整模型，调用方负责落盘与执行 schema/语义验证。
     return dict_model

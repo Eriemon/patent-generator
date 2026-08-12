@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "2.0",
   "effective_from": "2026-01-01",
   "sources": [
     {
@@ -8,7 +8,7 @@
       "edition": "2023",
       "role": "base",
       "effective_from": "2024-01-20",
-      "source_note": "用户提供的本地指南作为基础审查规则参考，不复制原始全文。"
+      "source_note": "作为基础审查框架的摘要来源，不复制指南原文。"
     },
     {
       "id": "CNIPA-ORDER-84",
@@ -16,7 +16,8 @@
       "edition": "2025-amendment",
       "role": "amendment",
       "effective_from": "2026-01-01",
-      "url": "https://www.cnipa.gov.cn/art/2025/11/13/art_526_202559.html"
+      "url": "https://www.cnipa.gov.cn/art/2025/11/13/art_526_202559.html",
+      "source_note": "摘要采用修改决定中与充分公开、创造性及人工智能相关的生效要求，不复制法律文本。"
     },
     {
       "id": "CNIPA-INTERPRETATION-2025",
@@ -24,84 +25,148 @@
       "edition": "2025-amendment",
       "role": "interpretation",
       "effective_from": "2026-01-01",
-      "url": "https://www.cnipa.gov.cn/art/2025/12/4/art_66_202935.html"
+      "url": "https://www.cnipa.gov.cn/art/2025/12/4/art_66_202935.html",
+      "source_note": "仅保留官方解读对规则目的和适用边界的摘要，不复制解读全文。"
     }
   ],
   "profiles": ["general", "ai_algorithm"],
   "ai_scopes": ["model_training", "model_application", "both"],
+  "levels": ["blocker", "major", "minor"],
   "rules": [
     {
       "id": "DISC-ENABLE-001",
       "topic": "sufficient_disclosure",
-      "profiles": ["general", "ai_algorithm"],
+      "handler_id": "sufficient_disclosure",
+      "rule_sets": ["core"],
       "default_level": "blocker",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {"mode": "always"}
     },
     {
       "id": "DISC-EFFECT-001",
       "topic": "feature_mechanism_effect",
-      "profiles": ["general", "ai_algorithm"],
+      "handler_id": "feature_mechanism_effect",
+      "rule_sets": ["core"],
       "default_level": "major",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {"mode": "always"}
     },
     {
       "id": "INVENT-CHAIN-001",
       "topic": "inventiveness_reasoning_chain",
-      "profiles": ["general", "ai_algorithm"],
+      "handler_id": "inventiveness_chain",
+      "rule_sets": ["core"],
       "default_level": "major",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {"mode": "always"}
     },
     {
       "id": "INVENT-CONTRIB-001",
       "topic": "technical_contribution",
-      "profiles": ["general", "ai_algorithm"],
+      "handler_id": "technical_contribution",
+      "rule_sets": ["core"],
       "default_level": "major",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {"mode": "always"}
     },
     {
       "id": "CLAIM-SUPPORT-001",
       "topic": "independent_claim_support",
-      "profiles": ["general", "ai_algorithm"],
+      "handler_id": "independent_claim_support",
+      "rule_sets": ["claims"],
       "default_level": "blocker",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {"mode": "always"}
     },
     {
       "id": "CLAIM-SECONDARY-001",
       "topic": "unsupported_secondary_candidate",
-      "profiles": ["general", "ai_algorithm"],
+      "handler_id": "secondary_claim_support",
+      "rule_sets": ["claims"],
       "default_level": "minor",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {"mode": "always"}
+    },
+    {
+      "id": "AI-APPLY-HARD-001",
+      "topic": "ai_hard_applicability",
+      "handler_id": "ai_hard_applicability",
+      "rule_sets": ["ai_control"],
+      "default_level": "blocker",
+      "evidence_required": true,
+      "applicability": {"mode": "signal", "signal_levels": ["hard"]}
+    },
+    {
+      "id": "AI-APPLY-SOFT-001",
+      "topic": "ai_soft_applicability",
+      "handler_id": "ai_soft_applicability",
+      "rule_sets": ["ai_control"],
+      "default_level": "blocker",
+      "evidence_required": true,
+      "applicability": {"mode": "signal", "signal_levels": ["soft"]}
+    },
+    {
+      "id": "AI-CONFIRM-001",
+      "topic": "ai_human_confirmation",
+      "handler_id": "ai_human_confirmation",
+      "rule_sets": ["ai_control"],
+      "default_level": "blocker",
+      "evidence_required": true,
+      "applicability": {"mode": "signal", "signal_levels": ["hard", "soft", "none"]}
+    },
+    {
+      "id": "AI-SCOPE-001",
+      "topic": "ai_scope",
+      "handler_id": "ai_scope",
+      "rule_sets": ["ai_control"],
+      "default_level": "blocker",
+      "evidence_required": false,
+      "applicability": {"mode": "ai_rules"}
     },
     {
       "id": "AI-DISC-001",
       "topic": "ai_model_structure",
-      "profiles": ["ai_algorithm"],
-      "ai_scopes": ["model_training", "both"],
+      "handler_id": "ai_model_structure",
+      "rule_sets": ["ai_substantive"],
       "default_level": "blocker",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {
+        "mode": "ai_rules",
+        "ai_scopes": ["model_training", "both"]
+      }
     },
     {
       "id": "AI-TRAIN-001",
       "topic": "ai_training_process",
-      "profiles": ["ai_algorithm"],
-      "ai_scopes": ["model_training", "both"],
+      "handler_id": "ai_training_process",
+      "rule_sets": ["ai_substantive"],
       "default_level": "blocker",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {
+        "mode": "ai_rules",
+        "ai_scopes": ["model_training", "both"]
+      }
     },
     {
       "id": "AI-SCENE-001",
       "topic": "ai_scenario_input_output",
-      "profiles": ["ai_algorithm"],
-      "ai_scopes": ["model_application", "both"],
+      "handler_id": "ai_scenario_integration",
+      "rule_sets": ["ai_substantive"],
       "default_level": "blocker",
-      "evidence_required": true
+      "evidence_required": true,
+      "applicability": {
+        "mode": "ai_rules",
+        "ai_scopes": ["model_application", "both"]
+      }
     },
     {
       "id": "AI-ETHICS-001",
       "topic": "ai_ethics_public_interest_review",
-      "profiles": ["ai_algorithm"],
+      "handler_id": "ai_public_interest",
+      "rule_sets": ["ai_substantive"],
       "default_level": "major",
-      "evidence_required": false
+      "evidence_required": false,
+      "applicability": {"mode": "ai_rules"}
     }
   ]
 }

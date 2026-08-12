@@ -1,22 +1,51 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/readable-patent-generator/claims_map.schema.json",
+  "title": "Claims Feature Support Map 3.0",
   "type": "object",
-  "required": ["contract_version", "claims", "omitted_candidates"],
+  "additionalProperties": false,
+  "required": ["contract_version", "claims", "omitted_candidates", "migration"],
   "properties": {
-    "contract_version": {"const": "2.0"},
+    "contract_version": {"const": "3.0"},
     "claims": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["claim_no", "claim_type", "support_ids", "support_status"],
+        "additionalProperties": false,
+        "required": ["claim_no", "claim_type", "feature_ids", "support_status"],
         "properties": {
           "claim_no": {"type": "integer", "minimum": 1},
-          "claim_type": {"type": "string"},
-          "support_ids": {"type": "array", "items": {"type": "string"}},
-          "support_status": {"enum": ["supported", "unsupported"]},
-          "mapped_steps": {"type": "array", "items": {"type": "string"}},
-          "feature": {"type": "string"},
-          "unsupported_features": {"type": "array", "items": {"type": "string"}}
+          "claim_type": {"type": "string", "minLength": 1},
+          "feature_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^FT(?:[0-9]{3,}|[A-F0-9]{64})$"}
+          },
+          "support_status": {
+            "enum": ["supported", "unsupported", "pending"],
+            "readOnly": true
+          },
+          "unsupported_feature_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^FT(?:[0-9]{3,}|[A-F0-9]{64})$"}
+          },
+          "mapped_steps": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "support_ids": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "unsupported_features": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "feature": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -24,11 +53,41 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["claim_type", "reason"],
         "properties": {
-          "claim_type": {"type": "string"},
-          "reason": {"type": "string"}
+          "claim_type": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
         }
+      }
+    },
+    "legacy_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "claims", "omitted_candidates"],
+      "properties": {
+        "root": {"type": "object"},
+        "claims": {
+          "type": "object",
+          "additionalProperties": {"type": "object"}
+        },
+        "omitted_candidates": {
+          "type": "object",
+          "additionalProperties": {"type": "object"}
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"enum": ["native", "pending", "complete"]},
+        "source_contract_version": {"type": "string", "minLength": 1},
+        "input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "batch_id": {"type": "string", "pattern": "^MB[0-9a-f]{32}$"},
+        "receipt_id": {"type": "string", "pattern": "^MR[0-9a-f]{32}$"},
+        "receipt_file": {"type": "string", "pattern": "^[^/\\\\]+\\.json$"}
       }
     }
   }

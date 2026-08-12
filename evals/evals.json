@@ -64,15 +64,16 @@
       "without_skill_reason": "A baseline path does not inherit this skill's single requirements contract or dependency-check entrypoint.",
       "required_files": [
         "requirements.txt",
-        "scripts/python/support/check_dependencies.py"
+        "scripts/python/support/check_dependencies.py",
+        "scripts/python/support/capability_preflight.py"
       ],
       "required_terms": [
         {
-          "file": "scripts/python/support/check_dependencies.py",
+          "file": "scripts/python/support/capability_preflight.py",
           "terms": [
             "SINGLE_REQUIREMENTS_PATH = \"requirements.txt\"",
             "\"requirements\": SINGLE_REQUIREMENTS_PATH",
-            "pip install -r {SINGLE_REQUIREMENTS_PATH}"
+            "\"selected_capabilities\": list_selected"
           ]
         }
       ]
@@ -174,11 +175,18 @@
       "required_terms": [
         {
           "file": "scripts/python/support/examination_quality_contract.py",
-          "terms": ["confirmation_required", "keep_general", "switch_to_ai_algorithm"]
+          "terms": [
+            "confirmation_required",
+            "keep_general",
+            "switch_to_ai_algorithm"
+          ]
         },
         {
           "file": "scripts/python/preview/generate_preview.py",
-          "terms": ["profile_check", "profile_confirmation"]
+          "terms": [
+            "profile_check",
+            "profile_confirmation"
+          ]
         }
       ]
     },
@@ -196,11 +204,18 @@
       "required_terms": [
         {
           "file": "scripts/python/claims/generate_claims.py",
-          "terms": ["claim_role", "omitted_candidates", "support_status"]
+          "terms": [
+            "claim_role",
+            "omitted_candidates",
+            "support_status"
+          ]
         },
         {
           "file": "scripts/python/review/validate_disclosure.py",
-          "terms": ["examination_assessment.json", "append_examination_findings"]
+          "terms": [
+            "examination_assessment.json",
+            "append_examination_findings"
+          ]
         }
       ]
     },
@@ -295,7 +310,8 @@
       "without_skill_reason": "A baseline exporter may rasterize equations, retain plain text, or silently fall back between equation formats.",
       "required_files": [
         "SKILL.md",
-        "scripts/python/export/export_docx.py"
+        "scripts/python/export/export_docx.py",
+        "scripts/python/export/mathtype_ole.py"
       ],
       "required_terms": [
         {
@@ -307,7 +323,7 @@
           ]
         },
         {
-          "file": "scripts/python/export/export_docx.py",
+          "file": "scripts/python/export/mathtype_ole.py",
           "terms": [
             "Equation.DSMT4",
             "m:oMath"
@@ -324,7 +340,8 @@
       "required_files": [
         "SKILL.md",
         "scripts/python/support/fact_integrity_contract.py",
-        "scripts/python/figures/generate_figures.py"
+        "scripts/python/figures/generate_figures.py",
+        "scripts/python/figures/figure_registry.py"
       ],
       "required_terms": [
         {
@@ -343,13 +360,746 @@
           ]
         },
         {
-          "file": "scripts/python/figures/generate_figures.py",
+          "file": "scripts/python/figures/figure_registry.py",
           "terms": [
             "build_figure_registry",
             "update_disclosure_model_figure_registry"
           ]
         }
       ]
+    },
+    {
+      "id": "runtime-empty-model-blocking",
+      "title": "Empty Model 4 section blocks formal validation",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Static terms cannot prove that an empty formal section reaches the production validation chain.",
+      "required_files": [
+        "scripts/python/review/validate_disclosure.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/review/validate_disclosure.py",
+          "terms": [
+            "append_structured_model_findings"
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/review/validate_disclosure.py",
+        "arguments": [
+          "--case-dir",
+          "{case_root}",
+          "--input",
+          "{case_root}/draft.md",
+          "--model",
+          "{case_root}/model.json"
+        ],
+        "expected_exit_codes": [
+          1
+        ],
+        "setup_files": [
+          {
+            "path": "case_config.json",
+            "json": {
+              "case_id": "runtime-empty-model",
+              "case_name": "空章节运行时评测",
+              "technical_profile": "general",
+              "profile_confirmation": "general",
+              "ai_scope": ""
+            }
+          },
+          {
+            "path": "02_facts/research_facts.json",
+            "json": {}
+          },
+          {
+            "path": "draft.md",
+            "text": "## 一、发明名称\n运行时空章节评测\n"
+          },
+          {
+            "path": "model.json",
+            "json": {
+              "contract_version": "4.0",
+              "sections": [
+                {
+                  "id": "1",
+                  "content": "",
+                  "evidence_ids": [],
+                  "data_ids": [],
+                  "formula_ids": []
+                }
+              ],
+              "rule_applicability": {
+                "ai_applicability": "not_applicable"
+              }
+            }
+          }
+        ],
+        "output_json": [
+          {
+            "path": "04_reviews/examination_assessment.json",
+            "contains": {
+              "status": "blocked",
+              "findings": [
+                {
+                  "code": "sufficient_disclosure_incomplete"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "runtime-model-migration-pending",
+      "title": "Model 3 migration remains pending",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Only executing the migration entrypoint proves that old content cannot become reviewed by conversion alone.",
+      "required_files": [
+        "scripts/python/support/migrate_model_contract.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/support/migrate_model_contract.py",
+          "terms": [
+            "\"state\": \"pending\"",
+            "dict_v4_model[\"contract_version\"] = \"4.0\""
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/support/migrate_model_contract.py",
+        "arguments": [
+          "--model",
+          "{case_root}/model-three.json",
+          "--output",
+          "{case_root}/model-four.json"
+        ],
+        "expected_exit_codes": [
+          0
+        ],
+        "setup_files": [
+          {
+            "path": "model-three.json",
+            "json": {
+              "contract_version": "3.0",
+              "source_manifest": [],
+              "evidence_registry": {
+                "records": [
+                  {
+                    "evidence_id": "E001",
+                    "text": "研发记录"
+                  }
+                ]
+              },
+              "data_registry": [],
+              "formula_registry": [],
+              "term_registry": [],
+              "figure_registry": [],
+              "sections": [
+                {
+                  "id": "1",
+                  "content": "发明名称",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "2",
+                  "content": "技术领域",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "3.1",
+                  "content": "技术背景",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "3.2",
+                  "content": "相近方案",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "3.3",
+                  "content": "现有缺点",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "4.1",
+                  "content": "技术问题",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "4.2",
+                  "content": "技术方案",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "4.3",
+                  "content": "技术效果",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "5",
+                  "content": "附图说明",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "6",
+                  "content": "实施方式",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                },
+                {
+                  "id": "7",
+                  "content": "保护重点",
+                  "evidence_ids": [
+                    "E001"
+                  ],
+                  "data_ids": [],
+                  "formula_ids": []
+                }
+              ],
+              "cross_references": [],
+              "pending_items": []
+            }
+          }
+        ],
+        "output_json": [
+          {
+            "path": "model-four.json",
+            "contains": {
+              "contract_version": "4.0",
+              "migration": {
+                "state": "pending"
+              },
+              "semantic_review": {
+                "pending_reviews": [
+                  "sections",
+                  "feature_registry"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "runtime-hard-ai-general-blocking",
+      "title": "Hard AI facts block a general-profile override",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A static profile string cannot prove that hard AI signals reach registered production handlers.",
+      "required_files": [
+        "scripts/python/review/validate_disclosure.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/review/validate_disclosure.py",
+          "terms": [
+            "append_examination_findings"
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/review/validate_disclosure.py",
+        "arguments": [
+          "--case-dir",
+          "{case_root}",
+          "--input",
+          "{case_root}/draft.md"
+        ],
+        "expected_exit_codes": [
+          1
+        ],
+        "setup_files": [
+          {
+            "path": "case_config.json",
+            "json": {
+              "case_id": "runtime-hard-ai",
+              "case_name": "AI硬信号运行时评测",
+              "technical_profile": "general",
+              "profile_confirmation": "general",
+              "ai_scope": "model_training"
+            }
+          },
+          {
+            "path": "02_facts/research_facts.json",
+            "json": {
+              "technical_terms": [
+                "神经网络"
+              ],
+              "ai_disclosure": {
+                "model_structure": {
+                  "modules_or_layers": [
+                    "输入层"
+                  ]
+                },
+                "training_process": {
+                  "steps": [
+                    "反向传播"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "path": "03_drafts/latest_disclosure_model.json",
+            "json": {
+              "rule_applicability": {
+                "ai_applicability": "not_applicable"
+              }
+            }
+          },
+          {
+            "path": "draft.md",
+            "text": "## 一、发明名称\nAI硬信号运行时评测\n"
+          }
+        ],
+        "output_json": [
+          {
+            "path": "04_reviews/examination_assessment.json",
+            "contains": {
+              "technical_profile": "general",
+              "ai_applicability": {
+                "signal_level": "hard",
+                "ai_rules_apply": true
+              },
+              "findings": [
+                {
+                  "code": "ai_hard_override_forbidden"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "runtime-feature-claim-closure",
+      "title": "Feature evidence and independent claim closure is enforced",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Only the production validator can prove that dangling evidence and independent-claim mappings remain blocking.",
+      "required_files": [
+        "scripts/python/review/validate_disclosure.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/review/validate_disclosure.py",
+          "terms": [
+            "append_structured_model_findings",
+            "append_examination_findings"
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/review/validate_disclosure.py",
+        "arguments": [
+          "--case-dir",
+          "{case_root}",
+          "--input",
+          "{case_root}/draft.md"
+        ],
+        "expected_exit_codes": [
+          1
+        ],
+        "setup_files": [
+          {
+            "path": "case_config.json",
+            "json": {
+              "case_id": "runtime-closure",
+              "case_name": "支撑闭包运行时评测",
+              "technical_profile": "general",
+              "profile_confirmation": "general",
+              "ai_scope": ""
+            }
+          },
+          {
+            "path": "02_facts/research_facts.json",
+            "json": {}
+          },
+          {
+            "path": "03_drafts/latest_disclosure_model.json",
+            "json": {
+              "contract_version": "4.0",
+              "source_manifest": [],
+              "evidence_registry": {
+                "records": [
+                  {
+                    "evidence_id": "E001",
+                    "text": "研发记录"
+                  }
+                ]
+              },
+              "data_registry": [],
+              "formula_registry": [],
+              "term_registry": [],
+              "figure_registry": [],
+              "sections": [],
+              "cross_references": [],
+              "pending_items": [],
+              "feature_registry": [
+                {
+                  "feature_id": "FT001",
+                  "text": "依据状态生成控制参数",
+                  "section_ids": [
+                    "4.2"
+                  ],
+                  "evidence_ids": [
+                    "E404"
+                  ],
+                  "technical_effects": [
+                    "提高控制确定性"
+                  ]
+                }
+              ],
+              "rule_applicability": {
+                "ai_applicability": "not_applicable"
+              },
+              "semantic_review": {
+                "agent_reviews": [],
+                "human_confirmations": [],
+                "pending_reviews": [
+                  "sections",
+                  "feature_registry"
+                ],
+                "pending_confirmations": [
+                  "ai_applicability"
+                ]
+              },
+              "migration": {
+                "state": "native",
+                "source_contract_version": "4.0",
+                "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+              }
+            }
+          },
+          {
+            "path": "03_drafts/claims_map.json",
+            "json": {
+              "contract_version": "3.0",
+              "claims": [
+                {
+                  "claim_no": 1,
+                  "claim_type": "independent_method",
+                  "feature_ids": [
+                    "FT404"
+                  ],
+                  "support_status": "unsupported"
+                }
+              ],
+              "omitted_candidates": [],
+              "migration": {
+                "state": "native"
+              }
+            }
+          },
+          {
+            "path": "draft.md",
+            "text": "## 一、发明名称\n支撑闭包运行时评测\n"
+          }
+        ],
+        "output_json": [
+          {
+            "path": "04_reviews/validation_report.json",
+            "contains": {
+              "status": "blocked",
+              "findings": [
+                {
+                  "code": "EVD003"
+                }
+              ]
+            }
+          },
+          {
+            "path": "04_reviews/examination_assessment.json",
+            "contains": {
+              "findings": [
+                {
+                  "code": "unsupported_independent_claim"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "runtime-selected-capability-missing",
+      "title": "Selected missing capability returns nonzero",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A dependency inventory without strict exit semantics cannot protect the production pipeline.",
+      "required_files": [
+        "scripts/python/support/check_dependencies.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/support/check_dependencies.py",
+          "terms": [
+            "MODULE_CAPABILITY.main"
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/support/check_dependencies.py",
+        "arguments": [
+          "--capability",
+          "core-model",
+          "--json"
+        ],
+        "no_site_packages": true,
+        "expected_exit_codes": [
+          1
+        ],
+        "stdout_json": {
+          "selected_capabilities": [
+            "core-model"
+          ],
+          "missing_selected": [
+            "core-model"
+          ],
+          "ready": false
+        }
+      }
+    },
+    {
+      "id": "runtime-adversarial-nonsense",
+      "title": "Adversarial nonsense cannot pass semantic delivery",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Headings and repeated keywords can satisfy lint terms while still lacking formal semantic review.",
+      "required_files": [
+        "scripts/python/review/validate_disclosure.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/review/validate_disclosure.py",
+          "terms": [
+            "build_quality_scorecard"
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/review/validate_disclosure.py",
+        "arguments": [
+          "--case-dir",
+          "{case_root}",
+          "--input",
+          "{case_root}/draft.md"
+        ],
+        "expected_exit_codes": [
+          1
+        ],
+        "setup_files": [
+          {
+            "path": "case_config.json",
+            "json": {
+              "case_id": "runtime-nonsense",
+              "case_name": "对抗文本运行时评测",
+              "technical_profile": "general",
+              "profile_confirmation": "general",
+              "ai_scope": ""
+            }
+          },
+          {
+            "path": "02_facts/research_facts.json",
+            "json": {}
+          },
+          {
+            "path": "draft.md",
+            "text": "## 一、发明名称\n通过通过通过\n## 二、所属技术领域\n无意义内容无意义内容无意义内容\n## 三、现有技术（背景技术）\nS101 S102 S103\n### 3.3现有技术的缺点\n通过\n## 四、发明内容：\n### 4.3、技术效果\n通过\n## 六、具体实施方式\n无意义内容无意义内容无意义内容\n"
+          }
+        ],
+        "output_json": [
+          {
+            "path": "04_reviews/validation_report.json",
+            "contains": {
+              "status": "blocked",
+              "scorecard": {
+                "status": "needs_revision",
+                "checks": {
+                  "semantic_review": false,
+                  "human_confirmation": false,
+                  "formal_model": false
+                }
+              },
+              "findings": [
+                {
+                  "code": "quality_semantic_review_required"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "runtime-delivered-model-closure",
+      "title": "Reviewed Model 4 and Claims Map 3 reach completed delivery validation",
+      "mode": "runtime",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Only the production validator can prove that a provenance-bound reviewed model closes validation, examination, scorecard, and visual-review gates together.",
+      "required_files": [
+        "scripts/python/review/validate_disclosure.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/review/validate_disclosure.py",
+          "terms": [
+            "is_visual_review_complete",
+            "append_structured_model_findings",
+            "examination_assessment.json"
+          ]
+        }
+      ],
+      "runtime": {
+        "entrypoint": "scripts/python/review/validate_disclosure.py",
+        "arguments": [
+          "--case-dir",
+          "{case_root}",
+          "--input",
+          "{case_root}/03_drafts/disclosure_draft.md",
+          "--model",
+          "{case_root}/03_drafts/reviewed-model-031.json"
+        ],
+        "expected_exit_codes": [
+          0
+        ],
+        "setup_files": [
+          {
+            "path": "case_config.json",
+            "text": "{\r\n  \"case_name\": \"权威审查重入测试\",\r\n  \"case_slug\": \"权威审查重入测试\",\r\n  \"research_root\": \"<REDACTED_LOCAL_PATH>",\r\n  \"created_at\": \"2026-07-21T04:13:13\",\r\n  \"case_dir\": \"<REDACTED_LOCAL_PATH>",\r\n  \"technical_profile\": \"general\",\r\n  \"ai_scope\": \"\"\r\n}"
+          },
+          {
+            "path": "02_facts/research_facts.json",
+            "text": "{\r\n  \"case_name\": \"权威审查重入测试\",\r\n  \"research_root\": \"<REDACTED_LOCAL_PATH>",\r\n  \"generated_at\": \"2026-07-20T20:13:14.151950+00:00\",\r\n  \"sources\": [\r\n    {\r\n      \"path\": \"README.md\",\r\n      \"summary\": \"# 示例研究：边缘设备任务调度方法；多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n      \"title_candidates\": [\r\n        \"边缘设备任务调度方法\"\r\n      ],\r\n      \"technical_terms\": [\r\n        \"weight_i\",\r\n        \"CPU\",\r\n        \"times\",\r\n        \"传统固定轮询调度会忽略设备当前负载和网络延迟\",\r\n        \"多个边缘设备同时处理传感器数据时\",\r\n        \"导致部分任务排队时间较长\",\r\n        \"并且在设备短时离线时产生重复重试\",\r\n        \"+0.25\",\r\n        \"200ms\",\r\n        \"max\",\r\n        \"min\",\r\n        \"priority_t\",\r\n        \"weight_i+0.1\",\r\n        \"占用率不超过\",\r\n        \"台边缘设备和\",\r\n        \"在模拟的\",\r\n        \"平均排队时间降低约\",\r\n        \"并在连续\",\r\n        \"并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n        \"恢复设备权重\"\r\n      ],\r\n      \"technical_problem_evidence\": [\r\n        {\r\n          \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"背景问题\",\r\n          \"kind\": \"technical_problem\",\r\n          \"confidence\": \"high\"\r\n        }\r\n      ],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [\r\n        {\r\n          \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术效果\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"prior_art_evidence\": [\r\n        {\r\n          \"text\": \"baseline 为固定轮询调度和基于单一 CPU 负载的\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"现有技术\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"score(t, i)=0.35 \\\\times (1-cpu_i)+0.25 \\\\times (1-q_i)+0.25 \\\\times (1-l_i)+0.15 \\\\times priority_t \\\\times weight_i\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"其中，`priority_t` 取值为 1、2 或 3，`weight_i` 初始值为 1\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ]\r\n    },\r\n    {\r\n      \"path\": \"prior_art_records.json\",\r\n      \"summary\": \"\\\"records\\\"；\\\"publication_no_or_title\\\": \\\"CN110000001A 一种基于负载的边缘计算任务调度方法\\\"\",\r\n      \"title_candidates\": [\r\n        \"prior_art_records\"\r\n      ],\r\n      \"technical_terms\": [\r\n        \"未在失败反馈后通过反馈队列更新设备权重\",\r\n        \"未结合网络响应延迟和任务优先级计算匹配分数\",\r\n        \"减少短时离线设备导致的重复重试\",\r\n        \"actual_technical_problem\",\r\n        \"conclusion\",\r\n        \"在负载和网络状态同时变化时降低任务排队时间\",\r\n        \"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\",\r\n        \"技术启示\",\r\n        \"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确\",\r\n        \"CN110000001A\",\r\n        \"publication_no_or_title\",\r\n        \"一种基于负载的边缘计算任务调度方法\",\r\n        \"将任务分配给候选设备\",\r\n        \"采集边缘设备负载状态\"\r\n      ],\r\n      \"technical_problem_evidence\": [\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_problem\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"actual_technical_problem\\\": \\\"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_problem\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"\\\"publication_no_or_title\\\": \\\"CN110000001A 一种基于负载的边缘计算任务调度方法\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"采集边缘设备负载状态\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"将任务分配给候选设备\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\": \\\"在负载和网络状态同时变化时降低任务排队时间\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"conclusion\\\": \\\"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\": \\\"在负载和网络状态同时变化时降低任务排队时间\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"actual_technical_problem\\\": \\\"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"prior_art_evidence\": [\r\n        {\r\n          \"text\": \"\\\"conclusion\\\": \\\"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ]\r\n    },\r\n    {\r\n      \"path\": \"cnipa_sample_results.html\",\r\n      \"summary\": \"DOCTYPE html>；<html lang=\\\"zh-CN\\\">\",\r\n      \"title_candidates\": [\r\n        \"cnipa_sample_results\"\r\n      ],\r\n      \"technical_terms\": [\r\n        \"CN110000001A\",\r\n        \"一种基于负载的边缘计算任务调度方法\",\r\n        \"本发明公开了一种基于负载的边缘计算任务调度方法\",\r\n        \"通过采集候选设备状态选择任务执行节点\"\r\n      ],\r\n      \"technical_problem_evidence\": [],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"CN110000001A 一种基于负载的边缘计算任务调度方法\",\r\n          \"path\": \"cnipa_sample_results.html\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"本发明公开了一种基于负载的边缘计算任务调度方法，通过采集候选设备状态选择任务执行节点\",\r\n          \"path\": \"cnipa_sample_results.html\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [],\r\n      \"prior_art_evidence\": []\r\n    },\r\n    {\r\n      \"path\": \"formula_facts.json\",\r\n      \"summary\": \"\\\"formula_id\\\": \\\"F001\\\"；\\\"display_number\\\": \\\"1\\\"\",\r\n      \"title_candidates\": [\r\n        \"formula_facts\"\r\n      ],\r\n      \"technical_terms\": [\r\n        \"times\",\r\n        \"+0.25\",\r\n        \"domain\",\r\n        \"meaning\",\r\n        \"name\",\r\n        \"priority_t\",\r\n        \"unit\",\r\n        \"+0.15\",\r\n        \"1-cpu_i\",\r\n        \"1-l_i\",\r\n        \"1-q_i\",\r\n        \"l_i\",\r\n        \"latex\",\r\n        \"purpose\",\r\n        \"score\",\r\n        \"weight_i\",\r\n        \"任务t的优先级\",\r\n        \"计算任务与边缘设备之间的动态匹配分数\",\r\n        \"设备i的归一化响应延迟\"\r\n      ],\r\n      \"technical_problem_evidence\": [],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"\\\"purpose\\\": \\\"计算任务与边缘设备之间的动态匹配分数\\\"\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [\r\n        {\r\n          \"text\": \"{\\\"name\\\": \\\"l_i\\\", \\\"meaning\\\": \\\"设备i的归一化响应延迟\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"[0,1]\\\"}\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"prior_art_evidence\": [\r\n        {\r\n          \"text\": \"\\\"latex\\\": \\\"score(t, i)=0.35 \\\\\\\\times (1-cpu_i)+0.25 \\\\\\\\times (1-q_i)+0.25 \\\\\\\\times (1-l_i)+0.15 \\\\\\\\times priority_t \\\\\\\\times weight_i\\\"\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"{\\\"name\\\": \\\"priority_t\\\", \\\"meaning\\\": \\\"任务t的优先级\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"{1,2,3}\\\"}\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ]\r\n    }\r\n  ],\r\n  \"candidate_invention_points\": [\r\n    {\r\n      \"name\": \"边缘设备任务调度方法\",\r\n      \"problem\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n      \"solution\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法；系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\r\n      \"effects\": [\r\n        \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\r\n        \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n        \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\"\r\n      ],\r\n      \"source_paths\": [\r\n        \"README.md\"\r\n      ],\r\n      \"confidence\": \"high\",\r\n      \"technical_terms\": [\r\n        \"weight_i\",\r\n        \"CPU\",\r\n        \"times\",\r\n        \"传统固定轮询调度会忽略设备当前负载和网络延迟\",\r\n        \"多个边缘设备同时处理传感器数据时\",\r\n        \"导致部分任务排队时间较长\",\r\n        \"并且在设备短时离线时产生重复重试\",\r\n        \"+0.25\",\r\n        \"200ms\",\r\n        \"max\",\r\n        \"min\",\r\n        \"priority_t\"\r\n      ],\r\n      \"technical_problem_evidence\": [\r\n        {\r\n          \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"背景问题\",\r\n          \"kind\": \"technical_problem\",\r\n          \"confidence\": \"high\"\r\n        }\r\n      ],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术方案\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"high\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [\r\n        {\r\n          \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"技术效果\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"prior_art_evidence\": [\r\n        {\r\n          \"text\": \"baseline 为固定轮询调度和基于单一 CPU 负载的\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"现有技术\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"high\"\r\n        },\r\n        {\r\n          \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"score(t, i)=0.35 \\\\times (1-cpu_i)+0.25 \\\\times (1-q_i)+0.25 \\\\times (1-l_i)+0.15 \\\\times priority_t \\\\times weight_i\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"其中，`priority_t` 取值为 1、2 或 3，`weight_i` 初始值为 1\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\r\n          \"path\": \"README.md\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ]\r\n    },\r\n    {\r\n      \"name\": \"prior_art_records\",\r\n      \"problem\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n      \"solution\": \"\\\"publication_no_or_title\\\": \\\"CN110000001A 一种基于负载的边缘计算任务调度方法\\\"；\\\"采集边缘设备负载状态\\\"\",\r\n      \"effects\": [\r\n        \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\"\",\r\n        \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\": \\\"在负载和网络状态同时变化时降低任务排队时间\\\"\",\r\n        \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\"\r\n      ],\r\n      \"source_paths\": [\r\n        \"prior_art_records.json\"\r\n      ],\r\n      \"confidence\": \"high\",\r\n      \"technical_terms\": [\r\n        \"未在失败反馈后通过反馈队列更新设备权重\",\r\n        \"未结合网络响应延迟和任务优先级计算匹配分数\",\r\n        \"减少短时离线设备导致的重复重试\",\r\n        \"actual_technical_problem\",\r\n        \"conclusion\",\r\n        \"在负载和网络状态同时变化时降低任务排队时间\",\r\n        \"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\",\r\n        \"技术启示\",\r\n        \"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确\",\r\n        \"CN110000001A\",\r\n        \"publication_no_or_title\",\r\n        \"一种基于负载的边缘计算任务调度方法\"\r\n      ],\r\n      \"technical_problem_evidence\": [\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_problem\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"actual_technical_problem\\\": \\\"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_problem\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"\\\"publication_no_or_title\\\": \\\"CN110000001A 一种基于负载的边缘计算任务调度方法\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"采集边缘设备负载状态\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"将任务分配给候选设备\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\": \\\"在负载和网络状态同时变化时降低任务排队时间\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"conclusion\\\": \\\"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\": \\\"在负载和网络状态同时变化时降低任务排队时间\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"\\\"actual_technical_problem\\\": \\\"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"prior_art_evidence\": [\r\n        {\r\n          \"text\": \"\\\"conclusion\\\": \\\"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\\\"\",\r\n          \"path\": \"prior_art_records.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ]\r\n    },\r\n    {\r\n      \"name\": \"cnipa_sample_results\",\r\n      \"problem\": \"[待确认：核心技术问题]\",\r\n      \"solution\": \"CN110000001A 一种基于负载的边缘计算任务调度方法；本发明公开了一种基于负载的边缘计算任务调度方法，通过采集候选设备状态选择任务执行节点\",\r\n      \"effects\": [\r\n        \"[待确认：技术效果]\"\r\n      ],\r\n      \"source_paths\": [\r\n        \"cnipa_sample_results.html\"\r\n      ],\r\n      \"confidence\": \"low\",\r\n      \"technical_terms\": [\r\n        \"CN110000001A\",\r\n        \"一种基于负载的边缘计算任务调度方法\",\r\n        \"本发明公开了一种基于负载的边缘计算任务调度方法\",\r\n        \"通过采集候选设备状态选择任务执行节点\"\r\n      ],\r\n      \"technical_problem_evidence\": [],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"CN110000001A 一种基于负载的边缘计算任务调度方法\",\r\n          \"path\": \"cnipa_sample_results.html\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"本发明公开了一种基于负载的边缘计算任务调度方法，通过采集候选设备状态选择任务执行节点\",\r\n          \"path\": \"cnipa_sample_results.html\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [],\r\n      \"prior_art_evidence\": []\r\n    },\r\n    {\r\n      \"name\": \"formula_facts\",\r\n      \"problem\": \"[待确认：核心技术问题]\",\r\n      \"solution\": \"\\\"purpose\\\": \\\"计算任务与边缘设备之间的动态匹配分数\\\"\",\r\n      \"effects\": [\r\n        \"{\\\"name\\\": \\\"l_i\\\", \\\"meaning\\\": \\\"设备i的归一化响应延迟\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"[0,1]\\\"}\"\r\n      ],\r\n      \"source_paths\": [\r\n        \"formula_facts.json\"\r\n      ],\r\n      \"confidence\": \"medium\",\r\n      \"technical_terms\": [\r\n        \"times\",\r\n        \"+0.25\",\r\n        \"domain\",\r\n        \"meaning\",\r\n        \"name\",\r\n        \"priority_t\",\r\n        \"unit\",\r\n        \"+0.15\",\r\n        \"1-cpu_i\",\r\n        \"1-l_i\",\r\n        \"1-q_i\",\r\n        \"l_i\"\r\n      ],\r\n      \"technical_problem_evidence\": [],\r\n      \"technical_solution_evidence\": [\r\n        {\r\n          \"text\": \"\\\"purpose\\\": \\\"计算任务与边缘设备之间的动态匹配分数\\\"\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_solution\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"technical_effect_evidence\": [\r\n        {\r\n          \"text\": \"{\\\"name\\\": \\\"l_i\\\", \\\"meaning\\\": \\\"设备i的归一化响应延迟\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"[0,1]\\\"}\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"technical_effect\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ],\r\n      \"prior_art_evidence\": [\r\n        {\r\n          \"text\": \"\\\"latex\\\": \\\"score(t, i)=0.35 \\\\\\\\times (1-cpu_i)+0.25 \\\\\\\\times (1-q_i)+0.25 \\\\\\\\times (1-l_i)+0.15 \\\\\\\\times priority_t \\\\\\\\times weight_i\\\"\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        },\r\n        {\r\n          \"text\": \"{\\\"name\\\": \\\"priority_t\\\", \\\"meaning\\\": \\\"任务t的优先级\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"{1,2,3}\\\"}\",\r\n          \"path\": \"formula_facts.json\",\r\n          \"section\": \"全文\",\r\n          \"kind\": \"prior_art_or_baseline\",\r\n          \"confidence\": \"medium\"\r\n        }\r\n      ]\r\n    }\r\n  ],\r\n  \"prior_art_notes\": [\r\n    \"README.md: baseline 为固定轮询调度和基于单一 CPU 负载的\",\r\n    \"README.md: 多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n    \"README.md: score(t, i)=0.35 \\\\times (1-cpu_i)+0.25 \\\\times (1-q_i)+0.25 \\\\times (1-l_i)+0.15 \\\\times priority_t \\\\times weight_i\",\r\n    \"README.md: 其中，`priority_t` 取值为 1、2 或 3，`weight_i` 初始值为 1\",\r\n    \"prior_art_records.json: \\\"conclusion\\\": \\\"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\\\"\",\r\n    \"formula_facts.json: \\\"latex\\\": \\\"score(t, i)=0.35 \\\\\\\\times (1-cpu_i)+0.25 \\\\\\\\times (1-q_i)+0.25 \\\\\\\\times (1-l_i)+0.15 \\\\\\\\times priority_t \\\\\\\\times weight_i\\\"\",\r\n    \"formula_facts.json: {\\\"name\\\": \\\"priority_t\\\", \\\"meaning\\\": \\\"任务t的优先级\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"{1,2,3}\\\"}\"\r\n  ],\r\n  \"technical_terms\": [\r\n    \"weight_i\",\r\n    \"CN110000001A\",\r\n    \"CPU\",\r\n    \"一种基于负载的边缘计算任务调度方法\",\r\n    \"l_i\",\r\n    \"减少短时离线设备导致的重复重试\",\r\n    \"待确认\",\r\n    \"未在失败反馈后通过反馈队列更新设备权重\",\r\n    \"未结合网络响应延迟和任务优先级计算匹配分数\",\r\n    \"+0.25\",\r\n    \"200ms\",\r\n    \"domain\",\r\n    \"max\",\r\n    \"meaning\",\r\n    \"min\",\r\n    \"name\",\r\n    \"priority_t\",\r\n    \"publication_no_or_title\",\r\n    \"purpose\",\r\n    \"times\",\r\n    \"unit\",\r\n    \"weight_i+0.1\",\r\n    \"传统固定轮询调度会忽略设备当前负载和网络延迟\",\r\n    \"占用率不超过\",\r\n    \"台边缘设备和\",\r\n    \"在模拟的\",\r\n    \"在负载和网络状态同时变化时降低任务排队时间\",\r\n    \"多个边缘设备同时处理传感器数据时\",\r\n    \"导致部分任务排队时间较长\",\r\n    \"平均排队时间降低约\",\r\n    \"并且在设备短时离线时产生重复重试\",\r\n    \"并在连续\",\r\n    \"并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n    \"恢复设备权重\",\r\n    \"本发明公开了一种基于负载的边缘计算任务调度方法\",\r\n    \"核心技术问题\",\r\n    \"计算任务与边缘设备之间的动态匹配分数\",\r\n    \"设备i的归一化响应延迟\",\r\n    \"通过采集候选设备状态选择任务执行节点\",\r\n    \"采集边缘设备负载状态\",\r\n    \"+0.15\",\r\n    \"1-cpu_i\",\r\n    \"1-l_i\",\r\n    \"1-q_i\",\r\n    \"actual_technical_problem\",\r\n    \"cnipa_sample_results\",\r\n    \"conclusion\",\r\n    \"cpu_i\",\r\n    \"formula_facts\",\r\n    \"latex\",\r\n    \"prior_art_records\",\r\n    \"q_i\",\r\n    \"score\",\r\n    \"任务t的优先级\",\r\n    \"占用率\",\r\n    \"占用率归一化为\",\r\n    \"响应延迟归一化为\",\r\n    \"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\",\r\n    \"将任务分配给候选设备\",\r\n    \"并将\",\r\n    \"技术启示\",\r\n    \"技术效果\",\r\n    \"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确\",\r\n    \"本研究提出一种基于负载状态\",\r\n    \"条且最近一次响应延迟不超过\",\r\n    \"条任务请求下\",\r\n    \"次成功响应后按照\",\r\n    \"相比固定轮询策略\",\r\n    \"系统在下一轮评分前按照\",\r\n    \"系统设置阈值条件为\",\r\n    \"系统采集每个边缘设备的\",\r\n    \"网络延迟和任务优先级的动态调度方法\",\r\n    \"边缘设备任务调度方法\",\r\n    \"重复重试次数降低约\",\r\n    \"队列长度不超过\",\r\n    \"队列长度和最近一次响应延迟\",\r\n    \"队列长度归一化为\",\r\n    \"降低失败设备权重\"\r\n  ],\r\n  \"missing_information\": [\r\n    \"申请人、发明人和联系人等表单信息通常需要人工补充。\"\r\n  ]\r\n}"
+          },
+          {
+            "path": "02_facts/prior_art_records.json",
+            "text": "{\n  \"records\": [\n    {\n      \"publication_no_or_title\": \"CN110000001A 一种基于负载的边缘计算任务调度方法\",\n      \"publication_date\": \"2020-01-03\",\n      \"source_url_or_database\": \"CNIPA\",\n      \"verified\": true,\n      \"same_features\": [\n        \"采集边缘设备负载状态\",\n        \"根据 CPU 负载选择候选设备\",\n        \"将任务分配给候选设备\"\n      ],\n      \"different_features\": [\n        \"未结合网络响应延迟和任务优先级计算匹配分数\",\n        \"未在失败反馈后通过反馈队列更新设备权重\"\n      ],\n      \"difference_effects\": {\n        \"未结合网络响应延迟和任务优先级计算匹配分数\": \"在负载和网络状态同时变化时降低任务排队时间\",\n        \"未在失败反馈后通过反馈队列更新设备权重\": \"减少短时离线设备导致的重复重试\"\n      },\n      \"actual_technical_problem\": \"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\",\n      \"technical_motivation\": {\n        \"conclusion\": \"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\",\n        \"evidence\": \"已核验记录仅公开基于单一CPU负载的候选选择和任务分配\"\n      },\n      \"technical_effect\": \"通过多指标匹配和失败反馈降低任务排队与重复重试\",\n      \"creativity_impact\": \"close\",\n      \"notes\": \"此记录用于本地夹具验证，正式案件应替换为真实核验结果。\"\n    }\n  ]\n}\n"
+          },
+          {
+            "path": "03_drafts/disclosure_draft.md",
+            "text": "# 发明/实用新型专利申请技术交底书\r\n\r\n案件：权威审查重入测试\r\n\r\n## 一、发明名称\r\n\r\n一种边缘设备任务调度方法\r\n\r\n## 二、所属技术领域\r\n\r\n本发明属于计算机数据处理与工程系统优化技术领域，具体涉及 一种边缘设备任务调度方法。\r\n\r\n## 三、现有技术（背景技术）\r\n\r\n### 3.1相关技术背景以及最接近的现有技术\r\n\r\nCN110000001A 一种基于负载的边缘计算任务调度方法 所代表的现有方案以 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备 为主要技术机制；其应用约束在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\r\n\r\n### 3.2与本发明最相似的现有技术实现方案\r\n\r\nCN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\r\n\r\n### 3.3现有技术的缺点\r\n\r\n1. 多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试。\r\n\r\n参考文献\r\n\r\n[1] CN110000001A 一种基于负载的边缘计算任务调度方法. 公开日：2020-01-03. 来源：CNIPA.\r\n\r\n## 四、发明内容：\r\n\r\n### 4.1 发明目的\r\n\r\n本发明旨在针对“多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试”所对应的处理缺口，形成可执行、可复核、可迭代的技术方案。\r\n\r\n### 4.2 技术解决方案\r\n\r\n#### 4.2.1 装置、结构类\r\n\r\n1. 处理模块，用于 本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\r\n2. 状态采集模块，用于 系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\r\n3. 评分筛选模块，用于 系统计算任务 `t` 与设备 `i` 之间的匹配分数\r\n4. 任务分配模块，用于 系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\r\n#### 4.2.2 方法类\r\n\r\nS101：本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\r\n\r\n本步骤的触发条件为：当接收到待处理输入时执行。\r\n输入为：待处理输入\r\n技术动作为：本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\r\n输出为：阶段结果\r\n\r\nS102：系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\r\n\r\n本步骤的触发条件为：当接收到任务请求或原始状态数据时执行。\r\n输入为：任务请求或原始状态数据\r\n技术动作为：系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\r\n输出为：状态采集结果\r\n\r\nS103：系统计算任务 `t` 与设备 `i` 之间的匹配分数\r\n\r\n本步骤的触发条件为：当接收到状态采集结果时执行。\r\n输入为：状态采集结果\r\n技术动作为：系统计算任务 `t` 与设备 `i` 之间的匹配分数\r\n输出为：匹配评分结果\r\n\r\nS104：系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\r\n\r\n本步骤的触发条件为：当接收到匹配评分结果时执行。\r\n输入为：匹配评分结果\r\n技术动作为：系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\r\n输出为：任务分配结果\r\n\r\n\r\n在一个实施例中，所述评分、筛选或参数更新逻辑可结合本地研发材料中的公式表达进一步限定如下：\r\n\r\n$$\r\nscore(t, i)=0.35 \\times (1-cpu_i)+0.25 \\times (1-q_i)+0.25 \\times (1-l_i)+0.15 \\times priority_t \\times weight_i\r\n$$\r\n\r\n\r\n### 4.3、技术效果\r\n\r\n1. 在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%。\r\n2. 系统在下一轮评分前按照 $weight_i=\\max(0.2, weight_i\\times 0.8)$ 降低失败设备权重，并在连续 5 次成功响应后按照 $weight_i=\\min(1, weight_i+0.1)$ 恢复设备权重。\r\n\r\n## 五、附图及附图的简单说明\r\n\r\n图 1 为方法流程图，用于示出 S101 起至末步骤的处理流程。\r\n图 2 为系统模块图，用于示出状态采集、评分筛选、任务分配和反馈更新之间的数据关系。\r\n\r\n## 六、具体实施方式\r\n\r\n在一个基本实施例中，系统先接收待处理输入，再依次执行 4.2.1 所述步骤，并把每一步输出作为下一步骤输入。\r\n在异常实施例中，当候选对象响应失败、状态不满足阈值或反馈记录出现异常时，系统触发回退与更新逻辑，避免持续选择不可用对象。\r\n在效果验证实施例中，应至少记录输入规模、运行环境、评价指标和对比对象，以支撑 4.3 小节技术效果。\r\n\r\n"
+          },
+          {
+            "path": "03_drafts/preview_status.json",
+            "text": "{\r\n  \"confirmed\": true,\r\n  \"status\": \"confirmed\",\r\n  \"notes\": [],\r\n  \"review_closed\": true,\r\n  \"review_findings\": [],\r\n  \"profile_check\": {\r\n    \"configured_profile\": \"general\",\r\n    \"suggested_profile\": \"general\",\r\n    \"effective_profile\": \"general\",\r\n    \"confirmation_required\": false,\r\n    \"decision\": \"not_required\",\r\n    \"ai_signal_level\": \"none\",\r\n    \"ai_rules_mandatory\": false,\r\n    \"reason_codes\": []\r\n  },\r\n  \"draft_hash\": \"e0eab6b57c04eb3e4b07622fe2546384b9e5e4202788c0a476a17b0ab4ae2414\",\r\n  \"template_hash\": \"8836362d46fcb0a1927bc7e81a7e092666865e239d668256400bba3cbfd86ab5\",\r\n  \"inference_ids\": [\r\n    \"INF-001\"\r\n  ],\r\n  \"inferences_confirmed\": true,\r\n  \"authoring_status\": \"ready_for_export\"\r\n}"
+          },
+          {
+            "path": "03_drafts/claims_draft.md",
+            "text": "# 权利要求草案\r\n\r\n## 一、权利要求书\r\n\r\n1. 一种边缘设备任务调度方法，其特征在于，包括：\r\n   S101，本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法；\r\n   S102，系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`；\r\n   S103，系统计算任务 `t` 与设备 `i` 之间的匹配分数；\r\n   S104，系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备。\r\n\r\n\r\n## 二、说明书映射说明\r\n\r\n- 权利要求1对应正文 4.2.1 方法流程中的全部步骤。\r\n- 从属方法权利要求仅来自已登记来源编号的收窄特征。\r\n- 系统、设备和介质候选在缺少独立来源映射时不自动生成。\r\n"
+          },
+          {
+            "path": "03_drafts/claims_map.json",
+            "text": "{\r\n  \"contract_version\": \"3.0\",\r\n  \"claims\": [\r\n    {\r\n      \"claim_no\": 1,\r\n      \"claim_type\": \"independent_method\",\r\n      \"mapped_steps\": [\r\n        \"S101\",\r\n        \"S102\",\r\n        \"S103\",\r\n        \"S104\"\r\n      ],\r\n      \"feature_ids\": [\r\n        \"FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\r\n        \"FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\r\n        \"FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\r\n        \"FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\"\r\n      ],\r\n      \"support_ids\": [\r\n        \"E-PROB-1\",\r\n        \"E-SOL-1\",\r\n        \"E-SOL-3\",\r\n        \"E-SOL-4\",\r\n        \"E-SOL-5\",\r\n        \"E-EFF-1\",\r\n        \"E-EFF-2\",\r\n        \"E-EFF-4\",\r\n        \"E-EFF-5\",\r\n        \"E-PRIOR-1\",\r\n        \"E-SOL-2\"\r\n      ],\r\n      \"support_status\": \"supported\",\r\n      \"unsupported_features\": [],\r\n      \"unsupported_feature_ids\": []\r\n    }\r\n  ],\r\n  \"omitted_candidates\": [\r\n    {\r\n      \"claim_type\": \"independent_system\",\r\n      \"reason\": \"缺少逐模块来源映射\"\r\n    },\r\n    {\r\n      \"claim_type\": \"independent_device\",\r\n      \"reason\": \"缺少设备结构来源映射\"\r\n    },\r\n    {\r\n      \"claim_type\": \"independent_medium\",\r\n      \"reason\": \"缺少介质客体来源映射\"\r\n    }\r\n  ],\r\n  \"migration\": {\r\n    \"state\": \"native\"\r\n  }\r\n}"
+          },
+          {
+            "path": "03_drafts/latest_evidence_map.json",
+            "text": "{\r\n  \"generated_at\": \"2026-07-21T04:13:14\",\r\n  \"case_dir\": \"<REDACTED_LOCAL_PATH>",\r\n  \"evidence_index\": [\r\n    {\r\n      \"id\": \"E-PROB-1\",\r\n      \"kind\": \"problem\",\r\n      \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n      \"keywords\": [\r\n        \"任务\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-SOL-1\",\r\n      \"kind\": \"solution\",\r\n      \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n      \"keywords\": [\r\n        \"状态\",\r\n        \"任务\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-SOL-2\",\r\n      \"kind\": \"solution\",\r\n      \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\r\n      \"keywords\": [\r\n        \"采集\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-SOL-3\",\r\n      \"kind\": \"solution\",\r\n      \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\r\n      \"keywords\": [\r\n        \"任务\",\r\n        \"计算\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-SOL-4\",\r\n      \"kind\": \"solution\",\r\n      \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n      \"keywords\": [\r\n        \"任务\",\r\n        \"分配\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-SOL-5\",\r\n      \"kind\": \"solution\",\r\n      \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\r\n      \"keywords\": [\r\n        \"状态\",\r\n        \"任务\",\r\n        \"反馈\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-SOL-6\",\r\n      \"kind\": \"solution\",\r\n      \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\r\n      \"keywords\": [\r\n        \"评分\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-EFF-1\",\r\n      \"kind\": \"effect\",\r\n      \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\r\n      \"keywords\": [\r\n        \"任务\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-EFF-2\",\r\n      \"kind\": \"effect\",\r\n      \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n      \"keywords\": [\r\n        \"任务\",\r\n        \"分配\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-EFF-3\",\r\n      \"kind\": \"effect\",\r\n      \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\r\n      \"keywords\": [\r\n        \"评分\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-EFF-4\",\r\n      \"kind\": \"effect\",\r\n      \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\r\n      \"keywords\": [\r\n        \"任务\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-EFF-5\",\r\n      \"kind\": \"effect\",\r\n      \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n      \"keywords\": [\r\n        \"状态\",\r\n        \"任务\"\r\n      ]\r\n    },\r\n    {\r\n      \"id\": \"E-PRIOR-1\",\r\n      \"kind\": \"prior_art\",\r\n      \"text\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\",\r\n      \"keywords\": [\r\n        \"状态\",\r\n        \"采集\",\r\n        \"任务\",\r\n        \"计算\",\r\n        \"分配\",\r\n        \"选择\",\r\n        \"反馈\",\r\n        \"更新\"\r\n      ],\r\n      \"publication_date\": \"2020-01-03\",\r\n      \"reference_date\": \"\",\r\n      \"uses\": [\r\n        \"background_only\"\r\n      ]\r\n    }\r\n  ],\r\n  \"features\": [\r\n    {\r\n      \"type\": \"method_step\",\r\n      \"step\": \"S101\",\r\n      \"feature\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\r\n      \"support_ids\": [\r\n        \"E-PROB-1\",\r\n        \"E-SOL-1\",\r\n        \"E-SOL-3\",\r\n        \"E-SOL-4\",\r\n        \"E-SOL-5\",\r\n        \"E-EFF-1\",\r\n        \"E-EFF-2\",\r\n        \"E-EFF-4\",\r\n        \"E-EFF-5\",\r\n        \"E-PRIOR-1\"\r\n      ]\r\n    },\r\n    {\r\n      \"type\": \"method_step\",\r\n      \"step\": \"S102\",\r\n      \"feature\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\r\n      \"support_ids\": [\r\n        \"E-SOL-2\",\r\n        \"E-PRIOR-1\"\r\n      ]\r\n    },\r\n    {\r\n      \"type\": \"method_step\",\r\n      \"step\": \"S103\",\r\n      \"feature\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\r\n      \"support_ids\": [\r\n        \"E-PROB-1\",\r\n        \"E-SOL-1\",\r\n        \"E-SOL-3\",\r\n        \"E-SOL-4\",\r\n        \"E-SOL-5\",\r\n        \"E-EFF-1\",\r\n        \"E-EFF-2\",\r\n        \"E-EFF-4\",\r\n        \"E-EFF-5\",\r\n        \"E-PRIOR-1\"\r\n      ]\r\n    },\r\n    {\r\n      \"type\": \"method_step\",\r\n      \"step\": \"S104\",\r\n      \"feature\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\r\n      \"support_ids\": [\r\n        \"E-PROB-1\",\r\n        \"E-SOL-1\",\r\n        \"E-SOL-3\",\r\n        \"E-SOL-4\",\r\n        \"E-SOL-5\",\r\n        \"E-EFF-1\",\r\n        \"E-EFF-2\",\r\n        \"E-EFF-4\",\r\n        \"E-EFF-5\",\r\n        \"E-PRIOR-1\"\r\n      ]\r\n    }\r\n  ]\r\n}"
+          },
+          {
+            "path": "03_drafts/reviewed-model-031.json",
+            "text": "{\n  \"contract_version\": \"4.0\",\n  \"source_manifest\": [\n    {\n      \"source_id\": \"S001\",\n      \"path\": \"README.md\",\n      \"role\": \"invention_evidence\",\n      \"source_texts\": [\n        \"边缘设备任务调度方法\",\n        \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法；系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n        \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\n        \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n        \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n        \"README.md\",\n        \"high\",\n        \"weight_i\",\n        \"CPU\",\n        \"times\",\n        \"传统固定轮询调度会忽略设备当前负载和网络延迟\",\n        \"多个边缘设备同时处理传感器数据时\",\n        \"导致部分任务排队时间较长\",\n        \"并且在设备短时离线时产生重复重试\",\n        \"+0.25\",\n        \"200ms\",\n        \"max\",\n        \"min\",\n        \"priority_t\",\n        \"背景问题\",\n        \"technical_problem\",\n        \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n        \"技术方案\",\n        \"technical_solution\",\n        \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n        \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\n        \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\n        \"技术效果\",\n        \"technical_effect\",\n        \"全文\",\n        \"medium\",\n        \"baseline 为固定轮询调度和基于单一 CPU 负载的\",\n        \"现有技术\",\n        \"prior_art_or_baseline\",\n        \"score(t, i)=0.35 \\\\times (1-cpu_i)+0.25 \\\\times (1-q_i)+0.25 \\\\times (1-l_i)+0.15 \\\\times priority_t \\\\times weight_i\",\n        \"其中，`priority_t` 取值为 1、2 或 3，`weight_i` 初始值为 1\"\n      ]\n    },\n    {\n      \"source_id\": \"S002\",\n      \"path\": \"prior_art_records.json\",\n      \"role\": \"invention_evidence\",\n      \"source_texts\": [\n        \"prior_art_records\",\n        \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\": \\\"减少短时离线设备导致的重复重试\\\"\",\n        \"\\\"publication_no_or_title\\\": \\\"CN110000001A 一种基于负载的边缘计算任务调度方法\\\"；\\\"采集边缘设备负载状态\\\"\",\n        \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\"\",\n        \"\\\"未结合网络响应延迟和任务优先级计算匹配分数\\\": \\\"在负载和网络状态同时变化时降低任务排队时间\\\"\",\n        \"prior_art_records.json\",\n        \"high\",\n        \"未在失败反馈后通过反馈队列更新设备权重\",\n        \"未结合网络响应延迟和任务优先级计算匹配分数\",\n        \"减少短时离线设备导致的重复重试\",\n        \"actual_technical_problem\",\n        \"conclusion\",\n        \"在负载和网络状态同时变化时降低任务排队时间\",\n        \"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\",\n        \"技术启示\",\n        \"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确\",\n        \"CN110000001A\",\n        \"publication_no_or_title\",\n        \"一种基于负载的边缘计算任务调度方法\",\n        \"全文\",\n        \"technical_problem\",\n        \"medium\",\n        \"\\\"actual_technical_problem\\\": \\\"如何在边缘设备负载变化和短时离线时降低排队时间和重复重试\\\"\",\n        \"\\\"publication_no_or_title\\\": \\\"CN110000001A 一种基于负载的边缘计算任务调度方法\\\"\",\n        \"technical_solution\",\n        \"\\\"采集边缘设备负载状态\\\"\",\n        \"\\\"将任务分配给候选设备\\\"\",\n        \"\\\"未在失败反馈后通过反馈队列更新设备权重\\\"\",\n        \"\\\"conclusion\\\": \\\"未发现该最接近现有技术给出组合多指标匹配与失败反馈权重更新的明确技术启示\\\"\",\n        \"technical_effect\",\n        \"prior_art_or_baseline\"\n      ]\n    },\n    {\n      \"source_id\": \"S003\",\n      \"path\": \"cnipa_sample_results.html\",\n      \"role\": \"invention_evidence\",\n      \"source_texts\": [\n        \"cnipa_sample_results\",\n        \"[待确认：核心技术问题]\",\n        \"CN110000001A 一种基于负载的边缘计算任务调度方法；本发明公开了一种基于负载的边缘计算任务调度方法，通过采集候选设备状态选择任务执行节点\",\n        \"[待确认：技术效果]\",\n        \"cnipa_sample_results.html\",\n        \"low\",\n        \"CN110000001A\",\n        \"一种基于负载的边缘计算任务调度方法\",\n        \"本发明公开了一种基于负载的边缘计算任务调度方法\",\n        \"通过采集候选设备状态选择任务执行节点\",\n        \"CN110000001A 一种基于负载的边缘计算任务调度方法\",\n        \"全文\",\n        \"technical_solution\",\n        \"medium\",\n        \"本发明公开了一种基于负载的边缘计算任务调度方法，通过采集候选设备状态选择任务执行节点\"\n      ]\n    },\n    {\n      \"source_id\": \"S004\",\n      \"path\": \"formula_facts.json\",\n      \"role\": \"invention_evidence\",\n      \"source_texts\": [\n        \"formula_facts\",\n        \"[待确认：核心技术问题]\",\n        \"\\\"purpose\\\": \\\"计算任务与边缘设备之间的动态匹配分数\\\"\",\n        \"{\\\"name\\\": \\\"l_i\\\", \\\"meaning\\\": \\\"设备i的归一化响应延迟\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"[0,1]\\\"}\",\n        \"formula_facts.json\",\n        \"medium\",\n        \"times\",\n        \"+0.25\",\n        \"domain\",\n        \"meaning\",\n        \"name\",\n        \"priority_t\",\n        \"unit\",\n        \"+0.15\",\n        \"1-cpu_i\",\n        \"1-l_i\",\n        \"1-q_i\",\n        \"l_i\",\n        \"全文\",\n        \"technical_solution\",\n        \"technical_effect\",\n        \"\\\"latex\\\": \\\"score(t, i)=0.35 \\\\\\\\times (1-cpu_i)+0.25 \\\\\\\\times (1-q_i)+0.25 \\\\\\\\times (1-l_i)+0.15 \\\\\\\\times priority_t \\\\\\\\times weight_i\\\"\",\n        \"prior_art_or_baseline\",\n        \"{\\\"name\\\": \\\"priority_t\\\", \\\"meaning\\\": \\\"任务t的优先级\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"{1,2,3}\\\"}\"\n      ]\n    }\n  ],\n  \"evidence_registry\": {\n    \"generated_at\": \"2026-07-21T04:13:14\",\n    \"case_dir\": \"<REDACTED_LOCAL_PATH>",\n    \"evidence_index\": [\n      {\n        \"id\": \"E-PROB-1\",\n        \"kind\": \"problem\",\n        \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"keywords\": [\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-1\",\n        \"kind\": \"solution\",\n        \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n        \"keywords\": [\n          \"状态\",\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-2\",\n        \"kind\": \"solution\",\n        \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n        \"keywords\": [\n          \"采集\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-3\",\n        \"kind\": \"solution\",\n        \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\n        \"keywords\": [\n          \"任务\",\n          \"计算\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-4\",\n        \"kind\": \"solution\",\n        \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n        \"keywords\": [\n          \"任务\",\n          \"分配\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-5\",\n        \"kind\": \"solution\",\n        \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\n        \"keywords\": [\n          \"状态\",\n          \"任务\",\n          \"反馈\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-6\",\n        \"kind\": \"solution\",\n        \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n        \"keywords\": [\n          \"评分\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-1\",\n        \"kind\": \"effect\",\n        \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\n        \"keywords\": [\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-2\",\n        \"kind\": \"effect\",\n        \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n        \"keywords\": [\n          \"任务\",\n          \"分配\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-3\",\n        \"kind\": \"effect\",\n        \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n        \"keywords\": [\n          \"评分\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-4\",\n        \"kind\": \"effect\",\n        \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"keywords\": [\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-5\",\n        \"kind\": \"effect\",\n        \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n        \"keywords\": [\n          \"状态\",\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-PRIOR-1\",\n        \"kind\": \"prior_art\",\n        \"text\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\",\n        \"keywords\": [\n          \"状态\",\n          \"采集\",\n          \"任务\",\n          \"计算\",\n          \"分配\",\n          \"选择\",\n          \"反馈\",\n          \"更新\"\n        ],\n        \"publication_date\": \"2020-01-03\",\n        \"reference_date\": \"\",\n        \"uses\": [\n          \"background_only\"\n        ]\n      }\n    ],\n    \"features\": [\n      {\n        \"type\": \"method_step\",\n        \"step\": \"S101\",\n        \"feature\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n        \"support_ids\": [\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\"\n        ]\n      },\n      {\n        \"type\": \"method_step\",\n        \"step\": \"S102\",\n        \"feature\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n        \"support_ids\": [\n          \"E-SOL-2\",\n          \"E-PRIOR-1\"\n        ]\n      },\n      {\n        \"type\": \"method_step\",\n        \"step\": \"S103\",\n        \"feature\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\n        \"support_ids\": [\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\"\n        ]\n      },\n      {\n        \"type\": \"method_step\",\n        \"step\": \"S104\",\n        \"feature\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n        \"support_ids\": [\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\"\n        ]\n      }\n    ],\n    \"records\": [\n      {\n        \"id\": \"E-PROB-1\",\n        \"kind\": \"problem\",\n        \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"keywords\": [\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-1\",\n        \"kind\": \"solution\",\n        \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n        \"keywords\": [\n          \"状态\",\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-2\",\n        \"kind\": \"solution\",\n        \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n        \"keywords\": [\n          \"采集\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-3\",\n        \"kind\": \"solution\",\n        \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\n        \"keywords\": [\n          \"任务\",\n          \"计算\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-4\",\n        \"kind\": \"solution\",\n        \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n        \"keywords\": [\n          \"任务\",\n          \"分配\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-5\",\n        \"kind\": \"solution\",\n        \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\n        \"keywords\": [\n          \"状态\",\n          \"任务\",\n          \"反馈\"\n        ]\n      },\n      {\n        \"id\": \"E-SOL-6\",\n        \"kind\": \"solution\",\n        \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n        \"keywords\": [\n          \"评分\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-1\",\n        \"kind\": \"effect\",\n        \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\n        \"keywords\": [\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-2\",\n        \"kind\": \"effect\",\n        \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n        \"keywords\": [\n          \"任务\",\n          \"分配\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-3\",\n        \"kind\": \"effect\",\n        \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n        \"keywords\": [\n          \"评分\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-4\",\n        \"kind\": \"effect\",\n        \"text\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"keywords\": [\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-EFF-5\",\n        \"kind\": \"effect\",\n        \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n        \"keywords\": [\n          \"状态\",\n          \"任务\"\n        ]\n      },\n      {\n        \"id\": \"E-PRIOR-1\",\n        \"kind\": \"prior_art\",\n        \"text\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\",\n        \"keywords\": [\n          \"状态\",\n          \"采集\",\n          \"任务\",\n          \"计算\",\n          \"分配\",\n          \"选择\",\n          \"反馈\",\n          \"更新\"\n        ],\n        \"publication_date\": \"2020-01-03\",\n        \"reference_date\": \"\",\n        \"uses\": [\n          \"background_only\"\n        ]\n      }\n    ]\n  },\n  \"data_registry\": [\n    {\n      \"data_id\": \"D001\",\n      \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\n      \"approved\": true,\n      \"candidate_id\": \"C005\",\n      \"fingerprint\": \"39b92835a6329b75851dd90e7e2aca203b7ce2b8d3ee72b38e82856a1f2dfe09\"\n    },\n    {\n      \"data_id\": \"D002\",\n      \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n      \"approved\": true,\n      \"candidate_id\": \"C006\",\n      \"fingerprint\": \"cd3ad5ec15bf62240aee2283577530cad27b1155effa44d4b10d284946002a11\"\n    },\n    {\n      \"data_id\": \"D003\",\n      \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n      \"approved\": true,\n      \"candidate_id\": \"C007\",\n      \"fingerprint\": \"8da867c9e7b83476d29e1cc30c47b77aa4ca70b9a2a215e691c33dfb6b91f45b\"\n    },\n    {\n      \"data_id\": \"D004\",\n      \"text\": \"+0.25\",\n      \"approved\": true,\n      \"candidate_id\": \"C008\",\n      \"fingerprint\": \"43614345568d9bb5c1ceb383895c1668f673dd9f961f10841d30e61c223d2acf\"\n    },\n    {\n      \"data_id\": \"D005\",\n      \"text\": \"200ms\",\n      \"approved\": true,\n      \"candidate_id\": \"C009\",\n      \"fingerprint\": \"04c099054f64bb3810bd0ad7061a79dfe4b3d80dc250fe4d5d6ef88d98e65c00\"\n    },\n    {\n      \"data_id\": \"D006\",\n      \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\n      \"approved\": true,\n      \"candidate_id\": \"C010\",\n      \"fingerprint\": \"4626e94e07429569d687e803a7cdc1a6328240bd2725f7086a3b2a3faa94397a\"\n    },\n    {\n      \"data_id\": \"D007\",\n      \"text\": \"其中，`priority_t` 取值为 1、2 或 3，`weight_i` 初始值为 1\",\n      \"approved\": true,\n      \"candidate_id\": \"C011\",\n      \"fingerprint\": \"1bd61e0650ff714fcb11742c5b7f5142c1a6d15e5e55c753738395c00fbd255d\"\n    },\n    {\n      \"data_id\": \"D008\",\n      \"text\": \"{\\\"name\\\": \\\"l_i\\\", \\\"meaning\\\": \\\"设备i的归一化响应延迟\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"[0,1]\\\"}\",\n      \"approved\": true,\n      \"candidate_id\": \"C012\",\n      \"fingerprint\": \"f2b8a687af9b773bd4697af4a1f69af7ef695dda7cafb392208d9d8a34c9ef25\"\n    },\n    {\n      \"data_id\": \"D009\",\n      \"text\": \"+0.15\",\n      \"approved\": true,\n      \"candidate_id\": \"C013\",\n      \"fingerprint\": \"14b3f051b1171c9cd090a3ee089245370d62688b3f711255cd2e420afc28343d\"\n    },\n    {\n      \"data_id\": \"D010\",\n      \"text\": \"{\\\"name\\\": \\\"priority_t\\\", \\\"meaning\\\": \\\"任务t的优先级\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"{1,2,3}\\\"}\",\n      \"approved\": true,\n      \"candidate_id\": \"C014\",\n      \"fingerprint\": \"80622599ae291407fa3f8d2c22a18517fec8d9966d9c600e48abfc96d9df00e1\"\n    }\n  ],\n  \"sections\": [\n    {\n      \"id\": \"1\",\n      \"title\": \"发明名称\",\n      \"content\": \"一种边缘设备任务调度方法\",\n      \"evidence_ids\": [\n        \"E-SOL-1\",\n        \"E-SOL-2\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-SOL-6\"\n      ],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"2\",\n      \"title\": \"技术领域\",\n      \"content\": \"一种边缘设备任务调度方法\",\n      \"evidence_ids\": [\n        \"E-SOL-1\",\n        \"E-SOL-2\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-SOL-6\"\n      ],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"3.1\",\n      \"title\": \"现有技术方案\",\n      \"content\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\",\n      \"evidence_ids\": [\n        \"E-PRIOR-1\"\n      ],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"3.2\",\n      \"title\": \"现有技术存在的问题\",\n      \"content\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\\n多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n      \"evidence_ids\": [\n        \"E-PROB-1\",\n        \"E-PRIOR-1\"\n      ],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"3.3\",\n      \"title\": \"现有技术的缺点\",\n      \"content\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n      \"evidence_ids\": [\n        \"E-PROB-1\"\n      ],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"4.1\",\n      \"title\": \"要解决的技术问题\",\n      \"content\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n      \"evidence_ids\": [\n        \"E-PROB-1\"\n      ],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"4.2\",\n      \"title\": \"技术方案\",\n      \"content\": \"{\\\"modules\\\": [{\\\"name\\\": \\\"处理模块\\\", \\\"function\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\"}, {\\\"name\\\": \\\"状态采集模块\\\", \\\"function\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\"}, {\\\"name\\\": \\\"评分筛选模块\\\", \\\"function\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\"}, {\\\"name\\\": \\\"任务分配模块\\\", \\\"function\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\"}], \\\"steps\\\": [{\\\"id\\\": \\\"S101\\\", \\\"summary\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"condition\\\": \\\"当接收到待处理输入时执行。\\\", \\\"input\\\": \\\"待处理输入\\\", \\\"action\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"output\\\": \\\"阶段结果\\\", \\\"keywords\\\": [\\\"状态\\\", \\\"任务\\\"]}, {\\\"id\\\": \\\"S102\\\", \\\"summary\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"condition\\\": \\\"当接收到任务请求或原始状态数据时执行。\\\", \\\"input\\\": \\\"任务请求或原始状态数据\\\", \\\"action\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"output\\\": \\\"状态采集结果\\\", \\\"keywords\\\": [\\\"采集\\\"]}, {\\\"id\\\": \\\"S103\\\", \\\"summary\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"condition\\\": \\\"当接收到状态采集结果时执行。\\\", \\\"input\\\": \\\"状态采集结果\\\", \\\"action\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"output\\\": \\\"匹配评分结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"计算\\\"]}, {\\\"id\\\": \\\"S104\\\", \\\"summary\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"condition\\\": \\\"当接收到匹配评分结果时执行。\\\", \\\"input\\\": \\\"匹配评分结果\\\", \\\"action\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"output\\\": \\\"任务分配结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"分配\\\"]}]}\",\n      \"evidence_ids\": [\n        \"E-SOL-1\",\n        \"E-SOL-2\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-SOL-6\"\n      ],\n      \"data_ids\": [\n        \"D002\",\n        \"D005\"\n      ]\n    },\n    {\n      \"id\": \"4.3\",\n      \"title\": \"技术效果\",\n      \"content\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\\n系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n      \"evidence_ids\": [\n        \"E-EFF-1\",\n        \"E-EFF-2\",\n        \"E-EFF-3\",\n        \"E-EFF-4\",\n        \"E-EFF-5\"\n      ],\n      \"data_ids\": [\n        \"D001\",\n        \"D003\"\n      ]\n    },\n    {\n      \"id\": \"5\",\n      \"title\": \"附图说明\",\n      \"content\": \"图1为方法流程图；图2为系统模块图。\",\n      \"evidence_ids\": [],\n      \"data_ids\": []\n    },\n    {\n      \"id\": \"6\",\n      \"title\": \"具体实施方式\",\n      \"content\": \"{\\\"modules\\\": [{\\\"name\\\": \\\"处理模块\\\", \\\"function\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\"}, {\\\"name\\\": \\\"状态采集模块\\\", \\\"function\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\"}, {\\\"name\\\": \\\"评分筛选模块\\\", \\\"function\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\"}, {\\\"name\\\": \\\"任务分配模块\\\", \\\"function\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\"}], \\\"steps\\\": [{\\\"id\\\": \\\"S101\\\", \\\"summary\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"condition\\\": \\\"当接收到待处理输入时执行。\\\", \\\"input\\\": \\\"待处理输入\\\", \\\"action\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"output\\\": \\\"阶段结果\\\", \\\"keywords\\\": [\\\"状态\\\", \\\"任务\\\"]}, {\\\"id\\\": \\\"S102\\\", \\\"summary\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"condition\\\": \\\"当接收到任务请求或原始状态数据时执行。\\\", \\\"input\\\": \\\"任务请求或原始状态数据\\\", \\\"action\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"output\\\": \\\"状态采集结果\\\", \\\"keywords\\\": [\\\"采集\\\"]}, {\\\"id\\\": \\\"S103\\\", \\\"summary\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"condition\\\": \\\"当接收到状态采集结果时执行。\\\", \\\"input\\\": \\\"状态采集结果\\\", \\\"action\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"output\\\": \\\"匹配评分结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"计算\\\"]}, {\\\"id\\\": \\\"S104\\\", \\\"summary\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"condition\\\": \\\"当接收到匹配评分结果时执行。\\\", \\\"input\\\": \\\"匹配评分结果\\\", \\\"action\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"output\\\": \\\"任务分配结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"分配\\\"]}]}\",\n      \"evidence_ids\": [\n        \"E-SOL-1\",\n        \"E-SOL-2\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-SOL-6\"\n      ],\n      \"data_ids\": [\n        \"D002\",\n        \"D005\"\n      ]\n    },\n    {\n      \"id\": \"7\",\n      \"title\": \"可替代实施方式\",\n      \"content\": \"{\\\"modules\\\": [{\\\"name\\\": \\\"处理模块\\\", \\\"function\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\"}, {\\\"name\\\": \\\"状态采集模块\\\", \\\"function\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\"}, {\\\"name\\\": \\\"评分筛选模块\\\", \\\"function\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\"}, {\\\"name\\\": \\\"任务分配模块\\\", \\\"function\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\"}], \\\"steps\\\": [{\\\"id\\\": \\\"S101\\\", \\\"summary\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"condition\\\": \\\"当接收到待处理输入时执行。\\\", \\\"input\\\": \\\"待处理输入\\\", \\\"action\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"output\\\": \\\"阶段结果\\\", \\\"keywords\\\": [\\\"状态\\\", \\\"任务\\\"]}, {\\\"id\\\": \\\"S102\\\", \\\"summary\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"condition\\\": \\\"当接收到任务请求或原始状态数据时执行。\\\", \\\"input\\\": \\\"任务请求或原始状态数据\\\", \\\"action\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"output\\\": \\\"状态采集结果\\\", \\\"keywords\\\": [\\\"采集\\\"]}, {\\\"id\\\": \\\"S103\\\", \\\"summary\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"condition\\\": \\\"当接收到状态采集结果时执行。\\\", \\\"input\\\": \\\"状态采集结果\\\", \\\"action\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"output\\\": \\\"匹配评分结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"计算\\\"]}, {\\\"id\\\": \\\"S104\\\", \\\"summary\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"condition\\\": \\\"当接收到匹配评分结果时执行。\\\", \\\"input\\\": \\\"匹配评分结果\\\", \\\"action\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"output\\\": \\\"任务分配结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"分配\\\"]}]}\",\n      \"evidence_ids\": [\n        \"E-SOL-1\",\n        \"E-SOL-2\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-SOL-6\"\n      ],\n      \"data_ids\": [\n        \"D002\",\n        \"D005\"\n      ]\n    }\n  ],\n  \"formula_registry\": [\n    {\n      \"formula_id\": \"F001\",\n      \"display_number\": \"1\",\n      \"latex\": \"score(t, i)=0.35 \\\\times (1-cpu_i)+0.25 \\\\times (1-q_i)+0.25 \\\\times (1-l_i)+0.15 \\\\times priority_t \\\\times weight_i\",\n      \"purpose\": \"计算任务与边缘设备之间的动态匹配分数\",\n      \"sources\": [\n        \"E-SOL-1\"\n      ],\n      \"references\": [\n        \"4.2\"\n      ],\n      \"symbols\": [\n        {\n          \"name\": \"score(t,i)\",\n          \"meaning\": \"任务t与设备i的匹配分数\",\n          \"unit\": \"1\",\n          \"domain\": \"实数\"\n        },\n        {\n          \"name\": \"cpu_i\",\n          \"meaning\": \"设备i的归一化CPU占用率\",\n          \"unit\": \"1\",\n          \"domain\": \"[0,1]\"\n        },\n        {\n          \"name\": \"q_i\",\n          \"meaning\": \"设备i的归一化队列长度\",\n          \"unit\": \"1\",\n          \"domain\": \"[0,1]\"\n        },\n        {\n          \"name\": \"l_i\",\n          \"meaning\": \"设备i的归一化响应延迟\",\n          \"unit\": \"1\",\n          \"domain\": \"[0,1]\"\n        },\n        {\n          \"name\": \"priority_t\",\n          \"meaning\": \"任务t的优先级\",\n          \"unit\": \"1\",\n          \"domain\": \"{1,2,3}\"\n        },\n        {\n          \"name\": \"weight_i\",\n          \"meaning\": \"设备i的动态权重\",\n          \"unit\": \"1\",\n          \"domain\": \"[0.2,1]\"\n        }\n      ],\n      \"inputs\": [\n        \"cpu_i\",\n        \"q_i\",\n        \"l_i\",\n        \"priority_t\",\n        \"weight_i\"\n      ],\n      \"output\": \"score(t,i)\",\n      \"assumptions\": [\n        \"各负载量已经归一化\"\n      ],\n      \"constraints\": [\n        \"priority_t取值为1、2或3\",\n        \"weight_i初始值为1\"\n      ],\n      \"content_hash\": \"5ace154a0e90a609ec0a2fb4111d42a2c1f3f7e2c3b284358ccdae34781d47b6\"\n    }\n  ],\n  \"term_registry\": [],\n  \"figure_registry\": [\n    {\n      \"figure_id\": \"FIG001\",\n      \"figure_no\": \"图1\",\n      \"title\": \"方法流程图\",\n      \"provenance\": \"<REDACTED_LOCAL_PATH>",\n      \"section_ids\": [\n        \"4.2\",\n        \"5\",\n        \"6\"\n      ],\n      \"file\": \"图1_方法流程图.svg\",\n      \"delivery_file\": \"图1_方法流程图.png\",\n      \"source_items\": [\n        \"S101\",\n        \"S102\",\n        \"S103\",\n        \"S104\"\n      ]\n    },\n    {\n      \"figure_id\": \"FIG002\",\n      \"figure_no\": \"图2\",\n      \"title\": \"系统模块图\",\n      \"provenance\": \"<REDACTED_LOCAL_PATH>",\n      \"section_ids\": [\n        \"4.2\",\n        \"5\",\n        \"6\"\n      ],\n      \"file\": \"图2_系统模块图.svg\",\n      \"delivery_file\": \"图2_系统模块图.png\",\n      \"source_items\": [\n        \"处理模块\",\n        \"状态采集模块\",\n        \"评分筛选模块\",\n        \"任务分配模块\"\n      ]\n    }\n  ],\n  \"cross_references\": [],\n  \"pending_items\": [],\n  \"feature_registry\": [\n    {\n      \"feature_id\": \"FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\n      \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n      \"section_ids\": [\n        \"1\",\n        \"2\",\n        \"3.1\",\n        \"3.2\",\n        \"3.3\",\n        \"4.1\",\n        \"4.2\",\n        \"4.3\",\n        \"6\",\n        \"7\"\n      ],\n      \"evidence_ids\": [\n        \"E-PROB-1\",\n        \"E-SOL-1\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-EFF-1\",\n        \"E-EFF-2\",\n        \"E-EFF-4\",\n        \"E-EFF-5\",\n        \"E-PRIOR-1\"\n      ],\n      \"technical_effects\": [\n        \"测试中经人工确认的技术效果\"\n      ]\n    },\n    {\n      \"feature_id\": \"FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\n      \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n      \"section_ids\": [\n        \"1\",\n        \"2\",\n        \"3.1\",\n        \"3.2\",\n        \"4.2\",\n        \"6\",\n        \"7\"\n      ],\n      \"evidence_ids\": [\n        \"E-SOL-2\",\n        \"E-PRIOR-1\"\n      ],\n      \"technical_effects\": [\n        \"测试中经人工确认的技术效果\"\n      ]\n    },\n    {\n      \"feature_id\": \"FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\n      \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\n      \"section_ids\": [\n        \"1\",\n        \"2\",\n        \"3.1\",\n        \"3.2\",\n        \"3.3\",\n        \"4.1\",\n        \"4.2\",\n        \"4.3\",\n        \"6\",\n        \"7\"\n      ],\n      \"evidence_ids\": [\n        \"E-PROB-1\",\n        \"E-SOL-1\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-EFF-1\",\n        \"E-EFF-2\",\n        \"E-EFF-4\",\n        \"E-EFF-5\",\n        \"E-PRIOR-1\"\n      ],\n      \"technical_effects\": [\n        \"测试中经人工确认的技术效果\"\n      ]\n    },\n    {\n      \"feature_id\": \"FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\",\n      \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n      \"section_ids\": [\n        \"1\",\n        \"2\",\n        \"3.1\",\n        \"3.2\",\n        \"3.3\",\n        \"4.1\",\n        \"4.2\",\n        \"4.3\",\n        \"6\",\n        \"7\"\n      ],\n      \"evidence_ids\": [\n        \"E-PROB-1\",\n        \"E-SOL-1\",\n        \"E-SOL-3\",\n        \"E-SOL-4\",\n        \"E-SOL-5\",\n        \"E-EFF-1\",\n        \"E-EFF-2\",\n        \"E-EFF-4\",\n        \"E-EFF-5\",\n        \"E-PRIOR-1\"\n      ],\n      \"technical_effects\": [\n        \"测试中经人工确认的技术效果\"\n      ]\n    }\n  ],\n  \"rule_applicability\": {\n    \"ai_applicability\": \"not_applicable\"\n  },\n  \"semantic_review\": {\n    \"agent_reviews\": [\n      {\n        \"review_id\": \"AR001\",\n        \"target_type\": \"section\",\n        \"target_id\": \"1\",\n        \"target_content\": \"一种边缘设备任务调度方法\",\n        \"evidence_bindings\": [\n          \"E-SOL-1\",\n          \"E-SOL-2\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-SOL-6\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:05:00Z\",\n        \"target_hash\": \"7790556c3ac80ee13e59da24f623f445faa92bfd27c1d7e0636865c541c17409\"\n      },\n      {\n        \"review_id\": \"AR002\",\n        \"target_type\": \"section\",\n        \"target_id\": \"2\",\n        \"target_content\": \"一种边缘设备任务调度方法\",\n        \"evidence_bindings\": [\n          \"E-SOL-1\",\n          \"E-SOL-2\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-SOL-6\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:06:00Z\",\n        \"target_hash\": \"7b87e778cdd2fb37aae3809a9f289f2b2043678e5d6dd1e22b45291b0a518703\"\n      },\n      {\n        \"review_id\": \"AR003\",\n        \"target_type\": \"section\",\n        \"target_id\": \"3.1\",\n        \"target_content\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\",\n        \"evidence_bindings\": [\n          \"E-PRIOR-1\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:07:00Z\",\n        \"target_hash\": \"d5aa080ae0042905098f5c57885d380569b71138c33c5403826a37dd3883fff0\"\n      },\n      {\n        \"review_id\": \"AR004\",\n        \"target_type\": \"section\",\n        \"target_id\": \"3.2\",\n        \"target_content\": \"CN110000001A 一种基于负载的边缘计算任务调度方法（公开日：2020-01-03）公开了 采集边缘设备负载状态、根据 CPU 负载选择候选设备、将任务分配给候选设备；与本案相比，主要区别在于 未结合网络响应延迟和任务优先级计算匹配分数、未在失败反馈后通过反馈队列更新设备权重。[1]\\n多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"evidence_bindings\": [\n          \"E-PRIOR-1\",\n          \"E-PROB-1\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:08:00Z\",\n        \"target_hash\": \"41b4e6ccbad7bdbbed96fc9e6ee583d2919275df45314edf64416c25e1c07404\"\n      },\n      {\n        \"review_id\": \"AR005\",\n        \"target_type\": \"section\",\n        \"target_id\": \"3.3\",\n        \"target_content\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"evidence_bindings\": [\n          \"E-PROB-1\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:09:00Z\",\n        \"target_hash\": \"6e494c23b6ca1f9a448665a7b81e036fbd53e41565ea625656f102d0547f1a15\"\n      },\n      {\n        \"review_id\": \"AR006\",\n        \"target_type\": \"section\",\n        \"target_id\": \"4.1\",\n        \"target_content\": \"多个边缘设备同时处理传感器数据时，传统固定轮询调度会忽略设备当前负载和网络延迟，导致部分任务排队时间较长，并且在设备短时离线时产生重复重试\",\n        \"evidence_bindings\": [\n          \"E-PROB-1\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:10:00Z\",\n        \"target_hash\": \"2bc68cb4a1ef86c6d42a758c2807ac0e66b73df61be7ceb941fd6b2e0f81c27d\"\n      },\n      {\n        \"review_id\": \"AR007\",\n        \"target_type\": \"section\",\n        \"target_id\": \"4.2\",\n        \"target_content\": \"{\\\"modules\\\": [{\\\"name\\\": \\\"处理模块\\\", \\\"function\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\"}, {\\\"name\\\": \\\"状态采集模块\\\", \\\"function\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\"}, {\\\"name\\\": \\\"评分筛选模块\\\", \\\"function\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\"}, {\\\"name\\\": \\\"任务分配模块\\\", \\\"function\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\"}], \\\"steps\\\": [{\\\"id\\\": \\\"S101\\\", \\\"summary\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"condition\\\": \\\"当接收到待处理输入时执行。\\\", \\\"input\\\": \\\"待处理输入\\\", \\\"action\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"output\\\": \\\"阶段结果\\\", \\\"keywords\\\": [\\\"状态\\\", \\\"任务\\\"]}, {\\\"id\\\": \\\"S102\\\", \\\"summary\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"condition\\\": \\\"当接收到任务请求或原始状态数据时执行。\\\", \\\"input\\\": \\\"任务请求或原始状态数据\\\", \\\"action\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"output\\\": \\\"状态采集结果\\\", \\\"keywords\\\": [\\\"采集\\\"]}, {\\\"id\\\": \\\"S103\\\", \\\"summary\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"condition\\\": \\\"当接收到状态采集结果时执行。\\\", \\\"input\\\": \\\"状态采集结果\\\", \\\"action\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"output\\\": \\\"匹配评分结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"计算\\\"]}, {\\\"id\\\": \\\"S104\\\", \\\"summary\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"condition\\\": \\\"当接收到匹配评分结果时执行。\\\", \\\"input\\\": \\\"匹配评分结果\\\", \\\"action\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"output\\\": \\\"任务分配结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"分配\\\"]}]}\",\n        \"evidence_bindings\": [\n          \"E-SOL-1\",\n          \"E-SOL-2\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-SOL-6\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:11:00Z\",\n        \"target_hash\": \"780e9ead932d087e08438429d42a7826d98fd135c09cb5615474506049dc82e7\"\n      },\n      {\n        \"review_id\": \"AR008\",\n        \"target_type\": \"section\",\n        \"target_id\": \"4.3\",\n        \"target_content\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\\n系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-3\",\n          \"E-EFF-4\",\n          \"E-EFF-5\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:12:00Z\",\n        \"target_hash\": \"7809c82f8759ffbd17e8dba82c1d97fe74e00be213d801c453dd018607822fd9\"\n      },\n      {\n        \"review_id\": \"AR009\",\n        \"target_type\": \"section\",\n        \"target_id\": \"5\",\n        \"target_content\": \"图1为方法流程图；图2为系统模块图。\",\n        \"evidence_bindings\": [],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:13:00Z\",\n        \"target_hash\": \"79e3e7ccaf935ecd188e89a890db7d5dbad7aeff8ca0059ce320aaf84ad0526d\"\n      },\n      {\n        \"review_id\": \"AR010\",\n        \"target_type\": \"section\",\n        \"target_id\": \"6\",\n        \"target_content\": \"{\\\"modules\\\": [{\\\"name\\\": \\\"处理模块\\\", \\\"function\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\"}, {\\\"name\\\": \\\"状态采集模块\\\", \\\"function\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\"}, {\\\"name\\\": \\\"评分筛选模块\\\", \\\"function\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\"}, {\\\"name\\\": \\\"任务分配模块\\\", \\\"function\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\"}], \\\"steps\\\": [{\\\"id\\\": \\\"S101\\\", \\\"summary\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"condition\\\": \\\"当接收到待处理输入时执行。\\\", \\\"input\\\": \\\"待处理输入\\\", \\\"action\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"output\\\": \\\"阶段结果\\\", \\\"keywords\\\": [\\\"状态\\\", \\\"任务\\\"]}, {\\\"id\\\": \\\"S102\\\", \\\"summary\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"condition\\\": \\\"当接收到任务请求或原始状态数据时执行。\\\", \\\"input\\\": \\\"任务请求或原始状态数据\\\", \\\"action\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"output\\\": \\\"状态采集结果\\\", \\\"keywords\\\": [\\\"采集\\\"]}, {\\\"id\\\": \\\"S103\\\", \\\"summary\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"condition\\\": \\\"当接收到状态采集结果时执行。\\\", \\\"input\\\": \\\"状态采集结果\\\", \\\"action\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"output\\\": \\\"匹配评分结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"计算\\\"]}, {\\\"id\\\": \\\"S104\\\", \\\"summary\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"condition\\\": \\\"当接收到匹配评分结果时执行。\\\", \\\"input\\\": \\\"匹配评分结果\\\", \\\"action\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"output\\\": \\\"任务分配结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"分配\\\"]}]}\",\n        \"evidence_bindings\": [\n          \"E-SOL-1\",\n          \"E-SOL-2\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-SOL-6\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:14:00Z\",\n        \"target_hash\": \"7f5bd67bb31a8c47d587d12923a828a862fa9db9a33375a5578ea2b77fffd2da\"\n      },\n      {\n        \"review_id\": \"AR011\",\n        \"target_type\": \"section\",\n        \"target_id\": \"7\",\n        \"target_content\": \"{\\\"modules\\\": [{\\\"name\\\": \\\"处理模块\\\", \\\"function\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\"}, {\\\"name\\\": \\\"状态采集模块\\\", \\\"function\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\"}, {\\\"name\\\": \\\"评分筛选模块\\\", \\\"function\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\"}, {\\\"name\\\": \\\"任务分配模块\\\", \\\"function\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\"}], \\\"steps\\\": [{\\\"id\\\": \\\"S101\\\", \\\"summary\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"condition\\\": \\\"当接收到待处理输入时执行。\\\", \\\"input\\\": \\\"待处理输入\\\", \\\"action\\\": \\\"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\\\", \\\"output\\\": \\\"阶段结果\\\", \\\"keywords\\\": [\\\"状态\\\", \\\"任务\\\"]}, {\\\"id\\\": \\\"S102\\\", \\\"summary\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"condition\\\": \\\"当接收到任务请求或原始状态数据时执行。\\\", \\\"input\\\": \\\"任务请求或原始状态数据\\\", \\\"action\\\": \\\"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\\\", \\\"output\\\": \\\"状态采集结果\\\", \\\"keywords\\\": [\\\"采集\\\"]}, {\\\"id\\\": \\\"S103\\\", \\\"summary\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"condition\\\": \\\"当接收到状态采集结果时执行。\\\", \\\"input\\\": \\\"状态采集结果\\\", \\\"action\\\": \\\"系统计算任务 `t` 与设备 `i` 之间的匹配分数\\\", \\\"output\\\": \\\"匹配评分结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"计算\\\"]}, {\\\"id\\\": \\\"S104\\\", \\\"summary\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"condition\\\": \\\"当接收到匹配评分结果时执行。\\\", \\\"input\\\": \\\"匹配评分结果\\\", \\\"action\\\": \\\"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\\\", \\\"output\\\": \\\"任务分配结果\\\", \\\"keywords\\\": [\\\"任务\\\", \\\"分配\\\"]}]}\",\n        \"evidence_bindings\": [\n          \"E-SOL-1\",\n          \"E-SOL-2\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\",\n          \"E-SOL-6\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:15:00Z\",\n        \"target_hash\": \"f5e712a1a9ff342e11d0e08449517bc075335a9b3903392e7b2f45631d1f7393\"\n      },\n      {\n        \"review_id\": \"AR012\",\n        \"target_type\": \"feature\",\n        \"target_id\": \"FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\n        \"target_content\": {\n          \"text\": \"本研究提出一种基于负载状态、网络延迟和任务优先级的动态调度方法\",\n          \"section_ids\": [\n            \"1\",\n            \"2\",\n            \"3.1\",\n            \"3.2\",\n            \"3.3\",\n            \"4.1\",\n            \"4.2\",\n            \"4.3\",\n            \"6\",\n            \"7\"\n          ],\n          \"technical_effects\": [\n            \"测试中经人工确认的技术效果\"\n          ]\n        },\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:16:00Z\",\n        \"target_hash\": \"1911e4522d38e2e068f12dd90db845aff0aaf2f057ddc61c47357d4017cb021f\"\n      },\n      {\n        \"review_id\": \"AR013\",\n        \"target_type\": \"feature\",\n        \"target_id\": \"FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\n        \"target_content\": {\n          \"text\": \"系统采集每个边缘设备的 CPU 占用率、队列长度和最近一次响应延迟，并将 CPU 占用率归一化为 `cpu_i`、队列长度归一化为 `q_i`、响应延迟归一化为 `l_i`\",\n          \"section_ids\": [\n            \"1\",\n            \"2\",\n            \"3.1\",\n            \"3.2\",\n            \"4.2\",\n            \"6\",\n            \"7\"\n          ],\n          \"technical_effects\": [\n            \"测试中经人工确认的技术效果\"\n          ]\n        },\n        \"evidence_bindings\": [\n          \"E-PRIOR-1\",\n          \"E-SOL-2\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:17:00Z\",\n        \"target_hash\": \"5ae9e75cb65a52a0a1fd7629fcd759c51e811386a120077a68631e4a59a85ffd\"\n      },\n      {\n        \"review_id\": \"AR014\",\n        \"target_type\": \"feature\",\n        \"target_id\": \"FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\n        \"target_content\": {\n          \"text\": \"系统计算任务 `t` 与设备 `i` 之间的匹配分数\",\n          \"section_ids\": [\n            \"1\",\n            \"2\",\n            \"3.1\",\n            \"3.2\",\n            \"3.3\",\n            \"4.1\",\n            \"4.2\",\n            \"4.3\",\n            \"6\",\n            \"7\"\n          ],\n          \"technical_effects\": [\n            \"测试中经人工确认的技术效果\"\n          ]\n        },\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:18:00Z\",\n        \"target_hash\": \"fe81c81623e3768b2fc8f4bda2ba72038f2ce3d961fe1b9436def7ca9efb2f43\"\n      },\n      {\n        \"review_id\": \"AR015\",\n        \"target_type\": \"feature\",\n        \"target_id\": \"FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\",\n        \"target_content\": {\n          \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n          \"section_ids\": [\n            \"1\",\n            \"2\",\n            \"3.1\",\n            \"3.2\",\n            \"3.3\",\n            \"4.1\",\n            \"4.2\",\n            \"4.3\",\n            \"6\",\n            \"7\"\n          ],\n          \"technical_effects\": [\n            \"测试中经人工确认的技术效果\"\n          ]\n        },\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"verdict\": \"pass\",\n        \"coverage\": {\n          \"enablement\": true,\n          \"mechanism\": true,\n          \"causal_effect\": true,\n          \"terminology\": true,\n          \"evidence_consistency\": true\n        },\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:19:00Z\",\n        \"target_hash\": \"bd908b4256d41ea505f9be506df1b2e2526fd158611d939b320b715bd70e13a4\"\n      }\n    ],\n    \"human_confirmations\": [\n      {\n        \"confirmation_id\": \"HC-EFFECT-FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\n        \"confirmation_type\": \"feature_technical_effect\",\n        \"target_type\": \"feature_technical_effect\",\n        \"target_id\": \"FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\n        \"target_content\": [\n          \"测试中经人工确认的技术效果\"\n        ],\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:01:00Z\",\n        \"target_hash\": \"54b20348ac6948ff1b8f2802b656b3c8dbfc009e3f16de9d2759061c4eba3779\"\n      },\n      {\n        \"confirmation_id\": \"HC-EFFECT-FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\n        \"confirmation_type\": \"feature_technical_effect\",\n        \"target_type\": \"feature_technical_effect\",\n        \"target_id\": \"FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\n        \"target_content\": [\n          \"测试中经人工确认的技术效果\"\n        ],\n        \"evidence_bindings\": [\n          \"E-PRIOR-1\",\n          \"E-SOL-2\"\n        ],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:02:00Z\",\n        \"target_hash\": \"8b641e1a4b53b55b63df81ffb3dbc20b9e99de0831981e263aa9a0312cb31bb4\"\n      },\n      {\n        \"confirmation_id\": \"HC-EFFECT-FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\n        \"confirmation_type\": \"feature_technical_effect\",\n        \"target_type\": \"feature_technical_effect\",\n        \"target_id\": \"FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\n        \"target_content\": [\n          \"测试中经人工确认的技术效果\"\n        ],\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:03:00Z\",\n        \"target_hash\": \"9b42db1bd90dcfeb4f9cc8b70e07d6ee048fa910dc0b30d4459b4c7dd012a94a\"\n      },\n      {\n        \"confirmation_id\": \"HC-EFFECT-FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\",\n        \"confirmation_type\": \"feature_technical_effect\",\n        \"target_type\": \"feature_technical_effect\",\n        \"target_id\": \"FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\",\n        \"target_content\": [\n          \"测试中经人工确认的技术效果\"\n        ],\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:04:00Z\",\n        \"target_hash\": \"e0d12be1d83302669ce302400c78ca79087308ccdfd526925a5b6b163cfa4d69\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-001\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D001\",\n        \"target_content\": {\n          \"data_id\": \"D001\",\n          \"text\": \"在模拟的 20 台边缘设备和 5000 条任务请求下，相比固定轮询策略，平均排队时间降低约 18%，重复重试次数降低约 23%\",\n          \"approved\": true,\n          \"candidate_id\": \"C005\",\n          \"fingerprint\": \"39b92835a6329b75851dd90e7e2aca203b7ce2b8d3ee72b38e82856a1f2dfe09\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:20:00Z\",\n        \"target_hash\": \"8498c391cd5a3abe3993686c88ceb7f26252eb05c7529e8bb8b195c91a52402d\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-002\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D002\",\n        \"target_content\": {\n          \"data_id\": \"D002\",\n          \"text\": \"系统设置阈值条件为 CPU 占用率不超过 85%、队列长度不超过 50 条且最近一次响应延迟不超过 200ms，并将高优先级任务分配给满足阈值条件且匹配分数最高的设备\",\n          \"approved\": true,\n          \"candidate_id\": \"C006\",\n          \"fingerprint\": \"cd3ad5ec15bf62240aee2283577530cad27b1155effa44d4b10d284946002a11\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:21:00Z\",\n        \"target_hash\": \"4f50b764ae4c2f9bde8df9faea785c87aa8d8f49a6fa935e776af3307253dd43\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-003\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D003\",\n        \"target_content\": {\n          \"data_id\": \"D003\",\n          \"text\": \"系统在下一轮评分前按照 `weight_i=max(0.2, weight_i×0.8)` 降低失败设备权重，并在连续 5 次成功响应后按照 `weight_i=min(1, weight_i+0.1)` 恢复设备权重\",\n          \"approved\": true,\n          \"candidate_id\": \"C007\",\n          \"fingerprint\": \"8da867c9e7b83476d29e1cc30c47b77aa4ca70b9a2a215e691c33dfb6b91f45b\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:22:00Z\",\n        \"target_hash\": \"2d5f7295cf4e15933e50434b692d3515f7ca35190e03c6991b844a2c9b05aff5\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-004\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D004\",\n        \"target_content\": {\n          \"data_id\": \"D004\",\n          \"text\": \"+0.25\",\n          \"approved\": true,\n          \"candidate_id\": \"C008\",\n          \"fingerprint\": \"43614345568d9bb5c1ceb383895c1668f673dd9f961f10841d30e61c223d2acf\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:23:00Z\",\n        \"target_hash\": \"da8ba28fb24db684faaa797c5f3753a5c12e19e2b26077e9add68a5461c3173e\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-005\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D005\",\n        \"target_content\": {\n          \"data_id\": \"D005\",\n          \"text\": \"200ms\",\n          \"approved\": true,\n          \"candidate_id\": \"C009\",\n          \"fingerprint\": \"04c099054f64bb3810bd0ad7061a79dfe4b3d80dc250fe4d5d6ef88d98e65c00\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:24:00Z\",\n        \"target_hash\": \"4378b5c27ff74597d9f059573826028a6583ea2341740a8f6707d6dd38f7ab11\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-006\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D006\",\n        \"target_content\": {\n          \"data_id\": \"D006\",\n          \"text\": \"若设备在 3 秒内未返回响应或返回失败码，系统把失败状态写入反馈队列，反馈队列字段包括设备标识、任务标识、失败时间、失败原因和重试次数\",\n          \"approved\": true,\n          \"candidate_id\": \"C010\",\n          \"fingerprint\": \"4626e94e07429569d687e803a7cdc1a6328240bd2725f7086a3b2a3faa94397a\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:25:00Z\",\n        \"target_hash\": \"ddcef85180b467a3ae60eacc3421e39326dbabe7f0385ad1376397c65da17428\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-007\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D007\",\n        \"target_content\": {\n          \"data_id\": \"D007\",\n          \"text\": \"其中，`priority_t` 取值为 1、2 或 3，`weight_i` 初始值为 1\",\n          \"approved\": true,\n          \"candidate_id\": \"C011\",\n          \"fingerprint\": \"1bd61e0650ff714fcb11742c5b7f5142c1a6d15e5e55c753738395c00fbd255d\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:26:00Z\",\n        \"target_hash\": \"380f17d0318f8281746c0f2d20a15380d8233d44249885de631eb9b3a573392f\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-008\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D008\",\n        \"target_content\": {\n          \"data_id\": \"D008\",\n          \"text\": \"{\\\"name\\\": \\\"l_i\\\", \\\"meaning\\\": \\\"设备i的归一化响应延迟\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"[0,1]\\\"}\",\n          \"approved\": true,\n          \"candidate_id\": \"C012\",\n          \"fingerprint\": \"f2b8a687af9b773bd4697af4a1f69af7ef695dda7cafb392208d9d8a34c9ef25\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:27:00Z\",\n        \"target_hash\": \"5108b82906474d635094b8dd0f12f9a00acccd97ee33595cf6b76d865868a512\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-009\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D009\",\n        \"target_content\": {\n          \"data_id\": \"D009\",\n          \"text\": \"+0.15\",\n          \"approved\": true,\n          \"candidate_id\": \"C013\",\n          \"fingerprint\": \"14b3f051b1171c9cd090a3ee089245370d62688b3f711255cd2e420afc28343d\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:28:00Z\",\n        \"target_hash\": \"3f0bde0ac0398955d52427ca1702d2b39c200100ef70e45973a4ae848c6fa608\"\n      },\n      {\n        \"confirmation_id\": \"HC-DATA-010\",\n        \"confirmation_type\": \"governed_fact\",\n        \"target_type\": \"data\",\n        \"target_id\": \"D010\",\n        \"target_content\": {\n          \"data_id\": \"D010\",\n          \"text\": \"{\\\"name\\\": \\\"priority_t\\\", \\\"meaning\\\": \\\"任务t的优先级\\\", \\\"unit\\\": \\\"1\\\", \\\"domain\\\": \\\"{1,2,3}\\\"}\",\n          \"approved\": true,\n          \"candidate_id\": \"C014\",\n          \"fingerprint\": \"80622599ae291407fa3f8d2c22a18517fec8d9966d9c600e48abfc96d9df00e1\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:29:00Z\",\n        \"target_hash\": \"5232b7f06208e45200851286347a898b6a9b7793aa61fdef3d5000378e05c63f\"\n      },\n      {\n        \"confirmation_id\": \"HC-AI-001\",\n        \"confirmation_type\": \"ai_applicability\",\n        \"target_type\": \"ai_applicability\",\n        \"target_id\": \"model\",\n        \"target_content\": {\n          \"ai_applicability\": \"not_applicable\"\n        },\n        \"evidence_bindings\": [],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:30:00Z\",\n        \"target_hash\": \"881f1bad9ca8e3e2bf7e8d9547ac1d516b321f611a3060544efaddf76703f274\"\n      },\n      {\n        \"confirmation_id\": \"HC-CLAIM-1\",\n        \"confirmation_type\": \"independent_claim_feature_set\",\n        \"target_type\": \"independent_claim\",\n        \"target_id\": \"1\",\n        \"target_content\": [\n          \"FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\n          \"FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\n          \"FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\n          \"FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\"\n        ],\n        \"evidence_bindings\": [\n          \"E-EFF-1\",\n          \"E-EFF-2\",\n          \"E-EFF-4\",\n          \"E-EFF-5\",\n          \"E-PRIOR-1\",\n          \"E-PROB-1\",\n          \"E-SOL-1\",\n          \"E-SOL-2\",\n          \"E-SOL-3\",\n          \"E-SOL-4\",\n          \"E-SOL-5\"\n        ],\n        \"decision\": \"confirm\",\n        \"actor\": \"test-reviewer\",\n        \"recorded_at\": \"2026-07-20T00:31:00Z\",\n        \"target_hash\": \"9d9e322d3160128c5048a53851fb5b19a0e71dee2d9e4fefb01388fd43630667\"\n      }\n    ],\n    \"agent_review_history\": [],\n    \"human_confirmation_history\": [],\n    \"pending_reviews\": [],\n    \"pending_confirmations\": []\n  },\n  \"migration\": {\n    \"state\": \"native\",\n    \"source_contract_version\": \"4.0\",\n    \"input_sha256\": \"daffc7d4419582a8eba60d2841d04cce52c69292405b20b8062a7bb4b830458d\",\n    \"pending_actions\": []\n  },\n  \"provenance\": {\n    \"state\": \"sealed\",\n    \"artifact_role\": \"reviewed\",\n    \"producer\": \"record_semantic_review\",\n    \"case_id\": \"权威审查重入测试\",\n    \"parent_model_sha256\": \"d081d771bc3c7f465454857b20a8019c31126d349c580285e06f713dba500ea4\",\n    \"root_model_sha256\": \"8ca5c74a8db9b21e55fafe160c2896268fa615219559df6759b118d4f190c4dc\",\n    \"draft_sha256\": \"8f02e422a67d36302a2d681a4c5840cf29815bcb627718dab11dd947973c7244\",\n    \"preview_sha256\": \"d66b081e70606ed9804d6f5ff00b70231b84f5e709cec76ef85685ed0ad68eed\",\n    \"claims_sha256\": \"09ce7d045f56398924a6df6f35d02a7eed5bbcc5543ec10ee0c5c33ed41554a8\",\n    \"chain\": [\n      {\n        \"record_id\": \"HC-EFFECT-FT6BF074B7DF9A8A824ADD59C33B5B463E488FA67618BA7D4DCB80112CC2985154\",\n        \"parent_model_path\": \"03_drafts/latest_disclosure_model.json\",\n        \"parent_model_sha256\": \"8ca5c74a8db9b21e55fafe160c2896268fa615219559df6759b118d4f190c4dc\",\n        \"child_model_path\": \"03_drafts/reviewed-model-001.json\"\n      },\n      {\n        \"record_id\": \"HC-EFFECT-FT207A106E3532C57B44EC36F7C06E89FE0EEFF45AA7D8F7C08A6F46C2E83A0E15\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-001.json\",\n        \"parent_model_sha256\": \"5ae0b901a868589d5663ae58bb7428a42d7e99468411cd35f137181483359dcc\",\n        \"child_model_path\": \"03_drafts/reviewed-model-002.json\"\n      },\n      {\n        \"record_id\": \"HC-EFFECT-FT6B7DC4761B535BB3C73D3C69597C4FCDAF71268DB2310DFA97CE1540602C48B9\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-002.json\",\n        \"parent_model_sha256\": \"3597236b2b0577d818590a640a0ed879d31cd9a437fabc908956b1819fa5507c\",\n        \"child_model_path\": \"03_drafts/reviewed-model-003.json\"\n      },\n      {\n        \"record_id\": \"HC-EFFECT-FTD8C1DC54657B86C4CFFC2C57B78733054E0CB66D25DC6854E53EE08DA4DF3DDB\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-003.json\",\n        \"parent_model_sha256\": \"cbc61bae5080cc392728d26974b2e005f5928617911bd83f6c47e3f49d9d145a\",\n        \"child_model_path\": \"03_drafts/reviewed-model-004.json\"\n      },\n      {\n        \"record_id\": \"AR001\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-004.json\",\n        \"parent_model_sha256\": \"5e246e87199135defd763404b627a5f1460f375ec515aaedda4800870bf5ae6c\",\n        \"child_model_path\": \"03_drafts/reviewed-model-005.json\"\n      },\n      {\n        \"record_id\": \"AR002\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-005.json\",\n        \"parent_model_sha256\": \"40b898cabec95b71b32a79a1f059b55a0b5dd2d22e9d64de4b74215622d4efc6\",\n        \"child_model_path\": \"03_drafts/reviewed-model-006.json\"\n      },\n      {\n        \"record_id\": \"AR003\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-006.json\",\n        \"parent_model_sha256\": \"452d8a4e5f41c0aab4c335e08e9d7341aa1e33e4cc04fb10b8c7abe774681afc\",\n        \"child_model_path\": \"03_drafts/reviewed-model-007.json\"\n      },\n      {\n        \"record_id\": \"AR004\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-007.json\",\n        \"parent_model_sha256\": \"49bf1c1370e1077211db20fc67b28231529db386bf08d8961e33e9b90f7dfd97\",\n        \"child_model_path\": \"03_drafts/reviewed-model-008.json\"\n      },\n      {\n        \"record_id\": \"AR005\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-008.json\",\n        \"parent_model_sha256\": \"8f273d77184b335b2972cec8baaadf49ad637b6350f98e26986ec3b394caf432\",\n        \"child_model_path\": \"03_drafts/reviewed-model-009.json\"\n      },\n      {\n        \"record_id\": \"AR006\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-009.json\",\n        \"parent_model_sha256\": \"f57041650ee15a8d0ee286999c255d76f8ca7a3f8f840057d567e789fb88a833\",\n        \"child_model_path\": \"03_drafts/reviewed-model-010.json\"\n      },\n      {\n        \"record_id\": \"AR007\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-010.json\",\n        \"parent_model_sha256\": \"dac7f3986dfc5225d79dca693267a7d8530fc9c10077942528396a2a24eb7448\",\n        \"child_model_path\": \"03_drafts/reviewed-model-011.json\"\n      },\n      {\n        \"record_id\": \"AR008\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-011.json\",\n        \"parent_model_sha256\": \"6c8a6ecb9bca2fde63d9dab3d57c8c85586018d744bbb6bd608c80216fb77fb1\",\n        \"child_model_path\": \"03_drafts/reviewed-model-012.json\"\n      },\n      {\n        \"record_id\": \"AR009\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-012.json\",\n        \"parent_model_sha256\": \"a64ffed16d0634a4f539564fec6d13705ea6a03673645ae06e02bd11752a2233\",\n        \"child_model_path\": \"03_drafts/reviewed-model-013.json\"\n      },\n      {\n        \"record_id\": \"AR010\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-013.json\",\n        \"parent_model_sha256\": \"7d33d5a3959607ba997ecf5fb228bc9dcbdaac87ccc48a5660aa5995ef4ed667\",\n        \"child_model_path\": \"03_drafts/reviewed-model-014.json\"\n      },\n      {\n        \"record_id\": \"AR011\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-014.json\",\n        \"parent_model_sha256\": \"1393160cc8ab275fbf4bbeccbfbd7dae20ef0ac566a17a51ab4d219e45a9317d\",\n        \"child_model_path\": \"03_drafts/reviewed-model-015.json\"\n      },\n      {\n        \"record_id\": \"AR012\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-015.json\",\n        \"parent_model_sha256\": \"9b740ad558af7b9caffc12b781d454606431359d234fbc9dd1f63f8ea37a7e81\",\n        \"child_model_path\": \"03_drafts/reviewed-model-016.json\"\n      },\n      {\n        \"record_id\": \"AR013\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-016.json\",\n        \"parent_model_sha256\": \"1b1189ee0ee951852504b89fc1675d8227668f77c13a5b93462060e68b2e902a\",\n        \"child_model_path\": \"03_drafts/reviewed-model-017.json\"\n      },\n      {\n        \"record_id\": \"AR014\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-017.json\",\n        \"parent_model_sha256\": \"64ead95a7ee8399bbb80ff81e4abd943071fd2b6d2baa025dd4f9a134b2b2a39\",\n        \"child_model_path\": \"03_drafts/reviewed-model-018.json\"\n      },\n      {\n        \"record_id\": \"AR015\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-018.json\",\n        \"parent_model_sha256\": \"1abbd7841756d8bf7159ac59633cd727a2a8691a3107d283889bdc142a934be8\",\n        \"child_model_path\": \"03_drafts/reviewed-model-019.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-001\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-019.json\",\n        \"parent_model_sha256\": \"bd35f71b1e737307dfacb152b3e399076a69df51d418c6f223ba83cd10212d3e\",\n        \"child_model_path\": \"03_drafts/reviewed-model-020.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-002\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-020.json\",\n        \"parent_model_sha256\": \"e131afa9fd81c0494e48e96aae801225b10d8523e012c6445877c619b6941641\",\n        \"child_model_path\": \"03_drafts/reviewed-model-021.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-003\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-021.json\",\n        \"parent_model_sha256\": \"6e8c8edd8296d5cd8d6264bdb8c37257c25bd289ea66e8eedf91b67070f0c4e5\",\n        \"child_model_path\": \"03_drafts/reviewed-model-022.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-004\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-022.json\",\n        \"parent_model_sha256\": \"90d0fadc221c675c25ae6bcb31a080d9d82f57b68d77431410c4badbc0a4f21b\",\n        \"child_model_path\": \"03_drafts/reviewed-model-023.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-005\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-023.json\",\n        \"parent_model_sha256\": \"9c46b984aa09c809f62b6414f698f23016be921bb12c6ddae343d40786e616fc\",\n        \"child_model_path\": \"03_drafts/reviewed-model-024.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-006\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-024.json\",\n        \"parent_model_sha256\": \"a0209a33f06ecf358fa0bc45a78727024c7c88cfb7f32e390c1235de44448769\",\n        \"child_model_path\": \"03_drafts/reviewed-model-025.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-007\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-025.json\",\n        \"parent_model_sha256\": \"43107dea197aa6f492e7379a0662816f8e535be1de36ff2d163aba2bfd092523\",\n        \"child_model_path\": \"03_drafts/reviewed-model-026.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-008\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-026.json\",\n        \"parent_model_sha256\": \"13bd73dbfe804f66f8f706b44ae4f891774ceb5f36a67032b1a435af91d87b7d\",\n        \"child_model_path\": \"03_drafts/reviewed-model-027.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-009\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-027.json\",\n        \"parent_model_sha256\": \"5eb7c7f71514fc5e2cd536179cd47e8e359ae765cca6a9726f4359d6d9ec0ad0\",\n        \"child_model_path\": \"03_drafts/reviewed-model-028.json\"\n      },\n      {\n        \"record_id\": \"HC-DATA-010\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-028.json\",\n        \"parent_model_sha256\": \"1a145f0a73fadbd745b86457e2d2e899f81e6c618dcdd4bd2487cfee73e61c12\",\n        \"child_model_path\": \"03_drafts/reviewed-model-029.json\"\n      },\n      {\n        \"record_id\": \"HC-AI-001\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-029.json\",\n        \"parent_model_sha256\": \"261e6b7e1cb7f4915814b0b7d666f83c0c6d3c8eeb8a1163fc44ee58fe278889\",\n        \"child_model_path\": \"03_drafts/reviewed-model-030.json\"\n      },\n      {\n        \"record_id\": \"HC-CLAIM-1\",\n        \"parent_model_path\": \"03_drafts/reviewed-model-030.json\",\n        \"parent_model_sha256\": \"d081d771bc3c7f465454857b20a8019c31126d349c580285e06f713dba500ea4\",\n        \"child_model_path\": \"03_drafts/reviewed-model-031.json\"\n      }\n    ],\n    \"root_model_path\": \"03_drafts/latest_disclosure_model.json\",\n    \"parent_model_path\": \"03_drafts/reviewed-model-030.json\"\n  }\n}\n"
+          },
+          {
+            "path": "04_reviews/visual_review.json",
+            "text": "{\r\n  \"status\": \"passed\",\r\n  \"draft_hash\": \"e0eab6b57c04eb3e4b07622fe2546384b9e5e4202788c0a476a17b0ab4ae2414\",\r\n  \"template_hash\": \"8836362d46fcb0a1927bc7e81a7e092666865e239d668256400bba3cbfd86ab5\",\r\n  \"renderer\": \"Microsoft Word\",\r\n  \"word_native_formula_review\": {\r\n    \"formula_objects_checked\": true,\r\n    \"placeholder_boxes_absent\": true,\r\n    \"formula_evidence_sha256\": \"1140a2f2028ddf4a26088360f22742615eba691981fbb63af9057ff4e5038fc4\"\r\n  }\r\n}"
+          },
+          {
+            "path": "05_exports/formula_evidence.json",
+            "base64": "ew0KICAicGFzc2VkIjogdHJ1ZSwNCiAgImVxdWF0aW9uX21vZGUiOiAib2ZmaWNlIiwNCiAgImV4cGVjdGVkX2Zvcm11bGFfY291bnQiOiAzLA0KICAib21tbF9jb3VudCI6IDMsDQogICJtYXRodHlwZV9wcm9naWRfY291bnQiOiAwLA0KICAiZW1iZWRkaW5nX2NvdW50IjogMCwNCiAgImZvcm11bGFzIjogWw0KICAgIHsNCiAgICAgICJpbmRleCI6IDEsDQogICAgICAibGF0ZXgiOiAic2NvcmUodCwgaSk9MC4zNSBcXHRpbWVzICgxLWNwdV9pKSswLjI1IFxcdGltZXMgKDEtcV9pKSswLjI1IFxcdGltZXMgKDEtbF9pKSswLjE1IFxcdGltZXMgcHJpb3JpdHlfdCBcXHRpbWVzIHdlaWdodF9pIiwNCiAgICAgICJkaXNwbGF5IjogdHJ1ZSwNCiAgICAgICJmaW5hbF9vYmplY3RfdHlwZSI6ICJPTU1MIiwNCiAgICAgICJjb252ZXJzaW9uIjogew0KICAgICAgICAib3JpZ2luYWxfbGF0ZXgiOiAic2NvcmUodCwgaSk9MC4zNSBcXHRpbWVzICgxLWNwdV9pKSswLjI1IFxcdGltZXMgKDEtcV9pKSswLjI1IFxcdGltZXMgKDEtbF9pKSswLjE1IFxcdGltZXMgcHJpb3JpdHlfdCBcXHRpbWVzIHdlaWdodF9pIiwNCiAgICAgICAgInJld3JpdHRlbl9sYXRleCI6ICJzY29yZSh0LCBpKT0wLjM1IFxcdGltZXMgKDEtY3B1X2kpKzAuMjUgXFx0aW1lcyAoMS1xX2kpKzAuMjUgXFx0aW1lcyAoMS1sX2kpKzAuMTUgXFx0aW1lcyBwcmlvcml0eV90IFxcdGltZXMgd2VpZ2h0X2kiLA0KICAgICAgICAiYXBwbGllZF9ydWxlcyI6IFtdLA0KICAgICAgICAiaW1wbGljaXRfc3FydF9vcmRpbmFscyI6IFtdLA0KICAgICAgICAic2VtYW50aWNfbWF0Y2giOiB0cnVlLA0KICAgICAgICAiZmFsbGJhY2tfdG9fb3JpZ2luYWwiOiBmYWxzZSwNCiAgICAgICAgIm1vZGUiOiAib2ZmaWNlIiwNCiAgICAgICAgImRpc3BsYXkiOiB0cnVlLA0KICAgICAgICAib21tbF92YWxpZCI6IHRydWUsDQogICAgICAgICJyYWRpY2FsX2NvdW50IjogMCwNCiAgICAgICAgImVtcHR5X2JveF9jb3VudCI6IDANCiAgICAgIH0NCiAgICB9LA0KICAgIHsNCiAgICAgICJpbmRleCI6IDIsDQogICAgICAibGF0ZXgiOiAid2VpZ2h0X2k9XFxtYXgoMC4yLCB3ZWlnaHRfaVxcdGltZXMgMC44KSIsDQogICAgICAiZGlzcGxheSI6IGZhbHNlLA0KICAgICAgImZpbmFsX29iamVjdF90eXBlIjogIk9NTUwiLA0KICAgICAgImNvbnZlcnNpb24iOiB7DQogICAgICAgICJvcmlnaW5hbF9sYXRleCI6ICJ3ZWlnaHRfaT1cXG1heCgwLjIsIHdlaWdodF9pXFx0aW1lcyAwLjgpIiwNCiAgICAgICAgInJld3JpdHRlbl9sYXRleCI6ICJ3ZWlnaHRfaT1cXG1heCgwLjIsIHdlaWdodF9pXFx0aW1lcyAwLjgpIiwNCiAgICAgICAgImFwcGxpZWRfcnVsZXMiOiBbXSwNCiAgICAgICAgImltcGxpY2l0X3NxcnRfb3JkaW5hbHMiOiBbXSwNCiAgICAgICAgInNlbWFudGljX21hdGNoIjogdHJ1ZSwNCiAgICAgICAgImZhbGxiYWNrX3RvX29yaWdpbmFsIjogZmFsc2UsDQogICAgICAgICJtb2RlIjogIm9mZmljZSIsDQogICAgICAgICJkaXNwbGF5IjogZmFsc2UsDQogICAgICAgICJvbW1sX3ZhbGlkIjogdHJ1ZSwNCiAgICAgICAgInJhZGljYWxfY291bnQiOiAwLA0KICAgICAgICAiZW1wdHlfYm94X2NvdW50IjogMA0KICAgICAgfQ0KICAgIH0sDQogICAgew0KICAgICAgImluZGV4IjogMywNCiAgICAgICJsYXRleCI6ICJ3ZWlnaHRfaT1cXG1pbigxLCB3ZWlnaHRfaSswLjEpIiwNCiAgICAgICJkaXNwbGF5IjogZmFsc2UsDQogICAgICAiZmluYWxfb2JqZWN0X3R5cGUiOiAiT01NTCIsDQogICAgICAiY29udmVyc2lvbiI6IHsNCiAgICAgICAgIm9yaWdpbmFsX2xhdGV4IjogIndlaWdodF9pPVxcbWluKDEsIHdlaWdodF9pKzAuMSkiLA0KICAgICAgICAicmV3cml0dGVuX2xhdGV4IjogIndlaWdodF9pPVxcbWluKDEsIHdlaWdodF9pKzAuMSkiLA0KICAgICAgICAiYXBwbGllZF9ydWxlcyI6IFtdLA0KICAgICAgICAiaW1wbGljaXRfc3FydF9vcmRpbmFscyI6IFtdLA0KICAgICAgICAic2VtYW50aWNfbWF0Y2giOiB0cnVlLA0KICAgICAgICAiZmFsbGJhY2tfdG9fb3JpZ2luYWwiOiBmYWxzZSwNCiAgICAgICAgIm1vZGUiOiAib2ZmaWNlIiwNCiAgICAgICAgImRpc3BsYXkiOiBmYWxzZSwNCiAgICAgICAgIm9tbWxfdmFsaWQiOiB0cnVlLA0KICAgICAgICAicmFkaWNhbF9jb3VudCI6IDAsDQogICAgICAgICJlbXB0eV9ib3hfY291bnQiOiAwDQogICAgICB9DQogICAgfQ0KICBdLA0KICAiZG9jeF9zaGEyNTYiOiAiM2IxN2VmYTYyMjIxYmNjZDJhMDc4YzFlNzk2ZGVjNDBkYjE5MzI0ZTFiOTU4NGFmYWRkMDhlMWI1NDExZDViYyINCn0="
+          },
+          {
+            "path": "05_figures/figures_manifest.json",
+            "text": "{\r\n  \"generated_at\": \"2026-07-21T04:13:15\",\r\n  \"source_draft\": \"<REDACTED_LOCAL_PATH>",\r\n  \"figures\": [\r\n    {\r\n      \"figure_no\": \"图1\",\r\n      \"title\": \"方法流程图\",\r\n      \"file\": \"图1_方法流程图.svg\",\r\n      \"delivery_file\": \"图1_方法流程图.png\",\r\n      \"steps\": [\r\n        \"S101\",\r\n        \"S102\",\r\n        \"S103\",\r\n        \"S104\"\r\n      ]\r\n    },\r\n    {\r\n      \"figure_no\": \"图2\",\r\n      \"title\": \"系统模块图\",\r\n      \"file\": \"图2_系统模块图.svg\",\r\n      \"delivery_file\": \"图2_系统模块图.png\",\r\n      \"modules\": [\r\n        \"处理模块\",\r\n        \"状态采集模块\",\r\n        \"评分筛选模块\",\r\n        \"任务分配模块\"\r\n      ]\r\n    }\r\n  ],\r\n  \"delivery_files\": [\r\n    \"图1_方法流程图.png\",\r\n    \"图1_方法流程图.svg\",\r\n    \"图2_系统模块图.png\",\r\n    \"图2_系统模块图.svg\"\r\n  ]\r\n}"
+          },
+          {
+            "path": "05_figures/图1_方法流程图.svg",
+            "text": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"760\" height=\"568\" viewBox=\"0 0 760 568\"><defs><marker id=\"arrow\" markerWidth=\"10\" markerHeight=\"10\" refX=\"8\" refY=\"3\" orient=\"auto\" markerUnits=\"strokeWidth\"><path d=\"M0,0 L0,6 L9,3 z\" fill=\"black\"/></marker></defs><rect x=\"0\" y=\"0\" width=\"760\" height=\"568\" fill=\"white\"/>\r\n<text x=\"380\" y=\"32\" text-anchor=\"middle\" font-size=\"18\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">图 1 方法流程图</text>\r\n<rect x=\"120\" y=\"60\" width=\"520\" height=\"88\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"380.0\" y=\"95.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">S101：本研究提出一种基于负载状态、网络延迟和</text><text x=\"380.0\" y=\"113.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">任务优先级的动态调度方法</text>\r\n<rect x=\"120\" y=\"178\" width=\"520\" height=\"88\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"380.0\" y=\"204.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">S102：系统采集每个边缘设备的 CPU</text><text x=\"380.0\" y=\"222.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">占用率、队列长度和最近一次响应延迟，并将 CPU</text><text x=\"380.0\" y=\"240.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">占用率归一化为 cpu_i…</text>\r\n<line x1=\"380\" y1=\"149.2\" x2=\"380\" y2=\"176.8\" stroke=\"black\" stroke-width=\"1.4\" marker-end=\"url(#arrow)\"/>\r\n<rect x=\"120\" y=\"296\" width=\"520\" height=\"88\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"380.0\" y=\"331.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">S103：系统计算任务 t 与设备 i</text><text x=\"380.0\" y=\"349.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">之间的匹配分数</text>\r\n<line x1=\"380\" y1=\"267.2\" x2=\"380\" y2=\"294.8\" stroke=\"black\" stroke-width=\"1.4\" marker-end=\"url(#arrow)\"/>\r\n<rect x=\"120\" y=\"414\" width=\"520\" height=\"88\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"380.0\" y=\"440.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">S104：系统设置阈值条件为 CPU</text><text x=\"380.0\" y=\"458.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">占用率不超过 85%、队列长度不超过 50</text><text x=\"380.0\" y=\"476.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">条且最近一次响应延迟不超过 200ms…</text>\r\n<line x1=\"380\" y1=\"385.2\" x2=\"380\" y2=\"412.8\" stroke=\"black\" stroke-width=\"1.4\" marker-end=\"url(#arrow)\"/>\r\n</svg>"
+          },
+          {
+            "path": "05_figures/图2_系统模块图.svg",
+            "text": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"840\" height=\"424\" viewBox=\"0 0 840 424\"><defs><marker id=\"arrow\" markerWidth=\"10\" markerHeight=\"10\" refX=\"8\" refY=\"3\" orient=\"auto\" markerUnits=\"strokeWidth\"><path d=\"M0,0 L0,6 L9,3 z\" fill=\"black\"/></marker></defs><rect x=\"0\" y=\"0\" width=\"840\" height=\"424\" fill=\"white\"/>\r\n<text x=\"5.0\" y=\"32\" text-anchor=\"middle\" font-size=\"18\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">图 2 系统模块图</text>\r\n<rect x=\"70\" y=\"62\" width=\"320\" height=\"108\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"230.0\" y=\"98.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">处理模块</text><text x=\"230.0\" y=\"116.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">本研究提出一种基于负载状态、网络</text><text x=\"230.0\" y=\"134.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">延迟和任务优先级的动态调度方法</text>\r\n<rect x=\"470\" y=\"62\" width=\"320\" height=\"108\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"630.0\" y=\"98.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">状态采集模块</text><text x=\"630.0\" y=\"116.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">系统采集每个边缘设备的 CPU</text><text x=\"630.0\" y=\"134.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">占用率、队列长度和最近一次响应…</text>\r\n<rect x=\"470\" y=\"214\" width=\"320\" height=\"108\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"630.0\" y=\"250.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">评分筛选模块</text><text x=\"630.0\" y=\"268.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">系统计算任务 t 与设备 i</text><text x=\"630.0\" y=\"286.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">之间的匹配分数</text>\r\n<rect x=\"70\" y=\"214\" width=\"320\" height=\"108\" rx=\"10\" ry=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/><text x=\"230.0\" y=\"250.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"15\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">任务分配模块</text><text x=\"230.0\" y=\"268.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">系统设置阈值条件为 CPU</text><text x=\"230.0\" y=\"286.0\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"12\" font-family=\"Microsoft YaHei, SimHei, SimSun, Arial, sans-serif\">占用率不超过85%、队列长度不…</text>\r\n<line x1=\"392\" y1=\"116\" x2=\"468\" y2=\"116\" stroke=\"black\" stroke-width=\"1.4\" marker-end=\"url(#arrow)\"/>\r\n<line x1=\"630\" y1=\"172\" x2=\"630\" y2=\"212\" stroke=\"black\" stroke-width=\"1.4\" marker-end=\"url(#arrow)\"/>\r\n<line x1=\"468\" y1=\"268\" x2=\"392\" y2=\"268\" stroke=\"black\" stroke-width=\"1.4\" marker-end=\"url(#arrow)\"/>\r\n</svg>"
+          }
+        ],
+        "output_json": [
+          {
+            "path": "04_reviews/validation_report.json",
+            "contains": {
+              "status": "completed",
+              "scorecard": {
+                "status": "completed",
+                "compliance_status": "compliant",
+                "checks": {
+                  "visual_review": true,
+                  "semantic_review": true,
+                  "human_confirmation": true,
+                  "formal_model": true
+                }
+              },
+              "visual_review": {
+                "status": "passed",
+                "required": false
+              }
+            }
+          },
+          {
+            "path": "04_reviews/examination_assessment.json",
+            "contains": {
+              "status": "pass"
+            }
+          }
+        ]
+      }
     }
   ]
 }

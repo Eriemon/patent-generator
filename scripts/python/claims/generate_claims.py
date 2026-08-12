@@ -17,6 +17,9 @@ import re
 # 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
 
+# 固定共享特征身份模块路径，确保正文模型和权利要求使用同一实现。
+PATH_FEATURE_IDENTITY = Path(__file__).resolve().parents[1] / "support" / "feature_identity.py"  # 稳定特征身份模块路径
+
 # 预编译发明名称标题匹配规则，供正文标题提取逻辑稳定复用。
 RE_DISCLOSURE_TITLE = re.compile(r"## 一、发明名称\s+(.+)", re.S)  # 发明名称标题匹配规则
 
@@ -25,6 +28,41 @@ RE_METHOD_STEP = re.compile(r"^(S\d{3,4})：(.+)$", re.M)  # 方法步骤匹配�
 
 # 预编译模块描述匹配规则，提取模块名称及其对应功能描述。
 RE_SYSTEM_MODULE = re.compile(r"^\d+\.\s*([^，,]+模块)[，,]\s*用于\s*(.+)$", re.M)  # 系统模块匹配规则
+
+# 从共享模块调用稳定特征身份实现，避免 claims 与正文模型各自编号。
+def build_stable_feature_id(dict_feature: dict[str, Any]) -> str:
+    """根据特征来源字段生成跨生成器一致的稳定编号。
+
+    参数：
+    - `dict_feature`：包含步骤、特征文本和证据编号的来源记录。
+
+    返回：
+    - `str`：正文模型和 claims map 共同使用的稳定编号。
+
+    异常：
+    - `ImportError`：共享特征身份模块无法加载时抛出。
+    """
+
+    # 根据正式文件路径创建共享身份模块加载规格。
+    obj_specification = importlib.util.spec_from_file_location(  # 共享身份模块加载规格
+        "readable_patent_feature_identity_for_claims",  # claims 侧隔离模块名称
+        PATH_FEATURE_IDENTITY,  # 共享身份模块正式路径
+    )
+
+    # 加载规格或加载器缺失时立即阻断，禁止回退到位置编号。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出符合项目日志合同的明确导入错误。
+        raise ImportError("> ERR: [Python] 无法加载 support/feature_identity.py。")
+
+    # 根据已验证规格创建本次调用独享的模块对象。
+    obj_module = importlib.util.module_from_spec(obj_specification)  # 共享特征身份模块对象
+
+    # 执行共享模块源码，使稳定身份函数可用。
+    obj_specification.loader.exec_module(obj_module)
+
+    # 返回共享实现生成的稳定编号，不在 claims 侧复制摘要规则。
+    return str(obj_module.build_stable_feature_id(dict_feature))
 
 # 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
 def load_runtime_support_module() -> Any:
@@ -416,8 +454,17 @@ def build_claim_support_map(
     # 先准备步骤到支持证据的映射字典，供后续按步骤编号回填支持来源。
     dict_step_support: dict[str, list[str]] = {}  # 步骤到证据编号的映射字典
 
+    # 稳定特征编号按正文证据映射顺序分配，与 Model 4.0 构建器保持一致。
+    dict_step_feature_ids: dict[str, list[str]] = {}  # 步骤到稳定特征编号
+
+    # 特征文本和证据组合用于定位实际生成的从属候选。
+    dict_feature_ids: dict[tuple[str, tuple[str, ...]], str] = {}  # 特征内容到稳定编号
+
     # 逐项遍历正文阶段输出的特征列表，只保留声明了步骤编号的记录。
     for dict_feature in dict_support_map.get("features", []):
+
+        # 当前特征身份由共享规范生成，不受其他记录插入或重排影响。
+        str_feature_id = build_stable_feature_id(dict_feature)  # 当前稳定特征编号
 
         # 读取当前特征对应的步骤编号，缺失时后续直接跳过。
         str_step_id = dict_feature.get("step", "")  # 当前特征关联的步骤编号
@@ -430,6 +477,18 @@ def build_claim_support_map(
 
         # 读取当前特征对应的支持证据编号列表，缺失时回退为空列表。
         list_support_ids = dict_feature.get("support_ids", [])  # 当前特征对应的支持证据编号列表
+
+        # 登记步骤对应的稳定特征编号，供独立项直接引用。
+        dict_step_feature_ids.setdefault(str_step_id, []).append(str_feature_id)
+
+        # 登记从属候选可复算的内容键。
+        tuple_feature_key = (
+            str(dict_feature.get("feature", "")),  # 当前技术特征正文
+            tuple(str(obj_id) for obj_id in list_support_ids),  # 当前技术特征证据序列
+        )  # 当前特征内容键
+
+        # 保存内容键与稳定身份的一一对应关系。
+        dict_feature_ids[tuple_feature_key] = str_feature_id  # 当前特征稳定身份
 
         # 读取当前步骤已登记的证据，避免后续特征覆盖先前来源。
         list_existing_support_ids = dict_step_support.setdefault(str_step_id, [])  # 当前步骤已聚合证据
@@ -464,6 +523,13 @@ def build_claim_support_map(
     # 利用字典去重特性保留首次出现顺序，得到独立项支持证据编号列表。
     list_unique_support_ids = list(dict.fromkeys(list_all_support_ids))  # 去重后的支持证据编号列表
 
+    # 独立项按步骤顺序聚合稳定 feature_id，不允许正文文本成为引用身份。
+    list_independent_feature_ids = [
+        str_feature_id  # 保留当前步骤下的稳定特征编号
+        for str_step_id in list_step_ids  # 按权利要求步骤顺序遍历
+        for str_feature_id in dict_step_feature_ids.get(str_step_id, [])  # 遍历当前步骤稳定特征
+    ]  # 方法独立项稳定特征集合
+
     # 找出没有任何来源编号的必要步骤，防止其他步骤的证据掩盖局部缺口。
     list_unsupported_step_ids = [  # 缺少支撑的主权项步骤
         str_step_id  # 保留步骤编号供补料或删减
@@ -483,14 +549,33 @@ def build_claim_support_map(
             "claim_no": 1,  # 方法主权项编号
             "claim_type": "independent_method",  # 方法独立项类型
             "mapped_steps": list_step_ids,  # 主权项覆盖的正文步骤
+            "feature_ids": list_independent_feature_ids,  # 主权项稳定技术特征集合
             "support_ids": list_unique_support_ids,  # 主权项聚合来源编号
             "support_status": "supported" if bool_independent_claim_supported else "unsupported",  # 主权项支撑状态
             "unsupported_features": list_unsupported_step_ids,  # 缺少来源的必要步骤
+            "unsupported_feature_ids": [  # 缺少证据闭包的稳定特征编号
+                str_feature_id  # 保留缺口步骤对应的稳定编号
+                for str_step_id in list_unsupported_step_ids  # 遍历全部缺少证据的步骤
+                for str_feature_id in dict_step_feature_ids.get(str_step_id, [])  # 遍历缺口步骤稳定特征
+            ],  # 主权项需要回到材料补证的特征身份
         }
     ]
 
     # 为每条已支撑从属候选登记与草案一致的编号和来源。
     for int_offset, dict_feature in enumerate(list_dependent_features, start=2):
+
+        # 用候选文本和证据绑定定位同一稳定特征身份。
+        tuple_feature_key = (
+            str(dict_feature.get("feature", "")),  # 当前从属特征正文
+            tuple(str(obj_id) for obj_id in dict_feature.get("support_ids", [])),  # 当前从属特征证据序列
+        )  # 当前从属特征内容键
+
+        # 正式候选来自同一 support map，未命中时使用空数组让 schema 阻断。
+        list_dependent_feature_ids = (  # 从属项稳定特征编号
+            [dict_feature_ids[tuple_feature_key]]  # 已定位候选使用唯一稳定编号
+            if tuple_feature_key in dict_feature_ids  # 内容键必须来自同一来源映射
+            else []  # 未定位候选保持空数组并交由 schema 阻断
+        )
 
         # 追加当前从属项映射，保留具体收窄特征文本。
         list_claim_records.append(  # 当前从属项支撑映射
@@ -498,8 +583,10 @@ def build_claim_support_map(
                 "claim_no": int_offset,  # 与草案一致的从属项编号
                 "claim_type": "dependent_method",  # 方法从属项类型
                 "feature": dict_feature["feature"],  # 当前收窄技术特征
+                "feature_ids": list_dependent_feature_ids,  # 从属项稳定技术特征集合
                 "support_ids": dict_feature["support_ids"],  # 当前特征来源编号
                 "support_status": "supported",  # 已通过生成前支撑检查
+                "unsupported_feature_ids": [],  # 当前候选已通过来源筛选
             }
         )
 
@@ -512,9 +599,10 @@ def build_claim_support_map(
 
     # 返回新版映射，明确区分实际权利要求与安全省略候选。
     return {
-        "contract_version": "2.0",  # 新版权利要求支撑合同
+        "contract_version": "3.0",  # 稳定特征权利要求支撑合同
         "claims": list_claim_records,  # 实际进入草案的权利要求
         "omitted_candidates": list_omitted_candidates,  # 未生成但可补料恢复的方向
+        "migration": {"state": "native"},  # 当前映射由正式生成器原生产出
     }
 
 # 组装权利要求草案 Markdown 文本，统一输出权利要求书和说明书映射说明。

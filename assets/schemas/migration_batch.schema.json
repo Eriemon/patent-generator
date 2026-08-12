@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/readable-patent-generator/migration_batch.schema.json",
+  "title": "Model Migration Batch Receipt 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receipt_version", "receipt_id", "batch_id", "artifacts"],
+  "properties": {
+    "receipt_version": {"const": "1.0"},
+    "receipt_id": {"type": "string", "pattern": "^MR[0-9a-f]{32}$"},
+    "batch_id": {"type": "string", "pattern": "^MB[0-9a-f]{32}$"},
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "claims"],
+      "properties": {
+        "model": {"$ref": "#/$defs/artifact"},
+        "claims": {"$ref": "#/$defs/artifact"}
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": {"type": "string", "pattern": "^[^/\\\\]+\\.json$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

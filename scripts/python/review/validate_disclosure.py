@@ -195,6 +195,7 @@ def append_structured_model_findings(
     path_case_dir: Path,
     list_findings: list[dict[str, str]],
     module_runtime_support: Any,
+    path_authoritative_model: Path | None = None,
 ) -> None:
     """读取可选结构化模型并追加跨对象校验发现。
 
@@ -202,6 +203,7 @@ def append_structured_model_findings(
     - `path_case_dir`：当前案件根目录。
     - `list_findings`：现有验证流程的统一 finding 列表。
     - `module_runtime_support`：共享 JSON 文件读取模块。
+    - `path_authoritative_model`：显式传入的已审查权威模型路径。
 
     返回：
     - `None`：模型存在时原地追加 findings；旧案件缺失模型时保持不变。
@@ -211,7 +213,11 @@ def append_structured_model_findings(
     """
 
     # 固定新版模型文件位置，避免验证器在案件目录内模糊搜索。
-    path_model = path_case_dir / "03_drafts" / "latest_disclosure_model.json"  # 结构化交底模型路径
+    path_model = (  # 结构化交底模型路径
+        path_authoritative_model.resolve()  # 显式权威模型绝对路径
+        if path_authoritative_model is not None  # 优先使用显式权威模型
+        else path_case_dir / "03_drafts" / "latest_disclosure_model.json"  # 普通后链默认模型
+    )  # 完成权威模型或默认模型路径选择
 
     # 旧案件没有版本二模型时保持可读取兼容，不伪称已执行新合同。
     if not path_model.exists():
@@ -225,8 +231,24 @@ def append_structured_model_findings(
     # 为当前案件模型取得跨对象规则入口，确保四类合同检查使用同一结果列表。
     module_validator = load_structured_contract_validator_module()  # 当前案件跨对象规则实例
 
+    # claims map 存在时必须与同一 Model 4.0 特征登记表共同验证。
+    path_claims_map = path_case_dir / "03_drafts" / "claims_map.json"  # 权利要求特征映射路径
+
+    # 缺失映射必须以空值进入正式模型验证，禁止独立项自报内容闭包。
+    dict_claims_map = (  # 当前案件实时 claims map
+        module_runtime_support.read_json_file(path_claims_map)  # 读取真实落盘映射
+        if path_claims_map.exists()  # 只有现有工件可作为权威输入
+        else None  # 缺失工件保持显式空值
+    )
+
     # 追加全部 blocker findings，使既有 build_report 自动切换到 blocked。
-    list_findings.extend(module_validator.validate_structured_model(dict_model))
+    list_findings.extend(module_validator.validate_structured_model(dict_model, dict_claims_map))
+
+    # 缺失工件由既有案件完整性规则报告；存在时执行新版闭包。
+    if dict_claims_map is not None:
+
+        # 支撑状态由稳定特征、章节和证据重新派生。
+        list_findings.extend(module_validator.validate_claims_map(dict_claims_map, dict_model))
 
 # 构造命令行参数解析器，统一声明案件目录和可选输入草稿参数。
 def build_parser() -> argparse.ArgumentParser:
@@ -253,6 +275,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 注册可选输入草稿参数，允许覆盖自动定位的 disclosure draft。
     obj_parser.add_argument("--input", help="Optional disclosure markdown path.")
+
+    # 注册显式权威模型，供 reviewed-model pipeline 重入时避免回退到 latest 模型。
+    obj_parser.add_argument("--model", help="Optional authoritative reviewed Model 4.0 path.")
 
     # 返回完成参数注册的解析器对象。
     return obj_parser
@@ -298,6 +323,7 @@ def append_examination_findings(
     list_findings: list[dict[str, str]],
     module_runtime_support: Any,
     module_examination_contract: Any,
+    dict_delivery_model: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """追加创造性、权利要求支撑和AI专项问题。
 
@@ -306,6 +332,7 @@ def append_examination_findings(
     - `list_findings`：既有自检问题列表。
     - `module_runtime_support`：共享JSON和查新记录支持模块。
     - `module_examination_contract`：统一审查合同模块。
+    - `dict_delivery_model`：当前权威Model 4.0；缺失时按未确认处理。
 
     返回：
     - `dict[str, Any]`：可独立落盘的统一审查评估结果。
@@ -335,6 +362,7 @@ def append_examination_findings(
         dict_research_facts,  # 研发事实和专项披露
         list_prior_art_records,  # 已核验最接近现有技术
         dict_claims_map,  # 实际生成权利要求及省略候选
+        dict_delivery_model=dict_delivery_model,  # AI适用决定和确认必须来自权威模型
     )
 
     # 将统一合同finding转换为既有validation_report字段名称。
@@ -942,6 +970,41 @@ def build_report(
         # 评分卡只会在无缺陷时返回 visual_review_required，作为最终 DOCX 的视觉复核门。
         str_status = str(dict_scorecard["status"])  # 语义通过后的统一流程状态
 
+    # 复制评分卡，避免聚合报告修改调用方仍可能复用的输入对象。
+    dict_reconciled_scorecard = dict(dict_scorecard)  # 与最终 findings 一致的评分卡
+
+    # 保留评分阶段已经发现但可能未重复进入最终列表的问题数。
+    dict_input_gate_counts = dict(dict_scorecard.get("gate_counts", {}))  # 评分阶段已有问题计数
+
+    # 最终列表反映结构化验证和后追加检查的真实级别分布。
+    dict_final_gate_counts = {  # 最终报告各级 finding 计数
+        "blocker": sum(dict_item["level"] == "blocker" for dict_item in list_findings),  # 最终阻断项数
+        "major": sum(dict_item["level"] == "major" for dict_item in list_findings),  # 最终修订项数
+        "minor": sum(dict_item["level"] == "minor" for dict_item in list_findings),  # 最终提示项数
+    }
+
+    # blocker 和 major 会改变合规结论，必须与最终报告同步；minor 保留评分卡自身范围。
+    dict_reconciled_scorecard["gate_counts"] = {  # 协调后的评分卡级别计数
+        "blocker": max(  # 协调后的阻断项数
+            int(dict_input_gate_counts.get("blocker", 0)),  # 评分阶段阻断项数
+            int(dict_final_gate_counts["blocker"]),  # 最终报告阻断项数
+        ),
+        "major": max(  # 协调后的修订项数
+            int(dict_input_gate_counts.get("major", 0)),  # 评分阶段修订项数
+            int(dict_final_gate_counts["major"]),  # 最终报告修订项数
+        ),
+        "minor": int(dict_input_gate_counts.get("minor", 0)),  # 评分卡域提示项数
+    }
+
+    # 后追加的正式 finding 必须同步降低内嵌评分卡，禁止同一报告同时声称 compliant 和 blocked。
+    if set_blocker_codes or set_major_codes:
+
+        # 流程状态回到修订态，视觉标记不能覆盖最终缺口。
+        dict_reconciled_scorecard["status"] = "needs_revision"  # 协调后的评分卡流程状态
+
+        # 合规结论与报告顶层 blocker 或 major 保持一致。
+        dict_reconciled_scorecard["compliance_status"] = "blocked"  # 协调后的评分卡合规结论
+
     # 返回完整结构化报告，供 JSON 落盘与 Markdown 渲染共同复用。
     return {
         "generated_at": module_runtime_support.iso_now(),
@@ -949,7 +1012,7 @@ def build_report(
         "status": str_status,
         "finding_count": len(list_findings),
         "findings": list_findings,
-        "scorecard": dict_scorecard,
+        "scorecard": dict_reconciled_scorecard,
         "visual_review": {
             "status": "passed" if str_status == "completed" else "pending",
             "required": str_status != "completed",
@@ -982,7 +1045,13 @@ def render_report_markdown(
         "",  # 标题后的空行
         f"Status: **{module_runtime_support.clean_text(dict_report['status'])}**",  # 报告状态
         f"Draft: `{path_draft.name}`",  # 草稿文件名
-        f"Score: **{dict_report['scorecard']['score']}/100**",  # 正文语义评分
+        f"Compliance: **{dict_report['scorecard']['compliance_status']}**",  # 语义与人工合规结论
+        (
+            "Gate counts: "
+            f"blocker={dict_report['scorecard']['gate_counts']['blocker']}, "
+            f"major={dict_report['scorecard']['gate_counts']['major']}, "
+            f"minor={dict_report['scorecard']['gate_counts']['minor']}"
+        ),  # 真实问题数量，不再渲染可伪造分数
         "",  # 草稿名后的空行
         "## Findings",  # Findings 小节标题
         "",  # Findings 小节标题后的空行
@@ -1046,6 +1115,33 @@ def main() -> int:
     # 在调用方显式给出输入草稿时解析其绝对路径，否则保留空值供自动定位逻辑处理。
     path_input = Path(namespace_arguments.input).resolve() if namespace_arguments.input else None  # 显式指定的输入草稿路径
 
+    # 显式模型只影响结构化合同验证，不改变正文输入定位。
+    path_authoritative_model = Path(namespace_arguments.model).resolve() if namespace_arguments.model else None  # 权威模型路径
+
+    # 选择统一审查、结构校验和质量门共同消费的权威模型路径。
+    path_delivery_model = (  # 当前权威Model 4.0路径
+        path_authoritative_model  # 调用方显式传入的已审模型
+        if path_authoritative_model is not None  # 显式路径优先
+        else path_case_dir / "03_drafts" / "latest_disclosure_model.json"  # 未指定模型时绑定案件drafts落盘文件
+    )
+
+    # 模型存在时只读取真实落盘内容；缺失时由各合同按未确认状态处理。
+    dict_delivery_model = (  # 当前权威Model 4.0
+        module_runtime_support.read_json_file(path_delivery_model)  # 读取同源正式模型
+        if path_delivery_model.exists()  # 只读取真实落盘模型
+        else None  # 缺失模型保持未确认状态
+    )
+
+    # 先定位评分卡和模型验证共同消费的落盘权利要求映射。
+    path_claims_map = path_case_dir / "03_drafts" / "claims_map.json"  # 评分使用的权利要求映射路径
+
+    # 缺失 claims map 时保持显式空值，使独立项确认按未闭包处理。
+    dict_claims_map = (  # 当前实时 Claims Map 3
+        module_runtime_support.read_json_file(path_claims_map)  # 解析评分依据的当前字节内容
+        if path_claims_map.exists()  # 只有现有工件可作为评分依据
+        else None  # 缺失映射禁止评分卡满足人工闭包
+    )
+
     # 定位当前案件可用的 disclosure draft，优先使用显式输入路径。
     path_draft = module_runtime_support.find_disclosure_draft(path_case_dir, path_input)  # 当前案件正文草稿路径
 
@@ -1091,10 +1187,16 @@ def main() -> int:
         list_findings,  # 已收集的确定性问题
         module_runtime_support,  # 共享案件读写支持
         module_examination_contract,  # 同源统一审查规则
+        dict_delivery_model,  # AI适用性与人工决定的权威来源
     )
 
     # 案件存在版本二模型时执行章节、公式、证据和交叉引用闭包检查。
-    append_structured_model_findings(path_case_dir, list_findings, module_runtime_support)
+    append_structured_model_findings(
+        path_case_dir,
+        list_findings,
+        module_runtime_support,
+        path_authoritative_model,
+    )
 
     # 校验高风险占位是否仍进入主骨架标题，避免不成熟内容误入正式主线。
     validate_placeholder_risk(str_markdown, list_findings)
@@ -1106,6 +1208,8 @@ def main() -> int:
     dict_scorecard = module_quality_contract.build_quality_scorecard(  # 正文质量评分卡
         str_markdown,  # 当前正式交底书 Markdown
         bool_visual_review_complete=bool_visual_review_complete,  # 当前版本视觉验收状态
+        dict_delivery_model=dict_delivery_model,  # 语义审查与人工确认活动记录
+        dict_claims_map=dict_claims_map,  # 独立项确认实时目标来源
     )
 
     # 将评分卡发现的问题合并到统一 findings，确保语义缺陷会阻止错误进入交付态。

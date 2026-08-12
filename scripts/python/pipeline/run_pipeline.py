@@ -17,6 +17,12 @@ from typing import Any
 # 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
 
+# 固定命名能力预检入口，流水线必须在本轮首次输出前完成所需能力检查。
+PATH_CAPABILITY_PREFLIGHT = Path(__file__).resolve().parents[1] / "support" / "check_dependencies.py"  # 能力预检入口路径
+
+# Model 4 来源链集中在支持模块，pipeline 不复制哈希和路径边界。
+PATH_MODEL4_PROVENANCE = Path(__file__).resolve().parents[1] / "support" / "model_provenance.py"  # Model 4 来源链模块
+
 # 固定正式 skill 的 Python 入口根目录，供各主链与后链脚本路径拼接复用。
 PATH_PYTHON_ROOT = Path(__file__).resolve().parents[1]  # 正式 skill 的 Python 入口根目录
 
@@ -34,6 +40,9 @@ PATH_SELECT_INVENTION_POINT_SCRIPT = PATH_PYTHON_ROOT / "invention" / "select_in
 
 # 固定查新规划入口脚本路径，供预览前查新准备阶段复用。
 PATH_PLAN_PRIOR_ART_SCRIPT = PATH_PYTHON_ROOT / "prior_art" / "plan_prior_art_queries.py"  # 查新规划入口脚本路径
+
+# 固定 CNIPA 在线检索入口，显式查询不得只选择能力而不执行生产实现。
+PATH_CNIPA_SEARCH_SCRIPT = PATH_PYTHON_ROOT / "search" / "cnipa_epub_search.py"  # CNIPA 在线检索公共入口
 
 # 固定预览生成入口脚本路径，供预览确认门生成阶段复用。
 PATH_GENERATE_PREVIEW_SCRIPT = PATH_PYTHON_ROOT / "preview" / "generate_preview.py"  # 预览生成入口脚本路径
@@ -75,6 +84,31 @@ class PostPreviewChainResult:
     # 固定正式后链返回的机器可读载荷，供主流程补齐预览路径后写回标准输出。
     dict_payload: dict[str, Any]  # 正式后链返回的机器可读载荷
 
+# 固定后链准备阶段产生的权威工件，避免后续阶段重新猜测路径。
+@dataclass(frozen=True)
+class PostPreviewArtifacts:
+    """后链准备阶段的工件集合。"""
+
+    # 保存公共自检和导出共同消费的正式正文。
+    path_draft: Path  # 正式正文路径
+
+    # 保存交付阶段定位附图目录所需的正式清单。
+    path_figures_manifest: Path  # 正式附图清单路径
+
+    # 保存 reviewed 重入时必须显式传递的唯一模型。
+    path_authoritative_model: Path | None  # reviewed 重入的权威模型路径
+
+# 固定公共自检入口的协议结果，供状态分流与交付阶段共同消费。
+@dataclass(frozen=True)
+class PostPreviewValidation:
+    """后链公共自检结果。"""
+
+    # 保存公共入口用于业务状态分流的退出码。
+    int_return_code: int  # 公共自检入口退出码
+
+    # 保存验证报告中用于交付状态传播的统一结论。
+    str_status: str  # 自检报告中的统一状态
+
 # 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
 def load_runtime_support_module() -> Any:
     """按路径加载共享运行时支持模块。
@@ -107,6 +141,259 @@ def load_runtime_support_module() -> Any:
     # 返回已完成加载的共享支持模块，供正式流水线复用。
     return module_runtime_support
 
+# 加载命名能力预检模块，保持安装副本内自包含。
+def load_capability_module() -> Any:
+    """加载流水线使用的能力预检模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行的能力预检模块。
+
+    异常：
+    - `ImportError`：无法定位或加载能力模块时抛出。
+    """
+
+    # 根据安装副本内真实路径构造能力模块规格。
+    obj_spec = importlib.util.spec_from_file_location(  # 流水线能力模块规格
+        "readable_patent_pipeline_capabilities",  # 隔离能力模块名
+        PATH_CAPABILITY_PREFLIGHT,  # 安装副本内预检入口
+    )
+
+    # 缺少规格或加载器时禁止绕过预检。
+    if obj_spec is None or obj_spec.loader is None:
+
+        # 抛出明确能力边界错误。
+        raise ImportError("> ERR: [Python] 无法加载 support/check_dependencies.py。")
+
+    # 根据有效规格创建本轮能力模块。
+    module_capability = importlib.util.module_from_spec(obj_spec)  # 当前流水线能力模块
+
+    # 执行能力预检源码，使报告构造入口可用。
+    obj_spec.loader.exec_module(module_capability)
+
+    # 返回已经初始化的能力模块。
+    return module_capability
+
+# 收集研究材料中的文件扩展名，用于只选择真实输入需要的读取能力。
+def collect_research_suffixes(path_research_root: Path) -> set[str]:
+    """收集研究输入文件扩展名。
+
+    参数：
+    - `path_research_root`：本轮研究材料文件或目录。
+
+    返回：
+    - `set[str]`：小写文件扩展名集合。
+
+    异常：
+    - 无；路径不存在时返回空集合，后续正式入口负责路径错误。
+    """
+
+    # 单文件输入直接返回其扩展名。
+    if path_research_root.is_file():
+
+        # 空扩展名不会触发 Office 或 PDF 能力。
+        return {path_research_root.suffix.lower()} if path_research_root.suffix else set()
+
+    # 不存在或不是目录的输入暂不推断可选读取能力。
+    if not path_research_root.is_dir():
+
+        # 保持只要求 core-model，由正式建案入口报告路径问题。
+        return set()
+
+    # 递归扫描真实材料文件，目录名不参与能力推导。
+    set_suffixes = {  # 本轮研究材料扩展名集合
+        path_item.suffix.lower()  # 统一小写扩展名
+        for path_item in path_research_root.rglob("*")  # 遍历研究目录下全部条目
+        if path_item.is_file() and path_item.suffix  # 只保留带扩展名的文件
+    }
+
+    # 返回实际出现的输入格式集合。
+    return set_suffixes
+
+# 判断本轮调用是否会进入生成附图和最终公式的确认后链。
+def will_run_post_preview(namespace_arguments: argparse.Namespace) -> bool:
+    """判断本轮是否需要确认后链能力。
+
+    参数：
+    - `namespace_arguments`：已经解析的流水线参数。
+
+    返回：
+    - `bool`：本轮会进入确认后链时返回 `True`。
+
+    异常：
+    - 状态文件读取失败时返回保守的参数推断结果。
+    """
+
+    # 显式确认或 reviewed model 重入一定会请求确认后链。
+    if namespace_arguments.confirmed_preview or namespace_arguments.reviewed_model:
+
+        # 本轮需要附图和公式导出能力。
+        return True
+
+    # 新建案件且未显式确认时只推进到预览，不需要后链能力。
+    if not namespace_arguments.case_dir:
+
+        # 预览阶段不应被未使用的图件或桌面公式能力阻断。
+        return False
+
+    # 既有案件可能已在前次调用中确认预览。
+    path_preview_status = Path(namespace_arguments.case_dir).resolve() / "03_drafts" / "preview_status.json"  # 既有预览状态路径
+
+    # 缺少状态文件时后续会刷新预览，本轮先按未确认处理。
+    if not path_preview_status.is_file():
+
+        # 不提前强制后链可选能力。
+        return False
+
+    # 尝试读取已确认状态，损坏文件交给正式预览流程报告。
+    try:
+
+        # 解析预览状态 JSON。
+        dict_preview_status = json.loads(path_preview_status.read_text(encoding="utf-8"))  # 既有预览状态
+
+    # 文件或 JSON 异常时不在能力推导阶段掩盖正式诊断。
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+
+        # 保守保持预览阶段能力集合。
+        return False
+
+    # 只有明确 confirmed=true 才视为本轮会进入后链。
+    return bool(dict_preview_status.get("confirmed", False))
+
+# 根据真实输入格式和本轮输出请求推导最小能力集合。
+def determine_required_capabilities(namespace_arguments: argparse.Namespace) -> list[str]:
+    """推导流水线本轮必需能力。
+
+    参数：
+    - `namespace_arguments`：已经解析的流水线参数。
+
+    返回：
+    - `list[str]`：按执行依赖顺序排列的能力名称。
+
+    异常：
+    - 无。
+    """
+
+    # Model 4 与 Claims 3 验证贯穿全部流水线阶段。
+    list_capabilities = ["core-model"]  # 本轮最小能力集合
+
+    # 新建案件根据真实研究材料扩展名选择读取能力。
+    if namespace_arguments.research_root:
+
+        # 扫描本轮输入格式。
+        set_suffixes = collect_research_suffixes(Path(namespace_arguments.research_root).resolve())  # 研究材料扩展名
+
+        # DOCX 和 PPTX 输入需要 Office 读取能力。
+        if set_suffixes.intersection({".docx", ".pptx"}):
+
+            # 追加 Office 材料读取能力。
+            list_capabilities.append("office-intake")
+
+        # PDF 输入独立选择 PDF 读取能力。
+        if ".pdf" in set_suffixes:
+
+            # 将独立 PDF 解析能力加入本轮阻断集合。
+            list_capabilities.append("pdf-intake")
+
+    # 显式在线检索请求必须选择与 urllib 生产入口对应的 CNIPA 能力。
+    if str(getattr(namespace_arguments, "cnipa_query", "")).strip():
+
+        # 把在线检索能力加入输出前阻断集合。
+        list_capabilities.append("cnipa-search")
+
+    # 只有本轮会进入确认后链时才要求附图和公式能力。
+    if will_run_post_preview(namespace_arguments):
+
+        # 正式后链固定生成技术附图。
+        list_capabilities.append("figures")
+
+        # Office 模式只需要纯 OMML 转换链。
+        if namespace_arguments.equation_mode == "office":
+
+            # 追加 Office 原生公式能力。
+            list_capabilities.append("formula-omml")
+
+        # MathType 模式需要 Windows Word 与 Equation.DSMT4。
+        else:
+
+            # 追加原生 MathType 桌面运行时能力。
+            list_capabilities.append("native-mathtype")
+
+    # 返回不含未使用可选项的能力序列。
+    return list_capabilities
+
+# 在流水线首次写出案件产物前阻断缺失的必需能力。
+def require_pipeline_capabilities(namespace_arguments: argparse.Namespace) -> dict[str, Any]:
+    """执行本轮流水线能力预检。
+
+    参数：
+    - `namespace_arguments`：已经解析的流水线参数。
+
+    返回：
+    - `dict[str, Any]`：全部能力诊断与本轮选择结果。
+
+    异常：
+    - `RuntimeError`：任一本轮必需能力未就绪时抛出。
+    """
+
+    # 加载安装副本内能力实现。
+    module_capability = load_capability_module()  # 流水线能力预检模块
+
+    # 依据真实输入和本轮阶段推导最小能力集合。
+    list_capabilities = determine_required_capabilities(namespace_arguments)  # 本轮必需能力
+
+    # 构造完整诊断，但只让本轮能力参与阻断。
+    dict_report = module_capability.build_report(list_capabilities)  # 本轮能力预检报告
+
+    # 任一选中能力缺失时禁止创建或更新案件输出。
+    if not dict_report["ready"]:
+
+        # 汇总能力名称，保持错误文本简短且可操作。
+        str_missing = ", ".join(dict_report["missing_selected"])  # 本轮缺失能力摘要
+
+        # 抛出统一前缀错误，调用方可先独立运行 check_dependencies --json。
+        raise RuntimeError(f"> ERR: [Python] 流水线必需能力未就绪：{str_missing}")
+
+    # 返回报告供测试和未来调用方审计本轮选择。
+    return dict_report
+
+# 按文件路径加载 Model 4 来源链支持模块。
+def load_model4_provenance_module() -> Any:
+    """加载 Model 4 来源链模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行源码的来源链模块。
+
+    异常：
+    - `ImportError`：模块规格或加载器缺失时抛出。
+    """
+
+    # 根据正式支持模块路径创建隔离加载规格。
+    obj_spec = importlib.util.spec_from_file_location(  # Model 4 来源链加载规格
+        "readable_patent_model4_provenance",  # 与其他动态模块隔离的名称
+        PATH_MODEL4_PROVENANCE,  # 正式来源链模块路径
+    )  # 来源链模块加载规格
+
+    # 规格或加载器缺失时禁止跳过案件绑定验证。
+    if obj_spec is None or obj_spec.loader is None:
+
+        # 抛出指向正式模块的明确导入错误。
+        raise ImportError("> ERR: [Python] 无法加载 support/model_provenance.py。")
+
+    # 根据已验证规格创建本轮独享的来源链模块。
+    module_provenance = importlib.util.module_from_spec(obj_spec)  # 待执行来源链模块实例
+
+    # 执行正式模块源码，使封印和验证入口可用。
+    obj_spec.loader.exec_module(module_provenance)
+
+    # 返回已经初始化的唯一来源链规则实现。
+    return module_provenance
+
 # 构造命令行参数解析器，统一声明新建案件、续跑案件和可选导出参数。
 def build_parser() -> argparse.ArgumentParser:
     """构造正式流水线入口的命令行解析器。
@@ -135,6 +422,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 注册新建案件名称参数，供建案入口生成稳定案件目录名。
     obj_parser.add_argument("--case-name", help="Short case or invention name for a new case.")
+
+    # 注册显式 CNIPA 在线检索词，空值保持可选能力不参与阻断。
+    obj_parser.add_argument(
+        "--cnipa-query",  # 在线检索词参数名
+        default="",  # 空值表示本轮不使用 CNIPA 能力
+        help="Optional keyword query executed by the CNIPA public entrypoint.",  # CLI 帮助文本
+    )
 
     # 注册新建案件输出根目录参数，供本地 runs 目录定向落盘复用。
     obj_parser.add_argument("--output-root", default="runs/patent_cases")
@@ -175,6 +469,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--export-docx",
         action="store_true",
         help="Retained for compatibility; the pipeline now exports DOCX by default.",
+    )
+
+    # 注册已嵌入审查的权威模型，用于正式后链重入时跳过正文和模型再生成。
+    obj_parser.add_argument(
+        "--reviewed-model",
+        help="Authoritative reviewed Model 4.0 used for post-preview reentry.",
     )
 
     # 注册公式兼容模式并透传给正式 DOCX 导出入口。
@@ -350,6 +650,38 @@ def run_required_stage(
 
     # 返回已经通过成功校验的子进程结果，供上层继续解析输出。
     return completed_process_stage
+
+# 通过正式 CNIPA 公共入口执行显式在线检索。
+def run_cnipa_online_search(str_query: str) -> list[dict[str, Any]]:
+    """执行 CNIPA 在线检索并解析结构化命中。
+
+    参数：
+    - `str_query`：调用方显式提供的在线检索词。
+
+    返回：
+    - `list[dict[str, Any]]`：公共入口返回的结构化专利命中。
+
+    异常：
+    - 公共入口失败、输出不是 JSON 数组或数组元素损坏时抛出。
+    """
+
+    # 使用生产检索入口而不是在 pipeline 内复制 urllib 和解析规则。
+    completed_process_search = run_required_stage(  # CNIPA 在线检索子进程结果
+        PATH_CNIPA_SEARCH_SCRIPT,  # 标准库 urllib 在线检索入口
+        ["--query", str_query],  # 调用方明确要求的检索词
+    )
+
+    # 公共入口声明 JSON stdout 协议，pipeline 直接解析完整数组。
+    obj_hits = json.loads(completed_process_search.stdout)  # CNIPA 在线命中原始对象
+
+    # 非数组输出表示生产入口协议已经断链，不能写出伪造结果文件。
+    if not isinstance(obj_hits, list) or not all(isinstance(obj_item, dict) for obj_item in obj_hits):
+
+        # 抛出稳定错误，阻止后续案件输出掩盖在线检索协议错误。
+        raise ValueError("> ERR: [Python] CNIPA 在线检索入口必须返回 JSON 对象数组。")
+
+    # 返回逐项类型已核验的命中集合。
+    return obj_hits
 
 # 把子入口最后输出的一条路径文本解析成绝对路径对象，统一处理路径型结果。
 def read_output_path(completed_process_stage: subprocess.CompletedProcess[str]) -> Path:
@@ -658,133 +990,479 @@ def collect_delivery_figure_files(path_case_dir: Path) -> list[str]:
         if path_item.suffix.lower() in {".png", ".svg"}
     ]
 
-# 在预览已确认后执行正文、附图、权利要求、自检与可选导出阶段。
-def run_post_preview_chain(
-    path_case_dir: Path,
-    str_equation_mode: str,
-) -> PostPreviewChainResult:
-    """执行预览确认后的正式后链。
+# 定位重入案件的既有正文，禁止为取得路径而重新生成并覆盖 Model 4.0。
+def find_existing_draft(path_case_dir: Path) -> Path:
+    """定位案件中已经存在的正式正文草稿。
 
     参数：
-    - `path_case_dir`：当前案件根目录路径。
-    - `str_equation_mode`：Office OMML 或原生 MathType OLE 公式模式。
+    - `path_case_dir`：当前重入案件根目录。
 
     返回：
-    - `PostPreviewChainResult`：包含退出码与机器可读 JSON 载荷的后链结果。
+    - `Path`：已经存在的正式正文草稿绝对路径。
 
     异常：
-    - 任一强制成功子入口失败时抛出 `RuntimeError`。
-    - 自检入口返回异常退出码时抛出 `RuntimeError`。
+    - `FileNotFoundError`：案件中不存在正式正文草稿时抛出。
     """
 
-    # 先准备正式正文入口参数，确保正文固定围绕当前案件目录落盘。
-    list_draft_args = ["--case-dir", str(path_case_dir)]  # 正文生成入口参数列表
+    # 加载共享运行时支持模块，复用正式正文定位规则。
+    module_runtime_support: Any = load_runtime_support_module()  # 确认状态读写支持对象
 
-    # 执行正式正文入口，生成交底书主草稿与来源证据映射。
-    completed_process_draft = run_required_stage(PATH_GENERATE_DRAFT_SCRIPT, list_draft_args)  # 正文生成入口执行结果对象
+    # 只查找已有正文，不调用任何生成入口。
+    path_draft = module_runtime_support.find_disclosure_draft(path_case_dir, None)  # 既有正文草稿路径
 
-    # 解析正文入口返回的主草稿路径，供后续附图、权利要求和自检复用。
-    path_draft = read_output_path(completed_process_draft)  # 正文主草稿路径
+    # 正文缺失时拒绝 reviewed-model 重入，避免模型与空白正文脱节。
+    if path_draft is None or not path_draft.exists():
 
-    # 先准备附图入口参数，确保附图阶段读取当前正文并把产物写回当前案件。
-    list_figures_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # 附图入口参数列表
+        # 抛出明确文件缺失错误，提示调用方先完成首次正文生成。
+        raise FileNotFoundError("> ERR: [Python] reviewed-model 重入缺少既有 disclosure draft。")
 
-    # 执行附图入口，生成与当前正文对应的附图清单与占位图示文件。
-    completed_process_figures = run_required_stage(PATH_GENERATE_FIGURES_SCRIPT, list_figures_args)  # 附图入口执行结果对象
+    # 返回规范化绝对路径，确保后续子入口消费同一正文。
+    return path_draft.resolve()
 
-    # 解析附图入口返回的附图清单路径，供内部 review 和交付包路径收集复用。
-    path_figures_manifest = read_output_path(completed_process_figures)  # 附图清单路径
+# 校验 reviewed Model 4 并定位与其绑定的既有正文。
+def validate_reviewed_model_artifact(
+    path_case_dir: Path,
+    path_reviewed_model: Path,
+) -> tuple[Path, Path]:
+    """校验 reviewed Model 4 与当前案件的来源链。
 
-    # 先准备权利要求入口参数，确保权利要求阶段消费的是当前正文主稿。
-    list_claims_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # 权利要求入口参数列表
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `path_reviewed_model`：调用方显式提交的 reviewed Model 4。
 
-    # 执行权利要求入口，生成与当前正文对应的权利要求草案与映射文件。
-    completed_process_claims = run_required_stage(PATH_GENERATE_CLAIMS_SCRIPT, list_claims_args)  # 权利要求入口执行结果对象
+    返回：
+    - `tuple[Path, Path]`：权威模型和既有正文的绝对路径。
 
-    # 读取权利要求入口返回路径，只把它当作内部落盘校验信号而不进入公开交付结果。
-    _ = read_output_path(completed_process_claims)  # 权利要求内部工件落盘校验路径
+    异常：
+    - 模型缺失、版本错误或来源链不匹配时抛出对应异常。
+    """
 
-    # 先准备自检入口参数，确保自检阶段针对当前正文主稿输出对应报告。
-    list_review_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # 自检入口参数列表
+    # 规范化权威模型路径，避免后续阶段回退读取 latest 模型。
+    path_authoritative_model: Path = path_reviewed_model.resolve()  # 权威模型绝对路径
 
-    # 执行自检入口，允许其通过退出码区分 blocked、needs_revision 与通过状态。
-    completed_process_review = run_child_entrypoint(PATH_VALIDATE_DISCLOSURE_SCRIPT, list_review_args)  # 自检入口执行结果对象
+    # 权威模型必须已经真实落盘。
+    if not path_authoritative_model.exists():
 
-    # 在自检入口返回了协议外退出码时立即报错，避免主流程误判状态。
+        # 缺失时报告实际路径，便于调用方修复重入参数。
+        raise FileNotFoundError(
+            f"> ERR: [Python] reviewed model 不存在:{path_authoritative_model}"
+        )
+
+    # 加载正式来源链模块，复用案件身份和父工件摘要校验。
+    module_provenance: Any = load_model4_provenance_module()  # 来源链验证模块
+
+    # 对当前案件执行正式 reviewed 模型验证。
+    obj_model: Any = module_provenance.validate_reviewed_model_for_case(  # 已验证模型对象
+        path_case_dir,  # 当前模型所属案件
+        path_authoritative_model,  # 调用方提交的唯一模型文件
+    )
+
+    # 只允许结构化 Model 4 进入正式后链。
+    if not isinstance(obj_model, dict) or obj_model.get("contract_version") != "4.0":
+
+        # 旧版本或非对象输入必须显式失败。
+        raise ValueError("> ERR: [Python] --reviewed-model 必须是 Model 4.0 JSON 对象。")
+
+    # 定位与权威模型配套的既有正文，禁止重新生成覆盖。
+    path_draft: Path = find_existing_draft(path_case_dir)  # reviewed 配套正文路径
+
+    # 返回已经完成案件绑定的两项权威路径。
+    return path_authoritative_model, path_draft
+
+# 定位 reviewed 重入必须复用的附图清单与 Claims Map 3。
+def locate_reviewed_companion_artifacts(
+    path_case_dir: Path,
+) -> tuple[Path, Path]:
+    """定位 reviewed 模型的配套工件。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+
+    返回：
+    - `tuple[Path, Path]`：附图清单和 Claims Map 3 路径。
+
+    异常：
+    - 任一配套工件缺失时抛出 `FileNotFoundError`。
+    """
+
+    # 定位首次后链已经生成的正式附图清单。
+    path_figures_manifest: Path = path_case_dir / "05_figures" / "figures_manifest.json"  # 附图清单路径
+
+    # 定位来源链摘要已经绑定的 Claims Map 3。
+    path_claims_map: Path = path_case_dir / "03_drafts" / "claims_map.json"  # reviewed 配套 claims 路径
+
+    # 两项配套工件都必须存在，禁止重生成改变权威边界。
+    for path_required_artifact in (path_figures_manifest, path_claims_map):
+
+        # 缺少任一配套工件时拒绝 reviewed 重入。
+        if not path_required_artifact.exists():
+
+            # 报告实际缺失路径，便于恢复同一案件。
+            raise FileNotFoundError(
+                f"> ERR: [Python] reviewed-model 重入缺少既有配套工件:"
+                f"{path_required_artifact}"
+            )
+
+    # 返回后续自检与交付阶段共用的配套路径。
+    return path_figures_manifest, path_claims_map
+
+# 首次后链按固定顺序生成正文、附图和权利要求工件。
+def generate_initial_post_preview_artifacts(
+    path_case_dir: Path,
+) -> tuple[Path, Path, Path]:
+    """生成首次后链的三类正式工件。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+
+    返回：
+    - `tuple[Path, Path, Path]`：正文、附图清单和 Claims Map 3 路径。
+
+    异常：
+    - 任一生产入口失败或机器输出无效时抛出 `RuntimeError`。
+    """
+
+    # 执行正文生成入口并保留其机器输出。
+    completed_process_draft: subprocess.CompletedProcess[str] = run_required_stage(  # 正文生成结果
+        PATH_GENERATE_DRAFT_SCRIPT,  # 正文生产入口路径
+        ["--case-dir", str(path_case_dir)],  # 当前案件生成参数
+    )
+
+    # 解析正式正文路径，供后续阶段共同消费。
+    path_draft: Path = read_output_path(completed_process_draft)  # 后续附图与 claims 的正文输入
+
+    # 执行附图生成入口并保留正式清单。
+    completed_process_figures: subprocess.CompletedProcess[str] = run_required_stage(  # 附图生成结果
+        PATH_GENERATE_FIGURES_SCRIPT,  # 附图生产入口路径
+        ["--case-dir", str(path_case_dir), "--input", str(path_draft)],  # 正文绑定参数
+    )
+
+    # 解析附图入口唯一机器输出路径。
+    path_figures_manifest: Path = read_output_path(completed_process_figures)  # 交付阶段附图根依据
+
+    # 执行权利要求生成入口，形成 Claims Map 3。
+    completed_process_claims: subprocess.CompletedProcess[str] = run_required_stage(  # 权利要求生成结果
+        PATH_GENERATE_CLAIMS_SCRIPT,  # 权利要求生产入口路径
+        ["--case-dir", str(path_case_dir), "--input", str(path_draft)],  # claims 所属案件与主稿
+    )
+
+    # 读取机器输出，确认权利要求阶段真实完成落盘。
+    path_claims_output: Path = read_output_path(completed_process_claims)  # 权利要求输出校验路径
+
+    # 固定正式 Claims Map 3 路径，供来源链封印复用。
+    path_claims_map: Path = path_case_dir / "03_drafts" / "claims_map.json"  # 初始模型封印的 claims 依据
+
+    # 保留显式校验变量，避免机器输出只被解析却未消费。
+    _ = path_claims_output  # 权利要求阶段落盘证据
+
+    # 返回首次后链产生的三类正式工件。
+    return path_draft, path_figures_manifest, path_claims_map
+
+# 在首次 claims 生成后一次性封印初始 Model 4 的案件内容摘要。
+def seal_initial_post_preview_model(
+    path_case_dir: Path,
+    path_draft: Path,
+    path_claims_map: Path,
+) -> None:
+    """封印首次后链的初始 Model 4。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `path_draft`：正式正文路径。
+    - `path_claims_map`：Claims Map 3 路径。
+
+    返回：
+    - `None`：初始模型完成案件与内容绑定。
+
+    异常：
+    - 来源链模块加载或封印失败时由底层异常上抛。
+    """
+
+    # 加载正式来源链模块，执行唯一初始封印。
+    module_provenance: Any = load_model4_provenance_module()  # 初始模型封印模块
+
+    # 写入案件身份、正文、预览和 Claims Map 3 摘要。
+    module_provenance.seal_initial_model_artifact(
+        path_case_dir,
+        path_case_dir / "03_drafts" / "latest_disclosure_model.json",
+        path_draft,
+        path_case_dir / "03_drafts" / "pre_draft_preview.md",
+        path_claims_map,
+    )
+
+# 准备后链权威工件；首次运行负责生成并封印，reviewed 重入只复用既有工件。
+def prepare_post_preview_artifacts(
+    path_case_dir: Path,
+    path_reviewed_model: Path | None,
+) -> PostPreviewArtifacts:
+    """准备公共自检和交付阶段需要的权威工件。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `path_reviewed_model`：可选 reviewed Model 4 路径。
+
+    返回：
+    - `PostPreviewArtifacts`：正文、附图清单与可选权威模型路径。
+
+    异常：
+    - 生成入口失败、工件缺失或来源链不匹配时抛出对应异常。
+    """
+
+    # reviewed 重入只验证并复用既有权威工件。
+    if path_reviewed_model is not None:
+
+        # 校验 reviewed 模型并定位其绑定正文。
+        tuple_reviewed_paths: tuple[Path, Path] = validate_reviewed_model_artifact(  # reviewed 路径集合
+            path_case_dir,  # 当前重入案件根
+            path_reviewed_model,  # 显式 reviewed 模型
+        )
+
+        # 分离权威模型路径，供公共自检显式传参。
+        path_authoritative_model: Path = tuple_reviewed_paths[0]  # reviewed 权威模型路径
+
+        # 分离既有正文路径，禁止生成器覆盖 reviewed 内容。
+        path_draft: Path = tuple_reviewed_paths[1]  # 公共自检使用的 reviewed 正文
+
+        # 定位 reviewed 模型绑定的配套附图与 claims 工件。
+        tuple_companion_paths: tuple[Path, Path] = locate_reviewed_companion_artifacts(  # 配套路径集合
+            path_case_dir  # 配套工件所属案件根
+        )
+
+        # 分离附图清单路径，供交付阶段定位附图根。
+        path_figures_manifest: Path = tuple_companion_paths[0]  # reviewed 交付附图索引
+
+        # 分离 Claims Map 3 路径，确认配套 claims 已落盘。
+        path_claims_map: Path = tuple_companion_paths[1]  # reviewed 权利要求映射依据
+
+    # 首次后链生成正式工件并封印初始模型。
+    else:
+
+        # 首次后链没有调用方外部权威模型。
+        path_authoritative_model = None  # 首次后链权威模型标记
+
+        # 按固定顺序生成正文、附图和 Claims Map 3。
+        tuple_initial_paths: tuple[Path, Path, Path] = generate_initial_post_preview_artifacts(  # 首次工件路径集合
+            path_case_dir  # 当前首次后链案件根
+        )
+
+        # 分离正文路径，供来源链封印和公共自检复用。
+        path_draft = tuple_initial_paths[0]  # 首次生成正文路径
+
+        # 提取首次附图清单，供正式交付定位已生成的图件。
+        path_figures_manifest = tuple_initial_paths[1]  # 首次生成附图清单路径
+
+        # 分离 Claims Map 3 路径，供初始 Model 4 封印。
+        path_claims_map = tuple_initial_paths[2]  # 首次生成 claims 路径
+
+        # 将首次生成内容一次性绑定到初始 Model 4。
+        seal_initial_post_preview_model(
+            path_case_dir,
+            path_draft,
+            path_claims_map,
+        )
+
+    # 返回后续公共自检和导出阶段唯一消费的工件集合。
+    return PostPreviewArtifacts(
+        path_draft=path_draft.resolve(),
+        path_figures_manifest=path_figures_manifest.resolve(),
+        path_authoritative_model=path_authoritative_model,
+    )
+
+# 始终调用公共 validate_disclosure 入口，不在 pipeline 内复制或放宽审查规则。
+def validate_post_preview_artifacts(
+    path_case_dir: Path,
+    post_preview_artifacts_obj_artifacts: PostPreviewArtifacts,
+) -> PostPreviewValidation:
+    """执行公共自检入口并解析稳定状态协议。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `post_preview_artifacts_obj_artifacts`：准备阶段权威工件。
+
+    返回：
+    - `PostPreviewValidation`：公共入口退出码和报告状态。
+
+    异常：
+    - 公共入口返回协议外退出码或报告无效时抛出 `RuntimeError`。
+    """
+
+    # 准备公共自检入口的案件与正文参数。
+    list_review_args: list[str] = [  # 公共自检参数列表
+        "--case-dir",  # 案件根参数名
+        str(path_case_dir),  # 当前案件根路径
+        "--input",  # 正式正文参数名
+        str(post_preview_artifacts_obj_artifacts.path_draft),  # 权威正文路径
+    ]
+
+    # reviewed 重入必须把唯一权威模型显式传给公共入口。
+    if post_preview_artifacts_obj_artifacts.path_authoritative_model is not None:
+
+        # 追加权威模型参数，禁止公共入口回退 latest 模型。
+        list_review_args.extend(
+            [
+                "--model",
+                str(post_preview_artifacts_obj_artifacts.path_authoritative_model),
+            ]
+        )
+
+    # 执行真实公共自检入口并保留全部协议输出。
+    completed_process_review: subprocess.CompletedProcess[str] = run_child_entrypoint(  # 公共自检结果
+        PATH_VALIDATE_DISCLOSURE_SCRIPT,  # 公共验证入口路径
+        list_review_args,  # 当前案件验证参数
+    )
+
+    # 只接受公共入口声明的三类业务退出码。
     if completed_process_review.returncode not in (0, 1, 2):
 
-        # 抛出明确错误，提示当前自检入口没有遵守既定退出码协议。
+        # 协议外退出码必须携带标准输出与错误摘要。
         raise RuntimeError(
             "> ERR: [Python] 自检入口执行异常。\n"
             f"stdout:\n{completed_process_review.stdout}\n"
             f"stderr:\n{completed_process_review.stderr}"
         )
 
-    # 读取自检报告路径并解析统一状态，供 DOCX 导出后保留视觉验收门而不误标 completed。
-    path_validation_report = read_output_path(completed_process_review)  # 自检报告内部落盘校验路径
+    # 解析公共入口输出的唯一验证报告路径。
+    path_validation_report: Path = read_output_path(completed_process_review)  # 验证报告路径
 
-    # 解析自检报告正文，后续状态传播只读取结构化字段。
-    dict_validation_report = json.loads(path_validation_report.read_text(encoding="utf-8"))  # 自检报告结构化数据
-
-    # 缺少状态字段时采用需修订状态，禁止宽松推断为完成。
-    str_validation_status = str(dict_validation_report.get("status", "needs_revision"))  # 自检报告统一状态
-
-    # 先准备后链返回载荷字典，默认仅围绕正式交付包暴露机器可读字段。
-    dict_payload: dict[str, Any] = {"case_dir": str(path_case_dir.resolve())}  # 正式后链返回载荷字典
-
-    # 在自检报告状态为 blocked 时写回阻断状态并返回退出码 1。
-    if completed_process_review.returncode == 1:
-
-        # 把当前交付状态标记为 blocked，提醒调用方当前案件仍不能进入正式交付态。
-        dict_payload["delivery_status"] = "blocked"  # 阻断状态文本
-
-        # 返回 blocker 对应的退出码与当前机器可读载荷。
-        return PostPreviewChainResult(int_return_code=1, dict_payload=dict_payload)
-
-    # 在自检报告状态为 needs_revision 时写回待修订状态并返回退出码 2。
-    if completed_process_review.returncode == 2:
-
-        # 把当前交付状态标记为 needs_revision，提醒先修正文稿再生成正式交付包。
-        dict_payload["delivery_status"] = "needs_revision"  # 待修订状态文本
-
-        # 返回待修订对应的退出码与当前机器可读载荷。
-        return PostPreviewChainResult(int_return_code=2, dict_payload=dict_payload)
-
-    # 先准备 DOCX 导出入口参数，确保导出件与当前正式 Markdown 主稿一一对应。
-    list_export_args = [  # DOCX 导出入口参数列表
-        "--case-dir",  # 案件目录参数名
-        str(path_case_dir),  # 当前正式案件目录
-        "--input",  # 正文输入参数名
-        str(path_draft),  # 已通过自检的 Markdown 主稿
-        "--equation-mode",  # 原生公式兼容模式参数名
-        str_equation_mode,  # Office OMML 或原生 MathType OLE 模式
-    ]
-
-    # 把当前正文转成正式导出件，导出器内部会执行严格模板与媒体嵌入校验。
-    completed_process_export = run_required_stage(PATH_EXPORT_DOCX_SCRIPT, list_export_args)  # DOCX 导出入口执行结果对象
-
-    # 解析导出入口返回的 DOCX 路径，供正式交付包结果复用。
-    path_delivery_docx = read_output_path(completed_process_export).resolve()  # 正式 DOCX 交付件路径
-
-    # 直接从附图清单定位附图目录根，避免再次扫描案件树猜测正式交付目录。
-    path_delivery_figures_dir = path_figures_manifest.parent.resolve()  # 交付包附图目录根路径
-
-    # 生成返回给调用方的附图文件序列，优先固定默认双格式资产。
-    list_delivery_figure_files = collect_delivery_figure_files(path_case_dir)  # 正式附图文件绝对路径列表
-
-    # 在语义自检通过且正式交付件落盘后写回完整交付包字段；视觉验收状态不得提前完成。
-    dict_payload.update(
-        {
-            "delivery_docx": str(path_delivery_docx),  # 主交付 DOCX 路径
-            "delivery_markdown": str(path_draft.resolve()),  # 正式源稿 Markdown 路径
-            "delivery_figures_dir": str(path_delivery_figures_dir),  # 返回给调用方的附图目录根路径
-            "delivery_figure_files": list_delivery_figure_files,  # 返回给调用方的附图文件序列
-            "delivery_status": str_validation_status,  # 已导出但仍可能待视觉审阅的交付包状态文本
-        }
+    # 读取结构化状态，禁止从诊断文本推断交付结论。
+    dict_validation_report: dict[str, Any] = json.loads(  # 验证报告对象
+        path_validation_report.read_text(encoding="utf-8")  # 公共报告 UTF-8 文本
     )
 
-    # 返回正式完成状态和当前机器可读载荷。
-    return PostPreviewChainResult(int_return_code=0, dict_payload=dict_payload)
+    # 返回供状态分流和交付阶段共同消费的公共验证结果。
+    return PostPreviewValidation(
+        int_return_code=completed_process_review.returncode,
+        str_status=str(dict_validation_report.get("status", "needs_revision")),
+    )
+
+# 只在公共自检允许交付后执行 DOCX 导出，并组装稳定交付载荷。
+def export_post_preview_delivery(
+    path_case_dir: Path,
+    str_equation_mode: str,
+    post_preview_artifacts_obj_artifacts: PostPreviewArtifacts,
+    post_preview_validation_obj_validation: PostPreviewValidation,
+) -> dict[str, Any]:
+    """导出正式交付件并返回机器可读载荷。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `str_equation_mode`：Office 或原生 MathType 公式模式。
+    - `post_preview_artifacts_obj_artifacts`：准备阶段权威工件。
+    - `post_preview_validation_obj_validation`：公共自检结果。
+
+    返回：
+    - `dict[str, Any]`：完整正式交付载荷。
+
+    异常：
+    - DOCX 导出失败或机器输出无效时抛出 `RuntimeError`。
+    """
+
+    # 执行正式 DOCX 导出入口，消费已通过公共自检的正文。
+    completed_process_export: subprocess.CompletedProcess[str] = run_required_stage(  # DOCX 导出结果
+        PATH_EXPORT_DOCX_SCRIPT,  # 正式 DOCX 导出入口路径
+        [
+            "--case-dir",  # 导出案件根参数名
+            str(path_case_dir),  # 当前导出案件根
+            "--input",  # 导出正文参数名
+            str(post_preview_artifacts_obj_artifacts.path_draft),  # 已审正式正文
+            "--equation-mode",  # 公式对象模式参数名
+            str_equation_mode,  # 调用方确认的公式模式
+        ],
+    )
+
+    # 解析正式 DOCX 路径，供交付载荷稳定引用。
+    path_delivery_docx: Path = read_output_path(completed_process_export).resolve()  # DOCX 交付路径
+
+    # 返回正式主稿、附图和状态组成的机器可读交付载荷。
+    return {
+        "case_dir": str(path_case_dir.resolve()),
+        "delivery_docx": str(path_delivery_docx),
+        "delivery_markdown": str(post_preview_artifacts_obj_artifacts.path_draft),
+        "delivery_figures_dir": str(
+            post_preview_artifacts_obj_artifacts.path_figures_manifest.parent.resolve()
+        ),
+        "delivery_figure_files": collect_delivery_figure_files(path_case_dir),
+        "delivery_status": post_preview_validation_obj_validation.str_status,
+    }
+
+# 在预览已确认后按准备、自检、交付三段职责编排正式后链。
+def run_post_preview_chain(
+    path_case_dir: Path,
+    str_equation_mode: str,
+    path_reviewed_model: Path | None = None,
+) -> PostPreviewChainResult:
+    """执行预览确认后的正式后链。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `str_equation_mode`：Office 或原生 MathType 公式模式。
+    - `path_reviewed_model`：可选 reviewed Model 4 路径。
+
+    返回：
+    - `PostPreviewChainResult`：稳定退出码与机器可读载荷。
+
+    异常：
+    - 准备、自检或导出阶段异常时由对应入口上抛。
+    """
+
+    # 准备后链唯一消费的权威工件集合。
+    post_preview_artifacts_obj_artifacts: PostPreviewArtifacts = prepare_post_preview_artifacts(  # 权威工件集合
+        path_case_dir,  # 工件准备所属案件
+        path_reviewed_model,  # 工件准备的可选权威模型
+    )
+
+    # 通过公共 validate_disclosure 入口取得唯一审查结论。
+    post_preview_validation_obj_validation: PostPreviewValidation = validate_post_preview_artifacts(  # 公共审查结论
+        path_case_dir,  # 公共自检所属案件
+        post_preview_artifacts_obj_artifacts,  # 准备阶段权威工件
+    )
+
+    # 初始化阻断或待修订分支使用的最小载荷。
+    dict_payload: dict[str, Any] = {  # 后链机器载荷
+        "case_dir": str(path_case_dir.resolve())  # 当前案件绝对路径
+    }
+
+    # 退出码一仅在非视觉待验状态下表示真实 blocker。
+    if (
+        post_preview_validation_obj_validation.int_return_code == 1
+        and post_preview_validation_obj_validation.str_status
+        != "visual_review_required"
+    ):
+
+        # 明确记录当前案件被公共自检阻断。
+        dict_payload["delivery_status"] = "blocked"  # 公共自检阻断状态
+
+        # 返回 blocker 对应退出码，不执行正式导出。
+        return PostPreviewChainResult(
+            int_return_code=1,
+            dict_payload=dict_payload,
+        )
+
+    # 退出码二表示正文或模型需要修订。
+    if post_preview_validation_obj_validation.int_return_code == 2:
+
+        # 明确记录当前案件仍需修订。
+        dict_payload["delivery_status"] = "needs_revision"  # 公共自检待修订状态
+
+        # 返回待修订退出码，不执行正式导出。
+        return PostPreviewChainResult(
+            int_return_code=2,
+            dict_payload=dict_payload,
+        )
+
+    # 公共自检允许交付后执行唯一正式导出入口。
+    dict_payload = export_post_preview_delivery(  # 完整正式交付载荷
+        path_case_dir,  # 正式导出所属案件
+        str_equation_mode,  # 正式导出公式模式
+        post_preview_artifacts_obj_artifacts,  # 已通过准备门的工件
+        post_preview_validation_obj_validation,  # 公共自检允许交付的结论
+    )
+
+    # 返回成功退出码和完整正式交付载荷。
+    return PostPreviewChainResult(
+        int_return_code=0,
+        dict_payload=dict_payload,
+    )
 
 # 把机器可读 JSON 载荷写到标准输出，供测试与自动化调用方稳定解析。
 def write_json_stdout(dict_payload: dict[str, Any]) -> None:
@@ -827,6 +1505,32 @@ def write_json_stdout(dict_payload: dict[str, Any]) -> None:
     # 刷新文本标准输出，避免替身流在短进程场景丢失最后一行 JSON。
     sys.stdout.flush()
 
+# 统一诊断文本流编码，避免 Windows 本地代码页破坏中文协议。
+def configure_utf8_text_streams() -> None:
+    """固定流水线诊断流编码。
+
+    参数：
+    - 无。
+
+    返回：
+    - `None`：可重配置的标准流已切换为 UTF-8。
+
+    异常：
+    - 无。
+    """
+
+    # 逐一处理标准输出和标准错误，兼容测试替身流。
+    for stream_text in (sys.stdout, sys.stderr):
+
+        # 获取可选运行时重配置接口。
+        func_reconfigure = getattr(stream_text, "reconfigure", None)  # 当前文本流编码配置函数
+
+        # 只对真实可重配置文本流执行编码切换。
+        if callable(func_reconfigure):
+
+            # 固定 UTF-8，保证中文诊断可被跨平台调用方读取。
+            func_reconfigure(encoding="utf-8")
+
 # 执行正式流水线主入口，并严格遵守预览确认门与后链退出码协议。
 def main() -> int:
     """执行正式流水线主入口。
@@ -841,11 +1545,21 @@ def main() -> int:
     - 参数无效、共享支持加载失败或任一关键子入口失败时由底层异常上抛。
     """
 
-    # 加载共享运行时支持模块，复用正式主链对 JSON 读写的一致约定。
-    module_runtime_support = load_runtime_support_module()  # 共享运行时支持模块
-
     # 解析并校验命令行参数，确定当前属于新建案件还是续跑案件。
     namespace_arguments = parse_arguments()  # 正式流水线入口参数对象
+
+    # 在任何案件输出前校验本轮真实需要的包与外部运行时。
+    require_pipeline_capabilities(namespace_arguments)
+
+    # 在线检索同样发生在案件输出前，网络或公共入口失败时不留下半成品结果。
+    list_cnipa_hits = (  # 本轮显式 CNIPA 在线检索命中
+        run_cnipa_online_search(namespace_arguments.cnipa_query.strip())  # 真实公共入口命中
+        if namespace_arguments.cnipa_query.strip()  # 只执行调用方明确请求的在线检索
+        else []  # 未使用可选检索能力时保持空集合
+    )
+
+    # 能力就绪后加载案件读写支持，供本轮确认状态更新使用。
+    module_runtime_support = load_runtime_support_module()  # 共享运行时支持模块
 
     # 在调用方显式给出案件目录时先补齐或定位既有预览材料。
     if namespace_arguments.case_dir:
@@ -853,8 +1567,23 @@ def main() -> int:
         # 解析续跑案件目录绝对路径，确保后续所有子入口都定位到同一案件空间。
         path_case_dir = Path(namespace_arguments.case_dir).resolve()  # 续跑案件根目录路径
 
-        # 确保当前案件已经存在可用预览材料，缺失时自动补生成后再继续后链判断。
-        path_preview_markdown = ensure_existing_preview(path_case_dir)  # 补生成或复用后的预览 Markdown 路径
+        # reviewed-model 重入必须保留正文阶段写入的哈希，不得刷新预览状态覆盖它们。
+        if namespace_arguments.reviewed_model:
+
+            # 直接定位既有预览，避免预览生成器覆盖正文和模板哈希。
+            path_preview_markdown = path_case_dir / "03_drafts" / "pre_draft_preview.md"  # 既有预览 Markdown 路径
+
+            # 重入缺少预览时拒绝继续，禁止重新生成改变确认边界。
+            if not path_preview_markdown.exists():
+
+                # 抛出明确缺失错误，提示先完成首次预览阶段。
+                raise FileNotFoundError("> ERR: [Python] reviewed-model 重入缺少既有预览 Markdown。")
+
+        # 普通续跑仍按既有规则刷新预览和候选审核闭包。
+        else:
+
+            # 生成或刷新普通续跑案件的预览材料。
+            path_preview_markdown = ensure_existing_preview(path_case_dir)  # 补生成或复用后的预览 Markdown 路径
 
         # 组装续跑案件的预览检查点，供确认门和最终返回载荷共同复用。
         preview_checkpoint_state = PreviewCheckpoint(path_case_dir, path_preview_markdown)  # 续跑案件的预览检查点
@@ -864,6 +1593,15 @@ def main() -> int:
 
         # 从研究材料新建案件并推进到预览阶段，建立正式确认门上下文。
         preview_checkpoint_state = create_case_until_preview(namespace_arguments)  # 新建案件推进到预览阶段后的检查点
+
+    # 显式在线结果只在检索成功且案件根确定后进入受管 facts 目录。
+    if namespace_arguments.cnipa_query.strip():
+
+        # 固定在线命中落盘位置，使后续人工核验和恢复流程可以追踪本轮结果。
+        path_cnipa_results = preview_checkpoint_state.path_case_dir / "02_facts" / "cnipa_search_results.json"  # CNIPA 命中工件
+
+        # 使用共享原子 JSON 写入约定保存结构化命中。
+        module_runtime_support.write_json_file(path_cnipa_results, list_cnipa_hits)
 
     # 在需要时更新预览确认状态，并读取当前案件最新的确认门结果。
     # 先把调用方是否显式确认预览整理成布尔值，供确认门逻辑直接复用。
@@ -891,9 +1629,18 @@ def main() -> int:
         return 2
 
     # 把已经通过确认门的案件目录交给正式后链执行器继续推进。
+    # 将可选模型参数先规范化，避免在函数调用中嵌套条件表达式。
+    path_reviewed_model = (  # 当前执行使用的可选权威模型路径
+        Path(namespace_arguments.reviewed_model).resolve()  # 显式模型规范路径
+        if namespace_arguments.reviewed_model  # 仅处理显式重入模型
+        else None  # 普通后链保持空模型参数
+    )
+
+    # 进入正式后链，并把可选权威模型作为显式重入输入。
     post_preview_chain_result_state = run_post_preview_chain(  # 预览确认后的正式后链结果
         preview_checkpoint_state.path_case_dir,  # 已通过确认门的案件目录
         namespace_arguments.equation_mode,  # 透传到最终 DOCX 的公式兼容模式
+        path_reviewed_model,  # 可选权威审查模型
     )
 
     # 复制一份后链结果载荷，保持正式交付包结果与内部执行态隔离。
@@ -907,6 +1654,9 @@ def main() -> int:
 
 # 在脚本被直接执行时进入命令行主流程，导入场景下不产生副作用。
 if __name__ == "__main__":
+
+    # 在任何诊断输出前固定标准文本流编码。
+    configure_utf8_text_streams()
 
     # 把主流程退出码交还给当前 shell 调用方。
     raise SystemExit(main())

@@ -1385,6 +1385,24 @@ def validate_delivery_model(dict_model: Mapping[str, Any]) -> list[dict[str, str
     # 检查文献公开时序是否允许其声明的创造性用途。
     list_findings.extend(validate_prior_art_usage(dict_model.get("evidence_registry")))
 
+    # 从正式证据登记对象提取记录数组，供技术特征精确引用检查消费。
+    obj_evidence_registry = dict_model.get("evidence_registry")  # 当前证据登记对象
+
+    # 损坏证据容器不能提供任何可引用记录。
+    list_evidence_records = (  # 当前证据登记记录数组
+        obj_evidence_registry.get("records", [])  # 读取正式证据记录数组
+        if isinstance(obj_evidence_registry, Mapping)  # 只接纳映射登记对象
+        else []  # 损坏登记对象不提供记录
+    )
+
+    # 阻断缺少证据或引用悬空的技术特征进入正式交付。
+    list_findings.extend(
+        validate_feature_evidence(
+            dict_model.get("feature_registry"),
+            list_evidence_records,
+        )
+    )
+
     # 读取待办数组，非数组值按未关闭状态处理。
     list_pending_items = dict_model.get("pending_items")  # 当前人工待办数组
 

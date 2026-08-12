@@ -4,7 +4,7 @@
 
 ## 安装入口
 - Python 依赖只保留一个入口：`pip install -r requirements.txt`
-- 如需使用 CNIPA 浏览器检索，再执行：`python -m playwright install chromium`
+- CNIPA 在线检索复用标准库 `urllib` 生产入口，无需安装浏览器运行时。
 
 ## Canonical References
 - [01_end_to_end_pipeline.md](canonical/01_end_to_end_pipeline.md)

@@ -24,10 +24,22 @@ Keep evidence notes, missing administrative fields, terms, and claim drafts in
 internal sidecars unless the user explicitly asks to include them in the main
 disclosure. Keep the hard preview gate: first return `preview_pending`, then
 only enter formal delivery generation after explicit preview confirmation.
-Apply `assets/examination_quality_contract.json` to every case. Keep the
-general profile active by default. If local facts suggest an AI case, expose a
-`profile_check` in the preview and require the user to explicitly keep
-`general` or select `ai_algorithm`; never switch profiles automatically.
+Apply `assets/examination_quality_contract.json` to every case.
+
+Use disclosure model 4.0 and claims map 3.0 for new work. Treat
+`technical_profile` as a writing-profile choice only; it never enables,
+disables, or selects examination rules. Apply the registered rules from the
+case facts instead: hard AI facts mandate AI examination rules and cannot be
+opted out, soft AI signals require a reasoned human applicability decision,
+and a no-AI decision still requires human confirmation. Require `ai_scope`
+whenever AI rules apply.
+
+Bind embedded semantic reviews to the exact reviewed content hash. Require
+current human confirmations for governed quantitative facts, every
+independent-claim feature set, and AI applicability. Treat headings, step IDs,
+or words such as “通过” as labels only, never as enabling content or review
+evidence. Older disclosure or claims models require explicit migration and a
+new semantic review; conversion alone never restores reviewed status.
 
 Keep this root thin:
 
@@ -42,8 +54,8 @@ Keep this root thin:
 - keep all Python files under `scripts/python/<function>/`
 - keep all non-Python scripts under their matching `scripts/<family>/`
 - install Python dependencies only through `pip install -r requirements.txt`;
-  if CNIPA browser search is needed, run `python -m playwright install
-  chromium` after installation
+  CNIPA online search uses the standard-library `urllib` production entrypoint
+  and needs no browser-runtime installation
 
 Default workflow:
 
@@ -92,14 +104,17 @@ Default workflow:
    explicit `office` compatibility mode writes native OMML. Standalone formula
    images, plain-text fallback, and silent fallback from MathType to Office are
    forbidden. Any formula conversion failure must block delivery.
-5. Persist the formal disclosure as the versioned disclosure model, including
+5. Persist the formal disclosure as model 4.0, including
    `source_manifest`, `evidence_registry`, `data_registry`,
    `formula_registry`, `term_registry`, and `figure_registry`. Every generated
    figure must retain its draft source, file outputs, section bindings, and
    source-item provenance; unregistered figures must block delivery.
-6. Keep generated assets, references, evals, and fixtures in their governed
+6. Generate claims through claims map 3.0. Keep each independent claim bound
+   to confirmed feature and evidence identifiers; a stale or missing human
+   confirmation blocks delivery.
+7. Keep generated assets, references, evals, and fixtures in their governed
    locations.
-7. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
+8. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
    case as complete unless the final DOCX preserves the template information
    table, required section headings, non-empty technical sections, and no
    internal review placeholders. Apply the governed Chinese layout contract:
@@ -109,7 +124,7 @@ Default workflow:
    slot ends with exactly one blank paragraph and each empty slot with none.
    Validate these properties independently from the final saved DOCX before
    delivery.
-8. Verify structure, language gates, and delivery evidence before treating the
+9. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
 
 Formula export modes:

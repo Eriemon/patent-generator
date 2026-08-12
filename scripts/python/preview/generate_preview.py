@@ -288,6 +288,18 @@ def render_markdown(dict_bundle: dict[str, Any], path_prior_art_markdown: Path, 
     # 标记疑似AI建议是否仍在等待用户明确决定。
     str_profile_confirmation = "需确认" if dict_profile_check.get("confirmation_required") else "已确定"  # 类型确认摘要
 
+    # 读取独立AI信号等级，明确它不会静默改写写作profile。
+    str_ai_signal_level = str(dict_profile_check.get("ai_signal_level", "none"))  # AI材料信号等级
+
+    # 把实际触发字段或术语拼成可回查说明，无信号时使用明确占位。
+    str_ai_signal_reasons = "、".join(  # AI信号触发依据摘要
+        str(obj_reason)  # 当前结构化触发依据
+        for obj_reason in dict_profile_check.get("reason_codes", [])  # 原因码保持合同返回顺序
+    ) or "无"
+
+    # hard信号独立强制AI审查规则，不能被general写作profile关闭。
+    str_ai_rule_status = "强制适用" if dict_profile_check.get("ai_rules_mandatory") else "待人工适用性确认"  # AI规则状态
+
     # 这里初始化 Markdown 行列表，先写主案摘要和当前确认状态。
     list_lines = [
         "# Pre-Draft Preview",  # 报告标题
@@ -297,6 +309,8 @@ def render_markdown(dict_bundle: dict[str, Any], path_prior_art_markdown: Path, 
         f"- 预览状态：{str_confirmation_status}",  # 当前人工确认状态
         f"- 查新规划：{str_prior_art_status}",  # 当前查新准备状态
         f"- 技术类型：{str_profile_summary}（{str_profile_confirmation}）",  # 面向审阅者的类型摘要
+        f"- AI信号：{str_ai_signal_level}；依据：{str_ai_signal_reasons}",  # 解释材料信号及依据
+        f"- AI审查规则：{str_ai_rule_status}；不会静默切换技术类型",  # 明确profile与规则适用性解耦
         "",  # 状态与主案摘要之间留空
         "## 主案摘要",  # 主案摘要章节标题
         "",  # 章节标题后留空
