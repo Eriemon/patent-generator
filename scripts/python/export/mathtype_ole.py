@@ -73,14 +73,14 @@ def convert_latex_to_mathml(str_latex: str) -> str:
         raise ValueError("> ERR: [Python] EQ002 LaTeX 转 MathML 失败。") from obj_error
 
 # 加载原生 MathType 写入依赖的 Windows COM 模块。
-def load_com_modules() -> tuple[Any, Any, Any]:
+def load_com_modules() -> tuple[Any, Any, Any, Any]:
     """加载 pywin32 组件并检查运行平台。
 
     参数：
     - 无。
 
     返回：
-    - `tuple[Any, Any, Any]`：pythoncom、win32clipboard 和 win32com.client 模块。
+    - `tuple[Any, Any, Any, Any]`：pythoncom、win32clipboard、win32com.client 和 axcontrol 模块。
 
     异常：
     - 非 Windows 平台或缺少 pywin32 时抛出 `RuntimeError`。
@@ -97,6 +97,7 @@ def load_com_modules() -> tuple[Any, Any, Any]:
         import pythoncom
         import win32clipboard
         import win32com.client
+        from win32com.axcontrol import axcontrol
 
     # 缺少 COM 依赖时阻断默认 MathType 模式，显式 Office 兼容模式仍可独立使用。
     except ImportError as obj_error:
@@ -104,8 +105,8 @@ def load_com_modules() -> tuple[Any, Any, Any]:
         # 明确提示安装 Windows 条件依赖。
         raise RuntimeError("> ERR: [Python] EQ006 MathType 模式缺少 pywin32。") from obj_error
 
-    # 返回三项模块依赖，调用方负责管理 COM 生命周期。
-    return pythoncom, win32clipboard, win32com.client
+    # 返回四项模块依赖，调用方负责管理 COM 生命周期。
+    return pythoncom, win32clipboard, win32com.client, axcontrol
 
 # 向已创建的 Equation.DSMT4 对象写入结构化公式内容。
 def set_mathtype_mathml(
@@ -113,20 +114,22 @@ def set_mathtype_mathml(
     str_mathml: str,
     obj_pythoncom: Any,
     obj_win32clipboard: Any,
+    obj_axcontrol: Any,
 ) -> None:
-    """通过 MathType 的 IDataObject 接口写入 MathML。
+    """通过 MathType 的 IDataObject 接口写入 MathML 并关闭 OLE 对象。
 
     参数：
     - `obj_inline_shape`：Word 中新建的 MathType 行内 OLE 对象。
     - `str_mathml`：需要由 MathType 转成 MTEF 的 MathML。
     - `obj_pythoncom`：pywin32 的 COM 基础模块。
     - `obj_win32clipboard`：pywin32 的剪贴板格式模块。
+    - `obj_axcontrol`：提供 IOleObject 接口标识和关闭常量的 pywin32 模块。
 
     返回：
     - `None`。
 
     异常：
-    - OLE 激活、接口查询或数据写入失败时继续抛出 COM 异常。
+    - OLE 激活、接口查询、数据写入或对象关闭失败时继续抛出异常。
     """
 
     # 激活无交互转换接口，不调用 Word 插件的批量转换命令。
@@ -139,6 +142,11 @@ def set_mathtype_mathml(
     obj_data_object = obj_embedded_object._oleobj_.QueryInterface(  # 接收 MathML 的 MathType 数据接口
         obj_pythoncom.IID_IDataObject  # MathType 数据交换接口标识
     )  # 已完成查询的 MathType IDataObject
+
+    # 同时取得官方生命周期要求显式关闭的 OLE 对象接口。
+    obj_ole_object = obj_embedded_object._oleobj_.QueryInterface(  # 负责结束本次激活会话的 OLE 接口
+        obj_axcontrol.IID_IOleObject  # 标准 IOleObject 接口标识
+    )  # 负责结束本轮激活会话的 MathType 生命周期接口
 
     # 注册 MathType SDK 约定的 MathML 数据格式。
     int_mathml_format = obj_win32clipboard.RegisterClipboardFormat("MathML")  # MathML 格式编号
@@ -158,11 +166,35 @@ def set_mathtype_mathml(
     # 写入 Unicode MathML，并保留 COM 字符串所需的结尾空字符。
     obj_storage_medium.set(obj_pythoncom.TYMED_HGLOBAL, f"{str_mathml}\0")
 
-    # 由 MathType 接收 MathML，并在 OLE 存储中生成原生 MTEF。
-    obj_data_object.SetData(tuple_format_etc, obj_storage_medium, False)
+    # 写入失败时仍需关闭已经激活的对象，同时让原始写入错误保持为根因。
+    try:
 
-    # 再次运行转换动词，要求 MathType 刷新 Word 使用的 OLE 显示缓存。
-    obj_inline_shape.OLEFormat.DoVerb(OLE_RUN_FOR_CONVERSION_VERB)
+        # 由 MathType 接收 MathML，并在 OLE 存储中生成原生 MTEF。
+        obj_data_object.SetData(tuple_format_etc, obj_storage_medium, False)
+
+    # 数据写入失败后先完成 OLE 关闭，再把写入根因重新交给上层。
+    except Exception as obj_write_error:
+
+        # 关闭失败不能覆盖写入根因，因此组合两项诊断并保留异常链。
+        try:
+
+            # 使用无保存关闭结束当前对象会话，持久化由 Word 文档统一负责。
+            obj_ole_object.Close(obj_axcontrol.OLECLOSE_NOSAVE)
+
+        # 双重失败时同时报告业务根因和资源释放异常。
+        except Exception as obj_close_error:
+
+            # 组合错误文本，避免 finally 语义把 SetData 根因替换成 Close 异常。
+            raise RuntimeError(
+                "> ERR: [Python] EQ006 MathType 数据写入失败："
+                f"{obj_write_error}；IOleObject 关闭失败：{obj_close_error}"
+            ) from obj_write_error
+
+        # 正常关闭后原样重新抛出 SetData 根因，保留调用栈和异常类型。
+        raise
+
+    # 写入成功后按官方顺序关闭 IOleObject，关闭失败直接阻断文档保存。
+    obj_ole_object.Close(obj_axcontrol.OLECLOSE_NOSAVE)
 
 # 在已打开的 Word 文档中完成全部公式对象原位替换。
 def write_mathtype_objects(
@@ -171,6 +203,7 @@ def write_mathtype_objects(
     list_formula_records: list[dict[str, Any]],
     obj_pythoncom: Any,
     obj_win32clipboard: Any,
+    obj_axcontrol: Any,
 ) -> None:
     """把公式定位标记按逆序替换为 Equation.DSMT4 对象。
 
@@ -180,6 +213,7 @@ def write_mathtype_objects(
     - `list_formula_records`：包含唯一定位标记的公式记录。
     - `obj_pythoncom`：pywin32 的 COM 基础模块。
     - `obj_win32clipboard`：pywin32 的剪贴板格式模块。
+    - `obj_axcontrol`：提供 IOleObject 接口标识和关闭常量的 pywin32 模块。
 
     返回：
     - `None`。
@@ -242,6 +276,7 @@ def write_mathtype_objects(
             list_mathml[int_formula_index - 1],
             obj_pythoncom,
             obj_win32clipboard,
+            obj_axcontrol,
         )
 
 # 按文档顺序将全部公式定位标记替换为 MathType OLE。
@@ -286,6 +321,9 @@ def replace_omml_with_mathtype(
     # 提取 Word 自动化入口，用于创建独立应用实例。
     obj_win32com_client = tuple_com_modules[2]  # Word COM 客户端模块
 
+    # 提取 OLE 控制常量模块，用于查询并关闭每个 MathType 对象。
+    obj_axcontrol = tuple_com_modules[3]  # IOleObject 接口与关闭常量模块
+
     # 初始化当前线程的 COM apartment。
     obj_pythoncom.CoInitialize()
 
@@ -323,6 +361,7 @@ def replace_omml_with_mathtype(
             list_formula_records,
             obj_pythoncom,
             obj_win32clipboard,
+            obj_axcontrol,
         )
 
         # 保存全部替换结果，形成最终 MathType 交付文档。
