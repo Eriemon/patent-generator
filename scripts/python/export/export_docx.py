@@ -51,6 +51,21 @@ PATH_OFFICE_MATH = Path(__file__).resolve().with_name("office_math.py")  # Offic
 # 固定原生 MathType OLE 写入模块路径，避免依赖调用方搜索路径。
 PATH_MATHTYPE_OLE = Path(__file__).resolve().with_name("mathtype_ole.py")  # MathType OLE 模块路径
 
+# 固定公式对象证据文件名，供审查门在 DOCX 之外读取可复核结构统计。
+FORMULA_EVIDENCE_FILENAME = "formula_evidence.json"  # 最终公式对象证据文件名
+
+# 固定 DOCX 主文档条目，确保对象统计读取标准 WordprocessingML 入口。
+DOCX_DOCUMENT_ENTRY = "/".join(("word", "document.xml"))  # DOCX 主文档 ZIP 条目名
+
+# 固定 MathType 嵌入目录，避免对象验收依赖视觉预览。
+DOCX_EMBEDDINGS_PREFIX = "/".join(("word", "embeddings")) + "/"  # MathType OLE 嵌入部件目录前缀
+
+# Office 数学命名空间用于精确统计最终文档内的 `m:oMath` 对象。
+MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"  # Office 数学命名空间
+
+# 原生 MathType OLE 必须使用 Equation.DSMT4，其他对象不能冒充公式交付件。
+MATHTYPE_PROG_ID = "Equation.DSMT4"  # MathType OLE 程序标识
+
 # 固定默认模板路径，供 python-docx 增强路径按需读取页面版式。
 DEFAULT_TEMPLATE = Path(__file__).resolve().parents[3] / "assets" / "cn_technical_disclosure_template.docx"  # 默认模板 DOCX 路径
 
@@ -2055,6 +2070,122 @@ def resolve_docx_heading_level(str_heading: str) -> int:
     # 中文大章节使用一级标题层级，突出正式模板主结构。
     return 1
 
+# 从最终 DOCX 包读取公式对象统计，并与源公式清单进行逐项对账。
+def collect_formula_object_evidence(
+    path_docx: Path,
+    str_equation_mode: str,
+    list_formula_records: list[dict[str, Any]],
+    list_conversion_evidence: list[dict[str, object]],
+) -> dict[str, Any]:
+    """构造最终 DOCX 的公式对象级验收证据。
+
+    参数：
+    - `path_docx`：已经完成全部后处理的最终 DOCX。
+    - `str_equation_mode`：本轮 `office` 或 `mathtype` 模式。
+    - `list_formula_records`：按文档顺序保存的源公式记录。
+    - `list_conversion_evidence`：Office 中间转换阶段收集的结构证据。
+
+    返回：
+    - `dict[str, Any]`：公式数量、对象类型、嵌入部件和逐公式改写证据。
+
+    异常：
+    - `ValueError`：对象数量或类型与当前模式合同不一致。
+    """
+
+    # 读取最终 DOCX 主文档和全部 ZIP 条目，保证证据来自交付文件本身。
+    with zipfile.ZipFile(path_docx) as obj_archive:
+
+        # 主文档 XML 用于统计 OMML 和 MathType ProgID。
+        str_document_xml = obj_archive.read(DOCX_DOCUMENT_ENTRY).decode("utf-8")  # 最终 DOCX 主文档 XML
+
+        # 嵌入部件列表必须与 MathType 公式数量精确对应。
+        list_embedding_entries = [  # 最终 DOCX 中的 OLE 嵌入部件路径
+            str_entry_name  # 当前嵌入部件 ZIP 路径
+            for str_entry_name in obj_archive.namelist()  # 最终 DOCX 全部 ZIP 条目
+            if str_entry_name.startswith(DOCX_EMBEDDINGS_PREFIX)  # 只统计 Word 嵌入对象目录
+        ]
+
+    # 解析主文档 XML 后按标准命名空间精确统计数学根节点。
+    obj_document_root = ElementTree.fromstring(str_document_xml)  # 最终 DOCX 主文档 XML 根节点
+
+    # m:oMath 数量是 Office 模式的可编辑公式对象证据。
+    int_omml_count = len(obj_document_root.findall(f".//{{{MATH_NAMESPACE}}}oMath"))  # 最终文档 OMML 公式数量
+
+    # Equation.DSMT4 出现次数是 MathType 对象类型证据。
+    int_mathtype_progid_count = str_document_xml.count(MATHTYPE_PROG_ID)  # 最终文档 MathType ProgID 数量
+
+    # 源公式清单决定当前导出的唯一预期公式总数。
+    int_expected_count = len(list_formula_records)  # 当前文档预期公式数量
+
+    # Office 模式要求每条源公式形成一个 OMML，且没有 OLE 对象。
+    if str_equation_mode == "office":
+
+        # 三项对象统计必须同时满足，避免混合对象文档被误判为通过。
+        bool_object_contract_passed = (  # Office 公式对象合同是否通过
+            int_omml_count == int_expected_count  # 每条源公式形成一个 OMML
+            and int_mathtype_progid_count == 0  # Office 模式不含 MathType ProgID
+            and len(list_embedding_entries) == 0  # Office 模式不含 OLE 嵌入部件
+        )
+
+    # MathType 模式要求每条源公式形成一个 Equation.DSMT4 嵌入对象，且不残留 OMML。
+    else:
+
+        # ProgID、嵌入部件和 OMML 三项必须精确对应最终纯 MathType 合同。
+        bool_object_contract_passed = (  # 最终纯 MathType OLE 对账结果
+            int_omml_count == 0  # 最终文档不得残留 Office 公式节点
+            and int_mathtype_progid_count == int_expected_count  # 每条源公式对应一个 MathType ProgID
+            and len(list_embedding_entries) == int_expected_count  # 每条源公式对应一个 OLE 嵌入部件
+        )
+
+    # 对象统计不一致时立即阻断，禁止只写一份标记失败的旁路报告。
+    if not bool_object_contract_passed:
+
+        # 稳定错误说明公式对象证据与源公式清单不一致。
+        raise ValueError("> ERR: [Python] EQ009 最终 DOCX 公式对象合同校验失败。")
+
+    # 逐公式证据按源记录顺序构造，便于审查者对应原公式与转换规则。
+    list_formula_items: list[dict[str, object]] = []  # 最终公式逐项证据列表
+
+    # 顺序遍历源公式清单，不依赖公式文本去重或集合顺序。
+    for int_index, dict_formula_record in enumerate(list_formula_records, start=1):
+
+        # 两种模式共享公式序号、源文本和行内/行间布局字段。
+        dict_formula_item: dict[str, object] = {  # 当前公式的基础对象证据
+            "index": int_index,  # 当前公式的一基文档顺序
+            "latex": str(dict_formula_record["latex"]),  # 最终对象使用的源公式文本
+            "display": bool(dict_formula_record["display"]),  # 当前公式是否采用行间布局
+            "final_object_type": "OMML" if str_equation_mode == "office" else MATHTYPE_PROG_ID,  # 最终公式对象类型
+        }
+
+        # Office 模式附加预改写、语义指纹和 OMML 结构校验证据。
+        if str_equation_mode == "office":
+
+            # 转换证据数量已经由公式转换回调按同一文档顺序收集。
+            dict_formula_item["conversion"] = list_conversion_evidence[int_index - 1]  # 同顺序 OMML 转换证据
+
+        # MathType 直接使用原 LaTeX 生成 OLE，不应把 OMML 预改写文本写入最终对象。
+        else:
+
+            # 显式记录未使用中间改写，证明最终 OLE 内容来自源公式。
+            dict_formula_item["conversion"] = {
+                "pre_rewrite_applied_to_final_object": False,  # 预改写没有进入最终 OLE
+                "native_mathtype_source": "original_latex",  # MathType 使用原始 LaTeX
+            }
+
+        # 保存当前公式证据，继续处理下一文档对象。
+        list_formula_items.append(dict_formula_item)
+
+    # 返回可直接写入 JSON 的完整验收载荷。
+    return {
+        "passed": True,
+        "equation_mode": str_equation_mode,
+        "expected_formula_count": int_expected_count,
+        "omml_count": int_omml_count,
+        "mathtype_progid_count": int_mathtype_progid_count,
+        "embedding_count": len(list_embedding_entries),
+        "formulas": list_formula_items,
+    }
+
 # 使用模板 DOCX 生成严格交底书 DOCX，并把公式与附图真正嵌入主稿。
 def export_with_template_docx(
     dict_paths: dict[str, Path | None],
@@ -2106,13 +2237,45 @@ def export_with_template_docx(
     # 加载纯 Python Office 公式转换器，任何失败都会硬阻断当前交付。
     obj_office_math = load_office_math_module()  # Office 原生公式转换模块对象
 
+    # Office 模式按转换顺序收集预改写和 OMML 结构证据，MathType 模式保持为空。
+    list_conversion_evidence: list[dict[str, object]] = []  # 当前文档的 Office 公式转换证据
+
+    # 包装带证据转换入口，同时保持模板渲染器需要的单节点回调形态。
+    def convert_formula_with_evidence(str_latex: str, bool_display: bool, str_mode: str) -> Any:
+        """转换单条公式并登记对象级证据。
+
+        参数：
+        - `str_latex`：当前公式的原始 LaTeX 文本。
+        - `bool_display`：当前公式是否采用行间布局。
+        - `str_mode`：本轮公式对象模式。
+
+        返回：
+        - `Any`：可由 python-docx 追加的 OMML 节点。
+
+        异常：
+        - `ValueError`：预改写、转换或 OMML 结构门失败。
+        """
+
+        # 调用正式带证据入口，确保记录与实际插入文档的节点来自同一次转换。
+        obj_formula, dict_formula_evidence = obj_office_math.convert_latex_to_omml_with_evidence(  # 当前公式节点与转换证据
+            str_latex,  # 当前公式原始 LaTeX
+            bool_display,  # 当前公式行内或行间布局
+            str_mode,  # 当前 Office 或 MathType 中间模式
+        )
+
+        # 按文档转换顺序登记证据，后续与公式源记录逐项对账。
+        list_conversion_evidence.append(dict_formula_evidence)
+
+        # 返回模板渲染器需要追加的原生数学节点。
+        return obj_formula
+
     # 按原模板标题节点替换正文、OMML 公式和附图，保留原有分节与正文样式。
     list_formula_records = obj_template_renderer.replace_template_slots(  # MathType 原位替换所需公式清单
         obj_document,  # 当前模板文档对象
         TEMPLATE_SECTION_ORDER,  # 正式模板槽位顺序
         dict_template_payload["sections"],  # 待写入的章节内容
         list_figure_paths,  # 本轮正式附图路径
-        obj_office_math.convert_latex_to_omml,  # 中间 OMML 转换回调
+        convert_formula_with_evidence,  # 带对象证据的 OMML 转换回调
         obj_office_math.split_inline_equations,  # 行内公式拆分回调
         str(dict_paths["equation_mode"]),  # 本轮公式对象模式
     )  # 与 Word OMath 顺序一致的公式源记录
@@ -2164,8 +2327,26 @@ def export_with_template_docx(
         int_expected_media_count=int_expected_media_count,
     )
 
+    # 从最终 DOCX 包读取对象统计，并与源公式和转换证据逐项对账。
+    dict_formula_object_evidence = collect_formula_object_evidence(  # 当前交付文档的公式对象验收载荷
+        dict_paths["path_output"],  # 已通过最终模板校验的 DOCX
+        str(dict_paths["equation_mode"]),  # 当前公式对象模式
+        list_formula_records,  # 文档顺序源公式清单
+        list_conversion_evidence,  # Office 模式预改写与结构证据
+    )
+
+    # 公式证据固定落在导出目录，供后续视觉审查和交付门读取。
+    path_formula_evidence = dict_paths["path_output"].parent / FORMULA_EVIDENCE_FILENAME  # 最终公式对象证据路径
+
+    # 使用共享运行时 JSON 写入器保持 UTF-8 和格式合同一致。
+    obj_runtime_module.write_json_file(path_formula_evidence, dict_formula_object_evidence)
+
     # 返回导出结果，供上游登记导出模式和可选内部说明。
-    return {"mode": "template-docx", "internal_lines": dict_template_payload["internal_lines"]}
+    return {
+        "mode": "template-docx",
+        "internal_lines": dict_template_payload["internal_lines"],
+        "formula_evidence": str(path_formula_evidence),
+    }
 
 # 把单个线性 block 写入 python-docx 文档对象，供增强导出路径复用。
 def append_block_to_document(obj_document: Any, dict_block: dict[str, Any]) -> None:

@@ -4,8 +4,9 @@
 # 启用未来版本注解行为，保证类型标注在当前解释器下稳定可用。
 from __future__ import annotations
 
-# 引入参数解析、按路径加载模块、标准输出和路径能力，供自检入口稳定运行。
+# 引入参数解析、哈希、按路径加载模块、标准输出和路径能力，供自检入口稳定运行。
 import argparse
+import hashlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -789,14 +790,14 @@ def append_quality_scorecard_findings(
 
 # 校验视觉验收回执与当前正文、模板哈希一致，防止旧回执放行新内容。
 def is_visual_review_complete(path_case_dir: Path, module_runtime_support: Any) -> bool:
-    """判断当前案件是否具有与预览哈希一致的视觉验收回执。
+    """判断当前案件是否具有绑定 Word 原生公式证据的视觉验收回执。
 
     参数：
     - `path_case_dir`：当前案件根目录路径。
     - `module_runtime_support`：共享运行时支持模块对象。
 
     返回：
-    - `bool`：回执状态为 passed 且正文、模板哈希均匹配时为真。
+    - `bool`：回执、版本哈希、Word 原生检查和公式证据哈希均匹配时为真。
 
     异常：
     - JSON 读取失败时由底层异常上抛。
@@ -808,8 +809,11 @@ def is_visual_review_complete(path_case_dir: Path, module_runtime_support: Any) 
     # 预览状态提供本轮正文与模板的权威哈希，供回执逐项匹配。
     path_preview_status = path_case_dir / "03_drafts" / "preview_status.json"  # 当前预览状态路径
 
+    # 最终公式对象证据由 DOCX 导出器从交付文件包内结构生成。
+    path_formula_evidence = path_case_dir / "05_exports" / "formula_evidence.json"  # 最终公式对象证据路径
+
     # 任一合同文件缺失都表示视觉验收尚未形成可追踪证据。
-    if not path_visual_review.exists() or not path_preview_status.exists():
+    if not path_visual_review.exists() or not path_preview_status.exists() or not path_formula_evidence.exists():
 
         # 缺少回执或哈希事实源时保持视觉验收未完成。
         return False
@@ -820,11 +824,53 @@ def is_visual_review_complete(path_case_dir: Path, module_runtime_support: Any) 
     # 读取当前预览状态，作为正文和模板哈希的权威事实源。
     dict_preview_status = module_runtime_support.read_json_file(path_preview_status)  # 当前预览哈希数据
 
+    # 读取最终公式对象证据，确认 DOCX 结构门已经通过。
+    dict_formula_evidence = module_runtime_support.read_json_file(path_formula_evidence)  # 最终公式对象验收数据
+
     # 回执必须明确标记 passed，其他状态均不得进入最终完成态。
     if dict_visual_review.get("status") != "passed":
 
         # 待复核或失败回执不具备完成资格。
         return False
+
+    # 对象证据自身未通过时，任何视觉回执都不能把案件推进到 completed。
+    if not bool(dict_formula_evidence.get("passed")):
+
+        # 保持未完成状态，要求重新导出并修复公式对象结构。
+        return False
+
+    # 视觉验收必须明确使用 Microsoft Word，避免 LibreOffice 渲染掩盖原生公式占位框。
+    if dict_visual_review.get("renderer") != "Microsoft Word":
+
+        # 非 Word 或缺失渲染器声明的回执不满足原生对象视觉门。
+        return False
+
+    # 读取 Word 原生公式复核明细，逐项确认对象检查与占位框检查已完成。
+    dict_word_review = dict_visual_review.get("word_native_formula_review")  # Word 原生公式复核字段
+
+    # 复核字段必须是结构化字典，旧版三字段回执不能继续放行。
+    if not isinstance(dict_word_review, dict):
+
+        # 缺少结构化 Word 复核证据时保持视觉验收未完成。
+        return False
+
+    # 公式对象和占位框两项都必须由 Word 原生视图明确确认。
+    bool_word_checks_passed = (  # Word 原生公式检查是否完整通过
+        bool(dict_word_review.get("formula_objects_checked"))  # 已逐项检查公式对象
+        and bool(dict_word_review.get("placeholder_boxes_absent"))  # 已确认无虚线占位框
+    )
+
+    # 任一 Word 原生检查缺失都不能视为视觉验收完成。
+    if not bool_word_checks_passed:
+
+        # 返回未完成，要求审查者补齐真实 Word 检查。
+        return False
+
+    # 对最终公式证据文件计算 SHA-256，使视觉回执绑定实际审阅的对象统计版本。
+    str_formula_evidence_hash = hashlib.sha256(path_formula_evidence.read_bytes()).hexdigest()  # 当前公式对象证据 SHA-256
+
+    # 回执中的哈希必须精确匹配，阻止审阅后重新导出公式对象而沿用旧回执。
+    bool_formula_evidence_matches = dict_word_review.get("formula_evidence_sha256") == str_formula_evidence_hash  # 公式证据哈希是否匹配
 
     # 正文哈希必须与当前确认版本一致，阻止审阅后正文漂移。
     bool_draft_matches = dict_visual_review.get("draft_hash") == dict_preview_status.get("draft_hash")  # 正文哈希是否匹配
@@ -832,8 +878,8 @@ def is_visual_review_complete(path_case_dir: Path, module_runtime_support: Any) 
     # 模板哈希必须与当前确认模板一致，阻止审阅后版式基准漂移。
     bool_template_matches = dict_visual_review.get("template_hash") == dict_preview_status.get("template_hash")  # 模板哈希是否匹配
 
-    # 仅在两个哈希同时匹配时确认视觉验收已覆盖当前交付边界。
-    return bool_draft_matches and bool_template_matches
+    # 正文、模板和公式对象证据三条版本链同时匹配时才确认完成。
+    return bool_draft_matches and bool_template_matches and bool_formula_evidence_matches
 
 # 汇总结构化自检结果，统一产出 blocked、needs_revision 或 visual_review_required 状态。
 def build_report(
