@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "documents"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "title", "kind", "summary", "keywords", "sha256"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^doc\\.[a-z][a-z0-9-]*$"},
+          "path": {"type": "string", "pattern": "^(SKILL\\.md|references/.+\\.md)$"},
+          "title": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["skill", "index", "canonical"]},
+          "summary": {"type": "string", "minLength": 1},
+          "keywords": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

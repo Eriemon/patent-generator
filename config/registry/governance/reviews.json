@@ -1,0 +1,15 @@
+{
+  "decision": "accepted",
+  "exact_duplicates": [],
+  "fuzzy_duplicates": [],
+  "interface_facts": [
+    {
+      "name": "equation-mode",
+      "source_document_id": "doc.drafting",
+      "status": "unique"
+    }
+  ],
+  "notes": "v2.1.0 采用 UTF-8 与 LF 规范哈希，消除 Git 跨平台换行假陈旧。",
+  "reviewed_at": "2026-07-21",
+  "schema_version": 1
+}

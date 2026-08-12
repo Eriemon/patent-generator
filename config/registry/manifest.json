@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "registry_version": "2.1.0",
+  "command_sources": [
+    "commands/catalog.json"
+  ],
+  "workflow_source": "workflows/catalog.json",
+  "document_sources": [
+    "governance/config.json",
+    "documents/catalog.json",
+    "governance/reviews.json"
+  ],
+  "knowledge_source": "knowledge/index.json",
+  "schema_sources": {
+    "command_catalog": "schemas/command-catalog.schema.json",
+    "workflow_catalog": "schemas/workflow-catalog.schema.json",
+    "document_catalog": "schemas/document-catalog.schema.json",
+    "knowledge_index": "schemas/knowledge-index.schema.json",
+    "governance_config": "schemas/governance-config.schema.json",
+    "governance_reviews": "schemas/governance-reviews.schema.json"
+  },
+  "generated_database": "registry.sqlite3",
+  "fts_tokenizer": "trigram",
+  "public_entrypoint_count": 27
+}

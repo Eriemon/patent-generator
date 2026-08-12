@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "workflows": [
+    {
+      "id": "workflow.full-disclosure",
+      "title": "完整技术交底闭环",
+      "summary": "从本地材料盘点、事实提取和创新点确认推进到草稿、自检、预览与 DOCX 交付。",
+      "aliases": ["完整交底流程", "full patent disclosure"],
+      "steps": [
+        "intake.inventory",
+        "facts.extract",
+        "invention.select",
+        "prior-art.plan",
+        "draft.generate",
+        "claims.generate",
+        "review.validate",
+        "preview.generate",
+        "export.docx"
+      ],
+      "boundaries": [
+        "实验、性能和比较数值必须逐项确认白名单",
+        "证据不足时保守表述并保留可执行 TODO"
+      ]
+    },
+    {
+      "id": "workflow.cnipa-snapshot",
+      "title": "CNIPA 可审计检索快照",
+      "summary": "从检索计划生成查询、保存原始响应、解析结构化结果并保留快照证据。",
+      "aliases": ["CNIPA 检索快照", "cnipa search snapshot"],
+      "steps": [
+        "prior-art.plan",
+        "search.cnipa-query",
+        "search.cnipa-crawl",
+        "search.cnipa-parse"
+      ],
+      "boundaries": [
+        "不绕过 CNIPA 授权、验证码或访问控制",
+        "原始响应与解析结果分开保存"
+      ]
+    },
+    {
+      "id": "workflow.model-migration",
+      "title": "结构化模型迁移闭环",
+      "summary": "记录字段映射、执行版本迁移、复核语义审查并重新运行质量校验。",
+      "aliases": ["模型版本迁移", "structured model migration"],
+      "steps": [
+        "model.record-mapping",
+        "model.migrate",
+        "review.record-semantic",
+        "review.validate"
+      ],
+      "boundaries": [
+        "迁移不得静默丢弃唯一事实或审查决策",
+        "旧版输入保持可恢复且不被原地覆盖"
+      ]
+    },
+    {
+      "id": "workflow.registry-update",
+      "title": "注册表更新闭环",
+      "summary": "复核 Markdown 语义、更新 JSON 权威、完成文档治理、原子重建 SQLite 并运行查询合同测试。",
+      "aliases": ["更新注册表", "registry update workflow"],
+      "steps": [
+        "registry.document-governance",
+        "registry.build",
+        "registry.ask",
+        "support.evaluate"
+      ],
+      "boundaries": [
+        "Markdown 是知识正文权威，SQLite 只能由 JSON 和 Markdown 派生",
+        "只删除等价重复，不删除唯一语义"
+      ]
+    }
+  ]
+}

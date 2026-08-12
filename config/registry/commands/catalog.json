@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "commands": [
+    {
+      "id": "case.create",
+      "category": "case",
+      "title": "创建专利案例",
+      "summary": "创建受管案例目录、初始状态与基础元数据。",
+      "aliases": ["创建案例", "create patent case"],
+      "entrypoint": "scripts/python/case/create_case.py"
+    },
+    {
+      "id": "claims.generate",
+      "category": "claims",
+      "title": "生成权利要求",
+      "summary": "根据已审查创新点和事实证据生成权利要求结构。",
+      "aliases": ["写权利要求", "generate claims"],
+      "entrypoint": "scripts/python/claims/generate_claims.py"
+    },
+    {
+      "id": "draft.generate",
+      "category": "drafting",
+      "title": "生成交底书草稿",
+      "summary": "从结构化模型生成可审查的中文技术交底书草稿。",
+      "aliases": ["起草交底书", "generate disclosure draft"],
+      "entrypoint": "scripts/python/draft/generate_disclosure_draft.py"
+    },
+    {
+      "id": "export.docx",
+      "category": "drafting",
+      "title": "导出 DOCX",
+      "summary": "按模板与公式合同导出受管 DOCX 交付物。",
+      "aliases": ["导出 Word", "export disclosure docx"],
+      "entrypoint": "scripts/python/export/export_docx.py"
+    },
+    {
+      "id": "facts.extract",
+      "category": "intake",
+      "title": "提取研究事实",
+      "summary": "从研究材料提取可追溯事实并标记证据来源。",
+      "aliases": ["研究事实提取", "extract research facts"],
+      "entrypoint": "scripts/python/facts/extract_research_facts.py"
+    },
+    {
+      "id": "figures.workflow",
+      "category": "figures",
+      "title": "附图治理工作流",
+      "summary": "执行附图计划、确认、生成与复核状态机。",
+      "aliases": ["附图流程", "figure workflow"],
+      "entrypoint": "scripts/python/figures/figure_workflow.py"
+    },
+    {
+      "id": "figures.generate",
+      "category": "figures",
+      "title": "生成专利附图",
+      "summary": "依据已确认计划生成专利附图与配套清单。",
+      "aliases": ["生成附图", "generate patent figures"],
+      "entrypoint": "scripts/python/figures/generate_figures.py"
+    },
+    {
+      "id": "intake.convert-office",
+      "category": "intake",
+      "title": "转换 Office 材料",
+      "summary": "将受支持的 Office 研究材料转换为可盘点文本资产。",
+      "aliases": ["转换研究文档", "convert office research files"],
+      "entrypoint": "scripts/python/intake/convert_research_office.py"
+    },
+    {
+      "id": "intake.inventory",
+      "category": "intake",
+      "title": "盘点研究材料",
+      "summary": "扫描本地材料并生成可审计输入清单。",
+      "aliases": ["材料盘点", "research inventory"],
+      "entrypoint": "scripts/python/intake/research_inventory.py"
+    },
+    {
+      "id": "invention.select",
+      "category": "review",
+      "title": "选择创新点",
+      "summary": "从候选创新点中记录逐项选择与审查结论。",
+      "aliases": ["创新点选择", "select invention point"],
+      "entrypoint": "scripts/python/invention/select_invention_point.py"
+    },
+    {
+      "id": "iteration.update",
+      "category": "review",
+      "title": "更新交底书迭代",
+      "summary": "记录修订请求、版本变化与可追溯迭代状态。",
+      "aliases": ["迭代交底书", "update disclosure iteration"],
+      "entrypoint": "scripts/python/iteration/iterate_disclosure.py"
+    },
+    {
+      "id": "pipeline.run",
+      "category": "case",
+      "title": "运行完整流水线",
+      "summary": "按受管状态机编排材料、事实、创新点、草稿与交付。",
+      "aliases": ["完整专利流程", "run patent pipeline"],
+      "entrypoint": "scripts/python/pipeline/run_pipeline.py"
+    },
+    {
+      "id": "preview.generate",
+      "category": "drafting",
+      "title": "生成交付预览",
+      "summary": "在正式导出前生成可审查预览与确认摘要。",
+      "aliases": ["交底书预览", "generate disclosure preview"],
+      "entrypoint": "scripts/python/preview/generate_preview.py"
+    },
+    {
+      "id": "prior-art.plan",
+      "category": "search",
+      "title": "规划现有技术检索",
+      "summary": "基于创新点构造检索关键词、组合式与证据计划。",
+      "aliases": ["查新计划", "plan prior art queries"],
+      "entrypoint": "scripts/python/prior_art/plan_prior_art_queries.py"
+    },
+    {
+      "id": "review.record-semantic",
+      "category": "review",
+      "title": "记录语义审查",
+      "summary": "记录逐项语义审查决定并维护审查哈希。",
+      "aliases": ["语义审查记录", "record semantic review"],
+      "entrypoint": "scripts/python/review/record_semantic_review.py"
+    },
+    {
+      "id": "review.validate",
+      "category": "review",
+      "title": "校验交底书",
+      "summary": "按事实、结构、披露和交付合同校验交底书。",
+      "aliases": ["交底书自检", "validate disclosure"],
+      "entrypoint": "scripts/python/review/validate_disclosure.py"
+    },
+    {
+      "id": "search.cnipa-crawl",
+      "category": "search",
+      "title": "抓取 CNIPA EPUB",
+      "summary": "以受控请求抓取 CNIPA EPUB 查询响应。",
+      "aliases": ["CNIPA 抓取", "crawl cnipa epub"],
+      "entrypoint": "scripts/python/search/cnipa_epub_crawler.py"
+    },
+    {
+      "id": "search.cnipa-parse",
+      "category": "search",
+      "title": "解析 CNIPA EPUB",
+      "summary": "将保存的 CNIPA EPUB 响应解析为结构化结果。",
+      "aliases": ["CNIPA 解析", "parse cnipa epub"],
+      "entrypoint": "scripts/python/search/cnipa_epub_parse.py"
+    },
+    {
+      "id": "search.cnipa-query",
+      "category": "search",
+      "title": "生成 CNIPA 查询",
+      "summary": "根据检索计划生成 CNIPA EPUB 查询请求。",
+      "aliases": ["CNIPA 查询", "query cnipa epub"],
+      "entrypoint": "scripts/python/search/cnipa_epub_search.py"
+    },
+    {
+      "id": "support.preflight",
+      "category": "support",
+      "title": "运行能力预检",
+      "summary": "检查当前案例所需的依赖、工具与运行能力。",
+      "aliases": ["能力预检", "capability preflight"],
+      "entrypoint": "scripts/python/support/capability_preflight.py"
+    },
+    {
+      "id": "support.dependencies",
+      "category": "support",
+      "title": "检查依赖",
+      "summary": "依据统一 requirements 合同核验可选与必需依赖。",
+      "aliases": ["依赖检查", "check dependencies"],
+      "entrypoint": "scripts/python/support/check_dependencies.py"
+    },
+    {
+      "id": "support.evaluate",
+      "category": "support",
+      "title": "运行技能评测",
+      "summary": "执行技能运行时案例并输出结构化评测结果。",
+      "aliases": ["技能评估", "evaluate skill cases"],
+      "entrypoint": "scripts/python/support/evaluate_skill_cases.py"
+    },
+    {
+      "id": "model.migrate",
+      "category": "model",
+      "title": "迁移结构化模型",
+      "summary": "按显式版本合同迁移案例结构化模型。",
+      "aliases": ["模型迁移", "migrate model contract"],
+      "entrypoint": "scripts/python/support/migrate_model_contract.py"
+    },
+    {
+      "id": "model.record-mapping",
+      "category": "model",
+      "title": "记录模型映射",
+      "summary": "记录旧字段到当前模型字段的证据化映射。",
+      "aliases": ["字段映射", "record model mapping"],
+      "entrypoint": "scripts/python/support/record_model_mapping.py"
+    },
+    {
+      "id": "registry.build",
+      "category": "registry",
+      "title": "校验或重建注册表",
+      "summary": "默认只读校验 JSON 权威与 SQLite 新鲜度，显式 write 时原子重建索引。",
+      "aliases": ["重建注册表", "build registry"],
+      "entrypoint": "scripts/python/registry/build_registry.py"
+    },
+    {
+      "id": "registry.ask",
+      "category": "registry",
+      "title": "查询注册表",
+      "summary": "只读检索命令、工作流、文档或知识条目，不执行任何被检索命令。",
+      "aliases": ["查询技能能力", "ask registry"],
+      "entrypoint": "scripts/python/registry/query_registry.py"
+    },
+    {
+      "id": "registry.document-governance",
+      "category": "registry",
+      "title": "治理注册文档",
+      "summary": "扫描、初始化、检查和完成 Markdown 文档注册与语义去重审查。",
+      "aliases": ["文档注册治理", "document registry governance"],
+      "entrypoint": "scripts/python/registry/manage_document_registry.py"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "knowledge.local-only",
+      "title": "本地材料边界",
+      "summary": "专利材料默认仅在用户当前本地工作文件夹内处理，不将研发材料同步到远程服务器。",
+      "keywords": ["本地处理", "保密", "remote deployment"],
+      "document_ids": ["doc.skill", "doc.confidentiality"]
+    },
+    {
+      "id": "knowledge.numeric-whitelist",
+      "title": "实验数值白名单",
+      "summary": "实验、性能和比较数值必须逐项确认，未获确认时不得写成已验证事实。",
+      "keywords": ["实验数据", "性能数值", "比较结果", "逐项确认"],
+      "document_ids": ["doc.drafting", "doc.self-check"]
+    },
+    {
+      "id": "knowledge.formula-editability",
+      "title": "公式可编辑性",
+      "summary": "交付公式必须保持 Office 或 MathType 原生可编辑，不允许静默降级为图片或纯文本。",
+      "keywords": ["MathType", "Office 公式", "可编辑公式", "禁止降级"],
+      "document_ids": ["doc.drafting", "doc.self-check"]
+    },
+    {
+      "id": "knowledge.markdown-authority",
+      "title": "Markdown 知识权威",
+      "summary": "Markdown 保存知识正文，JSON 保存注册元数据，SQLite 只作为可重建检索索引。",
+      "keywords": ["Markdown", "JSON authority", "SQLite", "registry"],
+      "document_ids": ["doc.skill", "doc.references-index"]
+    }
+  ]
+}

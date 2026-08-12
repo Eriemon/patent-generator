@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "authoritative_content": "markdown",
+  "authoritative_metadata": "json",
+  "generated_index": "sqlite",
+  "duplicate_policy": "remove-equivalent-only",
+  "review_states": ["pending", "accepted", "modified", "rejected"],
+  "require_second_confirmation_after_modify": true,
+  "allowed_document_roots": ["SKILL.md", "references"]
+}

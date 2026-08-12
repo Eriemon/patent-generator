@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "enabled", "authoritative_content", "authoritative_metadata", "generated_index", "duplicate_policy", "review_states", "require_second_confirmation_after_modify", "allowed_document_roots"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "enabled": {"type": "boolean"},
+    "authoritative_content": {"const": "markdown"},
+    "authoritative_metadata": {"const": "json"},
+    "generated_index": {"const": "sqlite"},
+    "duplicate_policy": {"const": "remove-equivalent-only"},
+    "review_states": {"type": "array", "items": {"enum": ["pending", "accepted", "modified", "rejected"]}},
+    "require_second_confirmation_after_modify": {"type": "boolean"},
+    "allowed_document_roots": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

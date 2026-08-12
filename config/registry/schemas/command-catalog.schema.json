@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "commands"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "title", "summary", "aliases", "entrypoint"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"},
+          "category": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "summary": {"type": "string", "minLength": 1},
+          "aliases": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "entrypoint": {"type": "string", "pattern": "^scripts/python/.+\\.py$"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

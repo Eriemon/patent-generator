@@ -127,6 +127,34 @@ Default workflow:
 9. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
 
+## Registry
+
+Use `config/registry/manifest.json` as the routing source for the self-contained
+skill registry. JSON is authoritative for command, workflow, document, and
+knowledge metadata; registered Markdown remains authoritative for knowledge
+body text; `config/registry/registry.sqlite3` is derived and must be rebuilt
+from those sources.
+
+- For `registry.build`, run `python -B
+  scripts/python/registry/build_registry.py --json` for a
+  read-only integrity and freshness check. Add `--write` only when an explicit
+  registry update is intended; the write path rebuilds SQLite atomically.
+- For `registry.ask`, run `python -B
+  scripts/python/registry/query_registry.py QUERY --kind
+  command|workflow|document|knowledge --json`. Command
+  category filtering is available through `--category`; limits must remain
+  between 1 and 10. The query is read-only and never executes a hit.
+- For `registry.document-governance`, run `python -B
+  scripts/python/registry/manage_document_registry.py
+  status|scan|init|check|finalize --json`. `status`, `scan`, and `check` are read-only;
+  `init` and `finalize` require explicit `--write`. A `modified` finalize also
+  requires the exact second-confirmation contract reported by the CLI.
+
+Treat exit code 0 as success, 1 as a normal query with no hit, 2 as a request
+error, and 3 as a missing, corrupt, stale, or incompatible registry. Installed
+copies may query and check the bundled registry; skill development updates must
+occur in the governed source repository and follow `workflow.registry-update`.
+
 Formula export modes:
 
 - `run_pipeline.py` defaults to `--equation-mode mathtype`; this requires

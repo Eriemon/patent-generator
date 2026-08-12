@@ -1,0 +1,141 @@
+{
+  "documents": [
+    {
+      "id": "doc.skill",
+      "keywords": [
+        "专利",
+        "技术交底书",
+        "workflow",
+        "gate"
+      ],
+      "kind": "skill",
+      "path": "SKILL.md",
+      "sha256": "a921ca7fbb1c9f155300eccd94265f560ec0ae736024d014e637638f94d3f372",
+      "summary": "技能入口、强制流程、能力路由和交付边界。",
+      "title": "Readable Patent Generator"
+    },
+    {
+      "id": "doc.references-index",
+      "keywords": [
+        "references",
+        "索引",
+        "渐进加载"
+      ],
+      "kind": "index",
+      "path": "references/README.md",
+      "sha256": "4a147c69823d0c36a795742080991ea6b9ab6b5918c1bd49fb8ae0b0021cfcdc",
+      "summary": "规范文档的渐进加载索引与主题路由。",
+      "title": "References Index"
+    },
+    {
+      "id": "doc.end-to-end",
+      "keywords": [
+        "端到端",
+        "pipeline",
+        "交付"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/01_end_to_end_pipeline.md",
+      "sha256": "6b1202e8833d7a63ebcb8e4680c76bbb557c9650f7c043a3cb856f3911a92e02",
+      "summary": "材料接入、创新点、查新、起草、审查和交付的完整状态机。",
+      "title": "端到端流程"
+    },
+    {
+      "id": "doc.intake",
+      "keywords": [
+        "材料盘点",
+        "项目扫描",
+        "evidence"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/02_intake_and_project_scan_protocol.md",
+      "sha256": "6e7f8227c13a1116fcd37c51d5f2d27f83a8481e76ab71f3fbcfb9382cf3ea2c",
+      "summary": "本地材料盘点、项目扫描、证据边界与输入治理协议。",
+      "title": "材料接入与项目扫描"
+    },
+    {
+      "id": "doc.prior-art",
+      "keywords": [
+        "查新",
+        "现有技术",
+        "CNIPA",
+        "检索"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/04_prior_art_search_protocol.md",
+      "sha256": "010f8a05a3a696c1137cbd9a591a95786fbbed1312f186a8f5f6f1e230ea73d1",
+      "summary": "现有技术检索、关键词组合、证据记录与结论边界。",
+      "title": "查新策略"
+    },
+    {
+      "id": "doc.drafting",
+      "keywords": [
+        "起草",
+        "技术交底书",
+        "公式",
+        "TODO"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/05_disclosure_drafting_protocol.md",
+      "sha256": "b96794b0d7a4dd9c88123c7effc529b5303728650c453285886d6fa44c7370e4",
+      "summary": "技术交底书章节、事实忠实度、公式与保守表述规则。",
+      "title": "正文起草规范"
+    },
+    {
+      "id": "doc.self-check",
+      "keywords": [
+        "自检",
+        "quality gate",
+        "复核"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/07_self_check_protocol.md",
+      "sha256": "889f448af746f2bc5292f5ae2ded5f2e815478bbb2b7b6c987579d1a96174569",
+      "summary": "事实、结构、权利要求、公式、附图和交付质量自检。",
+      "title": "自检规则"
+    },
+    {
+      "id": "doc.iteration",
+      "keywords": [
+        "迭代",
+        "修订",
+        "审查反馈",
+        "版本"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/08_iteration_and_correction_protocol.md",
+      "sha256": "db124fdf2035e33fc0217672d3bf59ce9ea737cb3ad0bcc3e861d930ecdf0d89",
+      "summary": "审查反馈、修订边界、版本记录与语义保持协议。",
+      "title": "迭代修订规则"
+    },
+    {
+      "id": "doc.confidentiality",
+      "keywords": [
+        "保密",
+        "脱敏",
+        "local only",
+        "敏感信息"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/10_confidentiality_and_desensitization.md",
+      "sha256": "3f4983057bdb5f2d8950364f693774d159872fb3d2f8d79aa731b1a205b64ec0",
+      "summary": "敏感材料、本地处理、脱敏和外部披露边界。",
+      "title": "保密与脱敏"
+    },
+    {
+      "id": "doc.claims",
+      "keywords": [
+        "权利要求",
+        "保护范围",
+        "独立权利要求",
+        "从属权利要求"
+      ],
+      "kind": "canonical",
+      "path": "references/canonical/11_claims_and_protection_strategy.md",
+      "sha256": "320aa1a9cf1bafe3c346b21d80b8fa33f7eeef75553aec25b6474915de394acf",
+      "summary": "独立权利要求、从属层级、支持关系与保护范围策略。",
+      "title": "权利要求与保护策略"
+    }
+  ],
+  "schema_version": 1
+}
