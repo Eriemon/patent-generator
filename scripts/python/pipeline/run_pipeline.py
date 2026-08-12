@@ -73,7 +73,7 @@ class PostPreviewChainResult:
     int_return_code: int  # 正式后链返回的退出码
 
     # 固定正式后链返回的机器可读载荷，供主流程补齐预览路径后写回标准输出。
-    dict_payload: dict[str, str]  # 正式后链返回的机器可读载荷
+    dict_payload: dict[str, Any]  # 正式后链返回的机器可读载荷
 
 # 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
 def load_runtime_support_module() -> Any:
@@ -146,11 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark the current preview as confirmed before entering the post-preview chain.",
     )
 
-    # 注册 DOCX 导出开关参数，允许调用方在后链通过后同步生成导出件。
+    # 注册兼容旧调用的 DOCX 导出开关参数；当前后链默认始终生成 DOCX。
     obj_parser.add_argument(
         "--export-docx",
         action="store_true",
-        help="Generate DOCX export after review.",
+        help="Retained for compatibility; the pipeline now exports DOCX by default.",
     )
 
     # 返回完成参数注册的解析器对象。
@@ -496,24 +496,60 @@ def build_pending_payload(preview_checkpoint: PreviewCheckpoint) -> dict[str, st
     - 无。
     """
 
-    # 返回正式预览门待确认载荷，保持现有测试依赖的键名和空草稿契约。
+    # 返回正式预览门待确认载荷，默认只暴露案件目录和预览源稿路径。
     return {
-        "validation_status": "preview_pending",
+        "delivery_status": "preview_pending",
         "case_dir": str(preview_checkpoint.path_case_dir.resolve()),
-        "preview": str(preview_checkpoint.path_preview_markdown.resolve()),
-        "draft": "",
+        "preview_markdown": str(preview_checkpoint.path_preview_markdown.resolve()),
     }
+
+# 收集正式交付包中的附图文件路径列表，默认优先返回 PNG+SVG 双输出资产。
+def collect_delivery_figure_files(path_case_dir: Path) -> list[str]:
+    """收集正式交付包中的附图文件路径列表。
+
+    参数：
+    - `path_case_dir`：当前案件根目录路径。
+
+    返回：
+    - `list[str]`：按稳定顺序排列的正式附图文件绝对路径列表。
+
+    异常：
+    - 无。
+    """
+
+    # 固定正式附图目录路径，供交付包文件收集逻辑统一复用。
+    path_figures_dir = path_case_dir / "05_figures"  # 正式附图目录路径
+
+    # 先固定默认正式交付承诺中的附图文件名顺序，保证返回列表稳定可预测。
+    list_default_names = ["图1_方法流程图.png", "图1_方法流程图.svg", "图2_系统模块图.png", "图2_系统模块图.svg"]  # 默认正式附图文件名列表
+
+    # 再把默认附图文件名映射成正式附图路径列表，供存在性检查和结果返回复用。
+    list_default_paths = [path_figures_dir / str_name for str_name in list_default_names]  # 默认正式附图路径列表
+
+    # 仅保留已经真实落盘的默认附图文件，避免把不存在的路径写进机器可读结果。
+    list_existing_paths = [path_item.resolve() for path_item in list_default_paths if path_item.exists()]  # 已存在的默认正式附图路径列表
+
+    # 在默认交付附图已经存在时直接按受控顺序返回。
+    if list_existing_paths:
+
+        # 返回默认正式附图路径列表，保证输出契约顺序稳定。
+        return [str(path_item) for path_item in list_existing_paths]
+
+    # 回退扫描图号文件，兼容后续扩展附图数量时的最小交付列表生成。
+    return [
+        str(path_item.resolve())
+        for path_item in sorted(path_figures_dir.glob("图*.*"))
+        if path_item.suffix.lower() in {".png", ".svg"}
+    ]
 
 # 在预览已确认后执行正文、附图、权利要求、自检与可选导出阶段。
 def run_post_preview_chain(
     path_case_dir: Path,
-    export_docx: bool,
 ) -> PostPreviewChainResult:
     """执行预览确认后的正式后链。
 
     参数：
     - `path_case_dir`：当前案件根目录路径。
-    - `export_docx`：是否在后链通过后同步生成 DOCX 导出件。
 
     返回：
     - `PostPreviewChainResult`：包含退出码与机器可读 JSON 载荷的后链结果。
@@ -538,7 +574,7 @@ def run_post_preview_chain(
     # 执行附图入口，生成与当前正文对应的附图清单与占位图示文件。
     completed_process_figures = run_required_stage(PATH_GENERATE_FIGURES_SCRIPT, list_figures_args)  # 附图入口执行结果对象
 
-    # 解析附图入口返回的附图清单路径，供最终返回载荷登记复用。
+    # 解析附图入口返回的附图清单路径，供内部 review 和交付包路径收集复用。
     path_figures_manifest = read_output_path(completed_process_figures)  # 附图清单路径
 
     # 先准备权利要求入口参数，确保权利要求阶段消费的是当前正文主稿。
@@ -547,8 +583,8 @@ def run_post_preview_chain(
     # 执行权利要求入口，生成与当前正文对应的权利要求草案与映射文件。
     completed_process_claims = run_required_stage(PATH_GENERATE_CLAIMS_SCRIPT, list_claims_args)  # 权利要求入口执行结果对象
 
-    # 解析权利要求入口返回的 Markdown 路径，供最终返回载荷登记复用。
-    path_claims = read_output_path(completed_process_claims)  # 权利要求草案路径
+    # 读取权利要求入口返回路径，只把它当作内部落盘校验信号而不进入公开交付结果。
+    _ = read_output_path(completed_process_claims)  # 权利要求内部工件落盘校验路径
 
     # 先准备自检入口参数，确保自检阶段针对当前正文主稿输出对应报告。
     list_review_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # 自检入口参数列表
@@ -566,51 +602,17 @@ def run_post_preview_chain(
             f"stderr:\n{completed_process_review.stderr}"
         )
 
-    # 解析自检入口返回的 JSON 报告路径，供最终返回载荷登记复用。
-    path_review_json = read_output_path(completed_process_review)  # 自检 JSON 报告路径
+    # 读取自检入口返回路径，只把它当作治理报告落盘校验信号而不暴露给默认结果。
+    _ = read_output_path(completed_process_review)  # 自检报告内部落盘校验路径
 
-    # 先准备默认空导出路径文本，供未开启导出时保持稳定空值契约。
-    str_export_docx = ""  # 未开启导出时的空 DOCX 路径文本
-
-    # 在调用方显式开启 DOCX 导出时执行导出入口并登记导出件路径。
-    if export_docx:
-
-        # 先准备 DOCX 导出入口参数，确保导出件与当前正文主稿一一对应。
-        list_export_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # DOCX 导出入口参数列表
-
-        # 把当前正文转成正式导出件，供通过自检后的案件可选交付复用。
-        completed_process_export = run_required_stage(PATH_EXPORT_DOCX_SCRIPT, list_export_args)  # DOCX 导出入口执行结果对象
-
-        # 解析导出入口返回的 DOCX 路径，并转换为稳定字符串写回载荷。
-        str_export_docx = str(read_output_path(completed_process_export).resolve())  # DOCX 导出件绝对路径文本
-
-    # 组装正式后链的机器可读载荷，供上游测试和工具稳定解析。
-    # 先准备后链返回载荷字典，后续逐项登记正式产物路径和校验状态。
-    dict_payload: dict[str, str] = {}  # 正式后链返回载荷字典
-
-    # 把案件目录绝对路径登记进返回载荷，供上游测试稳定复现案件位置。
-    dict_payload["case_dir"] = str(path_case_dir.resolve())  # 案件目录绝对路径文本
-
-    # 把正文主草稿绝对路径登记进返回载荷，供后续附图和导出验证复用。
-    dict_payload["draft"] = str(path_draft.resolve())  # 正文主草稿绝对路径文本
-
-    # 把附图清单绝对路径登记进返回载荷，供上游测试校验附图主链产物。
-    dict_payload["figures_manifest"] = str(path_figures_manifest.resolve())  # 附图清单绝对路径文本
-
-    # 把权利要求草案绝对路径登记进返回载荷，供上游测试校验配套产物。
-    dict_payload["claims"] = str(path_claims.resolve())  # 权利要求草案绝对路径文本
-
-    # 把自检 JSON 报告绝对路径登记进返回载荷，供状态判定与报告读取复用。
-    dict_payload["review_json"] = str(path_review_json.resolve())  # 自检 JSON 报告绝对路径文本
-
-    # 把可选 DOCX 导出件路径登记进返回载荷，未开启导出时保持空字符串契约。
-    dict_payload["export_docx"] = str_export_docx  # 可选 DOCX 导出件路径文本
+    # 先准备后链返回载荷字典，默认仅围绕正式交付包暴露机器可读字段。
+    dict_payload: dict[str, Any] = {"case_dir": str(path_case_dir.resolve())}  # 正式后链返回载荷字典
 
     # 在自检报告状态为 blocked 时写回阻断状态并返回退出码 1。
     if completed_process_review.returncode == 1:
 
-        # 把当前后链校验状态标记为 blocked，阻止继续声明交付完成。
-        dict_payload["validation_status"] = "blocked"  # 阻断状态文本
+        # 把当前交付状态标记为 blocked，提醒调用方当前案件仍不能进入正式交付态。
+        dict_payload["delivery_status"] = "blocked"  # 阻断状态文本
 
         # 返回 blocker 对应的退出码与当前机器可读载荷。
         return PostPreviewChainResult(int_return_code=1, dict_payload=dict_payload)
@@ -618,20 +620,43 @@ def run_post_preview_chain(
     # 在自检报告状态为 needs_revision 时写回待修订状态并返回退出码 2。
     if completed_process_review.returncode == 2:
 
-        # 把当前后链校验状态标记为 needs_revision，提醒先修正文稿。
-        dict_payload["validation_status"] = "needs_revision"  # 待修订状态文本
+        # 把当前交付状态标记为 needs_revision，提醒先修正文稿再生成正式交付包。
+        dict_payload["delivery_status"] = "needs_revision"  # 待修订状态文本
 
         # 返回待修订对应的退出码与当前机器可读载荷。
         return PostPreviewChainResult(int_return_code=2, dict_payload=dict_payload)
 
-    # 在自检通过时把当前后链状态标记为 completed。
-    dict_payload["validation_status"] = "completed"  # 已完成状态文本
+    # 先准备 DOCX 导出入口参数，确保导出件与当前正式 Markdown 主稿一一对应。
+    list_export_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # DOCX 导出入口参数列表
+
+    # 把当前正文转成正式导出件，导出器内部会执行严格模板与媒体嵌入校验。
+    completed_process_export = run_required_stage(PATH_EXPORT_DOCX_SCRIPT, list_export_args)  # DOCX 导出入口执行结果对象
+
+    # 解析导出入口返回的 DOCX 路径，供正式交付包结果复用。
+    path_delivery_docx = read_output_path(completed_process_export).resolve()  # 正式 DOCX 交付件路径
+
+    # 直接从附图清单定位附图目录根，避免再次扫描案件树猜测正式交付目录。
+    path_delivery_figures_dir = path_figures_manifest.parent.resolve()  # 交付包附图目录根路径
+
+    # 生成返回给调用方的附图文件序列，优先固定默认双格式资产。
+    list_delivery_figure_files = collect_delivery_figure_files(path_case_dir)  # 正式附图文件绝对路径列表
+
+    # 在自检通过且正式交付件落盘后写回完整交付包字段。
+    dict_payload.update(
+        {
+            "delivery_docx": str(path_delivery_docx),  # 主交付 DOCX 路径
+            "delivery_markdown": str(path_draft.resolve()),  # 正式源稿 Markdown 路径
+            "delivery_figures_dir": str(path_delivery_figures_dir),  # 返回给调用方的附图目录根路径
+            "delivery_figure_files": list_delivery_figure_files,  # 返回给调用方的附图文件序列
+            "delivery_status": "completed",  # 已完成交付包状态文本
+        }
+    )
 
     # 返回正式完成状态和当前机器可读载荷。
     return PostPreviewChainResult(int_return_code=0, dict_payload=dict_payload)
 
 # 把机器可读 JSON 载荷写到标准输出，供测试与自动化调用方稳定解析。
-def write_json_stdout(dict_payload: dict[str, str]) -> None:
+def write_json_stdout(dict_payload: dict[str, Any]) -> None:
     """把机器可读 JSON 载荷写到标准输出。
 
     参数：
@@ -647,8 +672,29 @@ def write_json_stdout(dict_payload: dict[str, str]) -> None:
     # 先把当前载荷序列化为单行 JSON 文本，保持上游测试解析逻辑稳定。
     str_json_payload = json.dumps(dict_payload, ensure_ascii=False)  # 单行 JSON 载荷文本
 
-    # 把单行 JSON 文本写回标准输出，供上游自动化工具继续消费。
-    sys.stdout.write(str_json_payload + "\n")
+    # 再把 JSON 文本编码成 UTF-8 字节，保证 Windows 重定向场景也能稳定保留中文路径。
+    bytes_json_payload = (str_json_payload + "\n").encode("utf-8")  # UTF-8 编码后的 JSON 载荷字节串
+
+    # 优先直接写入底层缓冲区，避免标准输出文本编码把中文附图路径退回本地代码页。
+    stream_stdout_buffer = getattr(sys.stdout, "buffer", None)  # 标准输出底层二进制缓冲区对象
+
+    # 在当前标准输出暴露了底层缓冲区时，直接按 UTF-8 字节写回机器可读结果。
+    if stream_stdout_buffer is not None:
+
+        # 把 UTF-8 编码后的 JSON 载荷写入底层缓冲区，确保重定向文件可按 UTF-8 解码。
+        stream_stdout_buffer.write(bytes_json_payload)
+
+        # 立即刷新底层缓冲区，避免调用方在短进程场景读到不完整结果。
+        stream_stdout_buffer.flush()
+
+        # 当前机器可读载荷已经完成写回，无需再走文本 stdout 回退分支。
+        return
+
+    # 在极少数没有 buffer 的标准输出替身场景下，退回文本写法以保持测试替身兼容。
+    sys.stdout.write(bytes_json_payload.decode("utf-8"))
+
+    # 刷新文本标准输出，避免替身流在短进程场景丢失最后一行 JSON。
+    sys.stdout.flush()
 
 # 执行正式流水线主入口，并严格遵守预览确认门与后链退出码协议。
 def main() -> int:
@@ -711,21 +757,13 @@ def main() -> int:
         # 用退出码 2 表示当前案件仍停在预览确认门。
         return 2
 
-    # 在预览已确认后执行正式后链，生成正文、附图、权利要求、自检和可选导出件。
-    # 先把调用方是否需要导出 DOCX 整理成布尔值，供正式后链直接复用。
-    bool_export_docx = bool(namespace_arguments.export_docx)  # 调用方是否要求导出 DOCX
-
-    # 把已经通过确认门的案件目录和导出开关交给正式后链执行器继续推进。
+    # 把已经通过确认门的案件目录交给正式后链执行器继续推进。
     post_preview_chain_result_state = run_post_preview_chain(  # 预览确认后的正式后链结果
-        preview_checkpoint_state.path_case_dir,  # 已通过确认门的案件目录
-        bool_export_docx,  # 调用方是否要求同步导出 DOCX
+        preview_checkpoint_state.path_case_dir  # 已通过确认门的案件目录
     )
 
-    # 复制一份后链结果载荷，补回预览路径后再统一写到标准输出。
+    # 复制一份后链结果载荷，保持正式交付包结果与内部执行态隔离。
     dict_result_payload = dict(post_preview_chain_result_state.dict_payload)  # 后链结果载荷副本
-
-    # 把当前案件的预览 Markdown 路径补回最终载荷，保持对外 JSON 契约完整。
-    dict_result_payload["preview"] = str(preview_checkpoint_state.path_preview_markdown.resolve())  # 当前案件预览 Markdown 绝对路径文本
 
     # 把完整结果载荷写回标准输出，供测试和自动化工具继续解析。
     write_json_stdout(dict_result_payload)

@@ -4,9 +4,13 @@
 # 启用未来版本注解行为，保证类型标注在当前解释器下稳定可用。
 from __future__ import annotations
 
-# 引入参数解析、按路径加载模块、标准输出和路径能力，供附图入口稳定运行。
+# 引入 dataclass，供附图资产路径以轻量结构统一传递。
+from dataclasses import dataclass
+
+# 引入参数解析、环境变量、按路径加载模块、标准输出和路径能力，供附图入口稳定运行。
 import argparse
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +18,7 @@ from typing import Any
 # 引入 HTML 转义和正则能力，供 SVG 文本安全输出与正文结构提取逻辑复用。
 from html import escape
 import re
+import textwrap
 
 # 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
@@ -69,6 +74,239 @@ MODULE_SINGLE_COLUMN_LEFT = 260  # 单列布局左边距
 # 固定模块框首行纵向起点，保证图题下方留白稳定。
 MODULE_TOP_MARGIN = 62  # 模块框首行纵向起点
 
+# 固定流程图画布基础高度，供标题、步骤框和箭头共用纵向空间。
+FLOW_CANVAS_BASE_HEIGHT = 1.6  # 方法流程图基础高度（英寸）
+
+# 固定流程图每个步骤增加的纵向高度，保证步骤框与箭头留白稳定。
+FLOW_CANVAS_STEP_HEIGHT = 1.35  # 每个步骤贡献的画布高度（英寸）
+
+# 固定流程图画布宽度，兼顾图题与步骤摘要换行可读性。
+FLOW_CANVAS_WIDTH = 8.0  # 方法流程图画布宽度（英寸）
+
+# 固定 PNG 绘图 DPI，保证 DOCX 嵌图时文字仍可阅读。
+FIGURE_PLOT_DPI = 180  # 绘图输出 DPI
+
+# 固定方法流程图横向坐标范围，供步骤框和箭头共享一套坐标语义。
+FLOW_X_AXIS_LIMIT = 10.0  # 方法流程图横向坐标上限
+
+# 固定流程图纵向缩放倍率，让顶部标题和步骤框落在同一坐标体系下。
+FLOW_Y_AXIS_SCALE = 2.0  # 方法流程图纵向缩放倍率
+
+# 固定方法流程图图题横向中心点，保证标题位于画布正中。
+FLOW_TITLE_CENTER_X = 5.0  # 方法流程图图题横向中心点
+
+# 固定图题距离画布顶端的纵向留白，避免标题贴边。
+FIGURE_TITLE_TOP_MARGIN = 0.6  # 图题顶部留白
+
+# 固定附图图题字号，保证单独查看 PNG 时仍能识别图号。
+FIGURE_TITLE_FONT_SIZE = 14  # 附图图题字号
+
+# 固定流程图首个步骤框中心纵坐标偏移，保证标题与正文留白稳定。
+FLOW_FIRST_STEP_OFFSET = 1.8  # 流程图首个步骤框纵向偏移
+
+# 固定流程图相邻步骤框中心纵向间距，保证箭头和文字不拥挤。
+FLOW_STEP_VERTICAL_GAP = 2.2  # 流程图步骤框纵向间距
+
+# 固定流程图步骤框左边距，保证框体整体位于画布中部。
+FLOW_BOX_LEFT = 1.4  # 流程图步骤框左边距
+
+# 固定流程图步骤框宽度，兼顾步骤编号和摘要的横向排版。
+FLOW_BOX_WIDTH = 7.2  # 流程图步骤框宽度
+
+# 固定流程图步骤框高度，保证三行摘要场景下框体仍有上下留白。
+FLOW_BOX_HEIGHT = 1.6  # 流程图步骤框高度
+
+# 固定流程图步骤框半高，便于从中心坐标稳定反推出框体起点。
+FLOW_BOX_HALF_HEIGHT = 0.8  # 流程图步骤框半高
+
+# 固定流程图步骤文字字号，兼顾 DOCX 嵌图后的可读性与三行排版密度。
+FLOW_TEXT_FONT_SIZE = 9.3  # 流程图步骤文字字号
+
+# 固定流程图箭头所在横坐标，使连接线始终穿过步骤框中心。
+FLOW_ARROW_CENTER_X = 5.0  # 流程图箭头横向中心点
+
+# 固定流程图箭头与步骤框边缘的纵向留白，避免箭头压到更高的框体边界。
+FLOW_ARROW_OFFSET_Y = 0.92  # 流程图箭头纵向偏移
+
+# 固定模块图画布宽度，兼顾双列布局与图题排版空间。
+MODULE_PLOT_CANVAS_WIDTH = 8.8  # 系统模块图画布宽度（英寸）
+
+# 固定模块图基础高度，容纳图题和首行模块框。
+MODULE_PLOT_BASE_HEIGHT = 2.0  # 系统模块图基础高度（英寸）
+
+# 固定模块图每行增加的高度，保证更高模块框与跨行箭头仍有可读留白。
+MODULE_PLOT_ROW_HEIGHT = 2.8  # 系统模块图每行贡献高度（英寸）
+
+# 固定模块图横向坐标范围，供单双列布局共用同一套坐标语义。
+MODULE_X_AXIS_LIMIT = 10.0  # 系统模块图横向坐标上限
+
+# 固定模块图纵向缩放倍率，让图题和模块框位置稳定。
+MODULE_Y_AXIS_SCALE = 2.0  # 系统模块图纵向缩放倍率
+
+# 固定模块图图题横向中心点，确保标题在双列布局下仍位于视觉中心。
+MODULE_TITLE_CENTER_X = 5.0  # 模块图标题中心点坐标
+
+# 固定模块图首列左边距，供按列排版计算模块框位置。
+MODULE_BOX_LEFT = 0.9  # 系统模块图模块框左边距
+
+# 固定模块图列间距，保证双列场景下左右模块不会挤压。
+MODULE_BOX_COLUMN_GAP = 4.5  # 系统模块图列间距
+
+# 固定模块图首行纵向偏移，保证图题下方留白稳定。
+MODULE_FIRST_ROW_OFFSET = 2.2  # 系统模块图首行纵向偏移
+
+# 固定模块图行间距，给相邻模块和箭头留出足够空间。
+MODULE_ROW_GAP = 2.3  # 系统模块图行间距
+
+# 固定模块图模块框宽度，兼顾模块名和功能摘要换行。
+MODULE_BOX_WIDTH_PLOT = 3.6  # 系统模块图模块框宽度
+
+# 固定模块图模块框高度，保证标题加两行说明仍可读。
+MODULE_BOX_HEIGHT_PLOT = 1.95  # 系统模块图模块框高度
+
+# 固定模块图模块框中心相对左边距的横向偏移，便于统一写入文字。
+MODULE_BOX_CENTER_OFFSET_X = 1.8  # 系统模块图模块框中心横向偏移
+
+# 固定模块图模块框中心相对顶部的纵向偏移，保证高框体里的标题与说明仍居中。
+MODULE_BOX_CENTER_OFFSET_Y = 0.62  # 系统模块图模块框中心纵向偏移
+
+# 固定模块图文字字号，兼顾单列和双列场景下的换行可读性。
+MODULE_TEXT_FONT_SIZE = 8.3  # 系统模块图文字字号
+
+# 固定模块图箭头与模块框边缘的纵向留白，避免箭头压线。
+MODULE_ARROW_OFFSET_Y = 0.72  # 系统模块图箭头纵向偏移
+
+# 固定圆角矩形框的样式参数，保持流程图与模块图风格一致。
+FIGURE_BOX_STYLE = "round,pad=0.08"  # 圆角矩形框样式
+
+# 固定附图框线宽，保证 PNG 嵌入 DOCX 后边界仍清晰。
+FIGURE_BOX_LINEWIDTH = 1.4  # 附图框线宽
+
+# 固定附图边框颜色，保持所有导出图统一为黑白稿。
+FIGURE_BOX_EDGE_COLOR = "black"  # 附图边框颜色
+
+# 固定附图填充颜色，保证导出图适配专利常见黑白交底风格。
+FIGURE_BOX_FACE_COLOR = "white"  # 附图填充颜色
+
+# 固定附图箭头样式，保持流程图与模块图的一致视觉语义。
+FIGURE_ARROW_STYLE = "->"  # 附图箭头样式
+
+# 固定附图箭头线宽，保证导出 PNG 在缩放后仍可辨识。
+FIGURE_ARROW_LINEWIDTH = 1.2  # 附图箭头线宽
+
+# 固定附图箭头颜色，保持导出图整体为黑白稿。
+FIGURE_ARROW_COLOR = "black"  # 附图箭头颜色
+
+# 基于系统环境变量和当前用户主目录盘符推导 Windows 字体目录，避免在源码里写死本机盘符。
+def build_windows_fonts_dir() -> Path:
+    """推导当前环境下的 Windows 字体目录。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Path`：Windows 字体目录路径。
+
+    异常：
+    - 无。
+    """
+
+    # 先按环境变量与当前用户盘符顺序推导系统根目录，兼容本机与受限运行环境。
+    str_windows_root = os.environ.get("WINDIR")  # 优先尝试当前进程显式暴露的 Windows 根目录
+
+    # WINDIR 缺失时，继续尝试兼容旧式环境变量名。
+    if not str_windows_root:
+
+        # 再读取 SystemRoot，兼容只暴露旧式系统根目录变量的运行环境。
+        str_windows_root = os.environ.get("SystemRoot")  # 兼容只提供旧式变量名的 Windows 根目录
+
+    # 系统环境变量仍缺失时，再回退到当前用户主目录盘符。
+    if not str_windows_root:
+
+        # 主目录盘符通常仍能反映当前 Windows 安装所在盘符。
+        str_windows_root = Path.home().anchor  # 从当前用户主目录反推出本机系统盘符
+
+    # 如果以上候选都为空，再用平台根路径保底，避免得到空路径。
+    if not str_windows_root:
+
+        # 平台根路径是最后的兜底值，保证后续字体目录拼装总有基准。
+        str_windows_root = os.sep  # 在非 Windows 受限环境下保留根路径兜底
+
+    # 再在系统根目录下拼出 Fonts 子目录，供字体探测逻辑稳定复用。
+    path_windows_fonts_dir = Path(str_windows_root) / "Fonts"  # Windows 字体目录路径
+
+    # 返回推导出的 Windows 字体目录。
+    return path_windows_fonts_dir
+
+# 固定 Windows 字体目录路径，供 PNG 绘图优先解析可用中文字体。
+WINDOWS_FONTS_DIR = build_windows_fonts_dir()  # PNG 绘图使用的字体目录
+
+# 固定 PNG 绘图优先尝试的中文字体文件名序列，优先选择常见无衬线中文字体。
+PREFERRED_CJK_FONT_FILENAMES = (  # PNG 绘图优先尝试的中文字体文件名
+    "msyh.ttc",  # 微软雅黑常规字体
+    "msyhl.ttc",  # 微软雅黑 Light 字体
+    "simhei.ttf",  # 黑体字体
+    "simsun.ttc",  # 宋体字体
+    "simsunb.ttf",  # 宋体粗体字体
+)  # PNG 绘图优先中文字体文件名序列
+
+# 固定 SVG 文本要声明的字体族栈，保证独立附图源文件也优先命中中文字体。
+SVG_FONT_FAMILY_STACK = "Microsoft YaHei, SimHei, SimSun, Arial, sans-serif"  # SVG 文本字体族栈
+
+# 固定附图源文本可保留的最大字符数，避免提取阶段就把句子截成生硬半句。
+METHOD_STEP_SUMMARY_MAX_CHARS = 56  # 方法步骤摘要的最大字符数
+
+# 固定模块名称可保留的最大字符数，避免模块标题过长挤压功能说明空间。
+MODULE_NAME_MAX_CHARS = 20  # 模块名称的最大字符数
+
+# 固定模块功能说明可保留的最大字符数，兼顾信息量和图框可读性。
+MODULE_FUNCTION_MAX_CHARS = 32  # 模块功能说明的最大字符数
+
+# 固定附图文本溢出时使用的省略号字符，避免截断后看起来像误生成。
+FIGURE_TEXT_ELLIPSIS = "…"  # 附图文本截断省略号
+
+# 预编译附图文本多空白压缩规则，保证换行前的字数估算稳定。
+RE_FIGURE_TEXT_MULTISPACE = re.compile(r"\s+")  # 附图文本多空白压缩规则
+
+# 固定流程图文本换行宽度，保证中文摘要能够真正进入框内。
+FLOW_TEXT_WRAP_WIDTH = 24  # 流程图文本每行最大字符数
+
+# 固定流程图文本最大行数，避免单步说明把整张图拉得过长。
+FLOW_TEXT_MAX_LINES = 3  # 流程图文本最大行数
+
+# 固定流程图文本行距，保证多行摘要在 DOCX 嵌图后仍可分辨。
+FLOW_TEXT_LINE_SPACING = 1.28  # 流程图文本行距
+
+# 固定流程图箭头与步骤框边缘的额外留白，避免箭头压住边框。
+FLOW_ARROW_EDGE_PADDING = 0.12  # 流程图箭头与边框之间的额外留白
+
+# 固定流程图 SVG 节点高度，让三行步骤摘要在矢量图里仍保有上下留白。
+FLOW_SVG_BOX_HEIGHT = 88  # 三行流程摘要对应的 SVG 框高
+
+# 固定流程图 SVG 节点间距，给竖向箭头留出稳定连接空间。
+FLOW_SVG_BOX_GAP = 30  # 流程图 SVG 步骤框间距
+
+# 固定模块标题文本换行宽度，保证名称和功能说明分层清晰。
+MODULE_NAME_WRAP_WIDTH = 10  # 模块标题每行最大字符数
+
+# 固定模块标题最大行数，避免模块名挤占功能说明的主要空间。
+MODULE_NAME_MAX_LINES = 2  # 模块标题最大行数
+
+# 固定模块功能说明换行宽度，保证双列模块图也能完整放入框内。
+MODULE_FUNCTION_WRAP_WIDTH = 16  # 模块功能说明每行最大字符数
+
+# 固定模块功能说明最大行数，避免图框被少量长句拖垮。
+MODULE_FUNCTION_MAX_LINES = 2  # 模块功能说明最大行数
+
+# 固定模块图文本行距，保证标题和功能说明在同框内分层可读。
+MODULE_TEXT_LINE_SPACING = 1.2  # 模块图文本行距
+
+# 固定模块图箭头与边框之间的额外留白，避免连线压到矩形边缘。
+MODULE_ARROW_EDGE_PADDING = 0.1  # 模块图箭头与边框之间的额外留白
+
+# 固定模块图 SVG 节点高度，保证标题加两行说明时仍可读。
+MODULE_SVG_BOX_HEIGHT = 108  # 模块图 SVG 模块框高度
+
 # 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
 def load_runtime_support_module() -> Any:
     """按路径加载共享运行时支持模块。
@@ -100,6 +338,280 @@ def load_runtime_support_module() -> Any:
 
     # 返回已完成加载的共享支持模块，供附图入口复用。
     return module_runtime_support
+
+# 解析当前环境下可直接用于 PNG 绘图的中文字体路径。
+def find_preferred_cjk_font_path() -> Path | None:
+    """解析首个可用中文字体路径。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Path | None`：命中时返回首个可用中文字体路径，否则返回 `None`。
+
+    异常：
+    - 无。
+    """
+
+    # 按预设顺序逐项检查中文字体文件是否真实存在，保证 PNG 绘图优先命中稳定字体。
+    for str_filename in PREFERRED_CJK_FONT_FILENAMES:
+
+        # 拼出当前候选中文字体路径，供存在性检查复用。
+        path_candidate_font = WINDOWS_FONTS_DIR / str_filename  # 当前候选中文字体路径
+
+        # 找到首个真实存在的中文字体后立即返回，减少后续重复扫描。
+        if path_candidate_font.exists():
+
+            # 返回首个命中的中文字体路径，供 matplotlib FontProperties 构造复用。
+            return path_candidate_font
+
+    # 在当前环境没有命中任何预设中文字体时返回空值，让上层继续走默认字体回退。
+    return None
+
+# 构造 PNG 绘图要使用的中文字体属性对象，避免默认字体缺少中文字形。
+def build_png_cjk_font_properties() -> Any | None:
+    """构造 PNG 绘图中文字体属性。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any | None`：命中字体时返回 matplotlib 字体属性对象，否则返回 `None`。
+
+    异常：
+    - 无；字体属性构造失败时直接回退为 `None`。
+    """
+
+    # 先解析当前环境可用的中文字体路径，供后续字体属性构造复用。
+    path_font = find_preferred_cjk_font_path()  # 当前环境可用中文字体路径
+
+    # 在当前环境没有可用中文字体路径时直接回退空值，让上层保留默认字体行为。
+    if path_font is None:
+
+        # 返回空字体属性，表示当前绘图路径只能继续使用 matplotlib 默认字体。
+        return None
+
+    # 尝试按路径导入 matplotlib 字体属性对象，避免模块导入期强依赖字体子模块。
+    try:
+
+        # 只在函数内部导入 FontProperties，减少非 PNG 路径的额外依赖耦合。
+        from matplotlib.font_manager import FontProperties
+
+    # 字体属性子模块异常时直接回退空值，保持附图流程不会因为字体辅助失败而中断。
+    except Exception:
+
+        # 返回空字体属性，交由上层走默认字体回退路径。
+        return None
+
+    # 返回绑定真实中文字体文件的属性对象，供流程图和模块图文本统一复用。
+    return FontProperties(fname=str(path_font))
+
+# 在附图换行与截断之前先规整轻量 Markdown 装饰，避免图框里残留反引号。
+def normalize_figure_source_text(str_text: str) -> str:
+    """规整附图源文本里的轻量 Markdown 装饰。
+
+    参数：
+    - `str_text`：待规整的原始文本。
+
+    返回：
+    - `str`：去掉轻量 Markdown 装饰并压缩空白后的单行文本。
+
+    异常：
+    - 无。
+    """
+
+    # 先去掉行内代码反引号，避免附图正文直接泄露 Markdown 装饰符。
+    str_plain_text = str_text.replace("`", "")  # 去掉行内代码标记后的文本
+
+    # 再压缩连续空白并去掉首尾空白，保证后续截断和换行使用同一份文本。
+    return RE_FIGURE_TEXT_MULTISPACE.sub(" ", str_plain_text).strip()
+
+# 在附图抽取阶段对原始文本做受控截断，避免句子半截停在连词或标点后面。
+def clip_figure_source_text(str_text: str, int_max_chars: int) -> str:
+    """对附图源文本做带省略号的受控截断。
+
+    参数：
+    - `str_text`：待截断的原始文本。
+    - `int_max_chars`：允许保留的最大字符数。
+
+    返回：
+    - `str`：长度受控且必要时附带省略号的文本。
+
+    异常：
+    - 无。
+    """
+
+    # 先规整源文本里的 Markdown 装饰与空白，保证截断计数和最终输出一致。
+    str_single_line_text = normalize_figure_source_text(str_text)  # 适合参与字符截断的单行文本
+
+    # 在文本本身已经足够短时直接返回，避免平白引入省略号。
+    if len(str_single_line_text) <= int_max_chars:
+
+        # 返回原始长度已合规的文本，供后续换行逻辑继续处理。
+        return str_single_line_text
+
+    # 为省略号预留一个字符位，并去掉尾部可能影响观感的悬挂标点。
+    str_clipped_text = str_single_line_text[: max(int_max_chars - 1, 1)].rstrip("，,；;、：: ")  # 已裁切但尚未补省略号的文本
+
+    # 返回带省略号的受控截断结果，提醒读者该框内文本已经做过压缩。
+    return f"{str_clipped_text}{FIGURE_TEXT_ELLIPSIS}"
+
+# 按固定字符宽度为附图文本插入人工换行，避免中文在 matplotlib 中完全不换行。
+def wrap_figure_text(
+    str_text: str,
+    int_wrap_width: int,
+    int_max_lines: int,
+) -> list[str]:
+    """按附图约束把文本包装成有限行数。
+
+    参数：
+    - `str_text`：待换行的原始文本。
+    - `int_wrap_width`：每行最大字符数。
+    - `int_max_lines`：允许输出的最大行数。
+
+    返回：
+    - `list[str]`：已经插入人工换行的文本行列表。
+
+    异常：
+    - 无。
+    """
+
+    # 先规整 Markdown 装饰与多空白，保证字符宽度估算稳定。
+    str_single_line_text = normalize_figure_source_text(str_text)  # 待换行的单行文本
+
+    # 在当前文本为空时返回单个空行，避免调用方额外处理空列表。
+    if not str_single_line_text:
+
+        # 返回单个空行，保持上层拼接逻辑结构稳定。
+        return [""]
+
+    # 先收拢 textwrap 的关键参数，避免后续调用在视觉修复阶段再次拉成长块代码。
+    dict_wrap_options = {"width": int_wrap_width, "break_long_words": True, "break_on_hyphens": False}  # textwrap 包装参数字典
+
+    # 按固定字符宽度拆成多行，显式允许中文长串在没有空格时也能断行。
+    list_wrapped_lines = textwrap.wrap(str_single_line_text, **dict_wrap_options)  # 初步换行后的文本行列表
+
+    # 在初步换行结果为空时回退到原文本单行，避免边界输入导致空输出。
+    if not list_wrapped_lines:
+
+        # 返回未换行的原文本，保证至少保留可见内容。
+        return [str_single_line_text]
+
+    # 在当前行数已经满足上限时直接返回，避免无意义的再次裁剪。
+    if len(list_wrapped_lines) <= int_max_lines:
+
+        # 返回已经满足约束的换行结果，供流程图和模块图直接复用。
+        return list_wrapped_lines
+
+    # 先保留最大行数之前的所有完整行，最后一行再做受控合并裁剪。
+    list_preserved_lines = list_wrapped_lines[: int_max_lines - 1]  # 可以原样保留的前置文本行
+
+    # 把剩余文本重新拼成一个尾行候选，保证省略号总是落在最后一行。
+    str_tail_text = "".join(list_wrapped_lines[int_max_lines - 1 :])  # 等待压缩进最后一行的尾部文本
+
+    # 依据末行宽度约束对尾行做受控截断，避免超过框体宽度。
+    str_last_line = clip_figure_source_text(str_tail_text, int_wrap_width)  # 最大行数约束下的最终尾行文本
+
+    # 返回行数受控的换行结果，确保最后一行必要时带省略号。
+    return [*list_preserved_lines, str_last_line]
+
+# 解析模块图的蛇形列位置，保证相邻模块跨行时仍能走边缘竖线而不是对角穿框。
+def resolve_module_grid_position(int_index: int, int_columns: int) -> tuple[int, int]:
+    """解析模块图中单个模块的蛇形行列位置。
+
+    参数：
+    - `int_index`：当前模块在原始顺序中的索引。
+    - `int_columns`：当前模块图的总列数。
+
+    返回：
+    - `tuple[int, int]`：模块所在的行号与列号。
+
+    异常：
+    - 无。
+    """
+
+    # 先按普通行优先顺序推导当前模块所在的基础行号。
+    int_row = int_index // int_columns  # 当前模块所在的基础行号
+
+    # 再按当前列数推导基础列号，供蛇形布局修正前复用。
+    int_column = int_index % int_columns  # 当前模块所在的基础列号
+
+    # 在双列模块图的奇数行启用反向列号，让跨行连接保持竖向边缘对齐。
+    if int_columns > MODULE_SINGLE_COLUMN and int_row % 2 == 1:
+
+        # 把奇数行列号反向，形成更适合顺序箭头的蛇形排布。
+        int_column = int_columns - MODULE_SINGLE_COLUMN - int_column  # 蛇形布局下修正后的列号
+
+    # 返回最终的蛇形布局行列位置，供 SVG 和 PNG 共用。
+    return int_row, int_column
+
+# 构造 SVG 模块框的边界记录，供后续边缘箭头连接复用。
+def build_svg_box_position_record(
+    int_left: int,
+    int_top: int,
+    int_width: int,
+    int_height: int,
+) -> dict[str, int]:
+    """构造 SVG 模块框的边界记录。
+
+    参数：
+    - `int_left`：模块框左边缘横坐标。
+    - `int_top`：模块框上边缘纵坐标。
+    - `int_width`：模块框宽度。
+    - `int_height`：模块框高度。
+
+    返回：
+    - `dict[str, int]`：包含边界和中心坐标的 SVG 模块框记录。
+
+    异常：
+    - 无。
+    """
+
+    # 直接返回 SVG 模块框的边界与中心坐标，避免主流程重复手写同构字典。
+    return {
+        "left": int_left,
+        "right": int_left + int_width,
+        "top": int_top,
+        "bottom": int_top + int_height,
+        "center_x": int_left + int_width // 2,
+        "center_y": int_top + int_height // 2,
+    }
+
+# 把 PNG 布局坐标封装成浮点边界记录，避免 annotate 阶段重复推导边缘位置。
+def build_png_box_geometry_record(
+    float_left: float,
+    float_bottom: float,
+    float_width: float,
+    float_height: float,
+    float_center_x: float,
+    float_center_y: float,
+) -> dict[str, float]:
+    """构造 PNG 模块框的边界记录。
+
+    参数：
+    - `float_left`：模块框左边缘横坐标。
+    - `float_bottom`：模块框下边缘纵坐标。
+    - `float_width`：模块框宽度。
+    - `float_height`：模块框高度。
+    - `float_center_x`：模块框中心横坐标。
+    - `float_center_y`：模块框中心纵坐标。
+
+    返回：
+    - `dict[str, float]`：包含边界和中心坐标的 PNG 模块框记录。
+
+    异常：
+    - 无。
+    """
+
+    # 直接返回 PNG 模块框的边界与中心坐标，避免主流程重复手写浮点字典。
+    return {
+        "left": float_left,
+        "right": float_left + float_width,
+        "top": float_bottom + float_height,
+        "bottom": float_bottom,
+        "center_x": float_center_x,
+        "center_y": float_center_y,
+    }
 
 # 构造命令行参数解析器，统一声明案件目录和可选输入草稿参数。
 def build_parser() -> argparse.ArgumentParser:
@@ -151,8 +663,11 @@ def extract_method_steps(str_markdown: str, module_runtime_support: Any) -> list
     # 逐项遍历正文中命中的步骤编号与摘要文本。
     for str_step_id, str_summary in RE_METHOD_STEP.findall(str_markdown):
 
-        # 截断并清洗当前步骤摘要，避免图中文字过长影响排版。
-        str_clean_summary = module_runtime_support.clean_text(str_summary)[:36]  # 当前步骤的清洗摘要
+        # 先清洗正文提取出来的步骤摘要，保证附图处理只面对规整后的句子。
+        str_summary_text = module_runtime_support.clean_text(str_summary)  # 当前步骤清洗后的原始摘要
+
+        # 再对规整后的步骤摘要做受控截断，避免流程图文本硬截在半句中间。
+        str_clean_summary = clip_figure_source_text(str_summary_text, METHOD_STEP_SUMMARY_MAX_CHARS)  # 当前步骤的清洗摘要
 
         # 组装当前步骤记录，供 SVG 与 Mermaid 渲染逻辑共同复用。
         dict_step_record = {  # 单个方法步骤记录
@@ -193,11 +708,17 @@ def extract_system_modules(str_markdown: str, module_runtime_support: Any) -> li
     # 逐项遍历正文中命中的模块名称与功能描述。
     for str_name, str_function in RE_SYSTEM_MODULE.findall(str_markdown):
 
-        # 截断并清洗模块名称，避免图框标题超宽溢出。
-        str_clean_name = module_runtime_support.clean_text(str_name)[:24]  # 当前模块的清洗名称
+        # 先清洗正文提取出来的模块名称，保证后续截断不会夹带多余空白。
+        str_module_name_text = module_runtime_support.clean_text(str_name)  # 当前模块清洗后的原始名称
 
-        # 截断并清洗模块功能描述，避免图框副标题过长影响排版。
-        str_clean_function = module_runtime_support.clean_text(str_function)[:40]  # 当前模块的清洗功能描述
+        # 再对模块名称做受控截断，保证标题仍能留出功能说明空间。
+        str_clean_name = clip_figure_source_text(str_module_name_text, MODULE_NAME_MAX_CHARS)  # 当前模块的清洗名称
+
+        # 先清洗正文提取出来的模块功能说明，避免换行前还带着多余空白。
+        str_module_function_text = module_runtime_support.clean_text(str_function)  # 当前模块清洗后的原始功能说明
+
+        # 再对模块功能说明做受控截断，避免说明文字把双列模块框完全撑爆。
+        str_clean_function = clip_figure_source_text(str_module_function_text, MODULE_FUNCTION_MAX_CHARS)  # 当前模块的清洗功能描述
 
         # 组装当前模块记录，供 SVG、Mermaid 和清单共同复用。
         dict_module_record = {  # 单个系统模块记录
@@ -216,6 +737,73 @@ def extract_system_modules(str_markdown: str, module_runtime_support: Any) -> li
 
     # 返回结构化系统模块列表，供系统图和清单共同复用。
     return list_modules
+
+# 把圆角矩形框的样式参数集中封装，供流程图与模块图绘制共用。
+def build_rounded_box_patch(
+    class_box_patch: Any,
+    tuple_origin: tuple[float, float],
+    float_width: float,
+    float_height: float,
+) -> Any:
+    """构造统一样式的圆角矩形框对象。
+
+    参数：
+    - `class_box_patch`：圆角矩形框类对象。
+    - `tuple_origin`：矩形框左下角起点坐标。
+    - `float_width`：矩形框宽度。
+    - `float_height`：矩形框高度。
+
+    返回：
+    - `Any`：已填充统一样式参数的圆角矩形框对象。
+
+    异常：
+    - 框对象构造失败时由底层异常上抛。
+    """
+
+    # 先读取圆角矩形框样式，避免构造调用里直接堆叠多个全局样式常量。
+    str_boxstyle = FIGURE_BOX_STYLE  # 圆角矩形框样式字符串
+
+    # 读取圆角矩形框线宽，供构造调用统一复用。
+    float_linewidth = FIGURE_BOX_LINEWIDTH  # 圆角矩形框线宽
+
+    # 读取圆角矩形框边框颜色，保持所有附图统一为黑白稿。
+    str_edgecolor = FIGURE_BOX_EDGE_COLOR  # 圆角矩形框边框颜色
+
+    # 读取圆角矩形框填充颜色，保证框体背景始终为白色。
+    str_facecolor = FIGURE_BOX_FACE_COLOR  # 圆角矩形框填充颜色
+
+    # 先组装圆角矩形框的基础位置与尺寸参数，避免构造调用块过密。
+    tuple_patch_args = (tuple_origin, float_width, float_height)  # 圆角矩形框基础参数
+
+    # 再用统一样式参数构造圆角矩形框对象，供流程图与模块图共用。
+    return class_box_patch(
+        *tuple_patch_args,
+        boxstyle=str_boxstyle,
+        linewidth=float_linewidth,
+        edgecolor=str_edgecolor,
+        facecolor=str_facecolor,
+    )
+
+# 构造附图箭头样式参数，供流程图与模块图复用同一套黑白箭头风格。
+def build_arrowprops() -> dict[str, Any]:
+    """构造附图箭头样式参数。
+
+    参数：
+    - 无。
+
+    返回：
+    - `dict[str, Any]`：供 matplotlib `annotate` 复用的箭头样式参数字典。
+
+    异常：
+    - 无。
+    """
+
+    # 返回统一箭头样式，保证流程图与模块图箭头视觉一致。
+    return {
+        "arrowstyle": FIGURE_ARROW_STYLE,
+        "linewidth": FIGURE_ARROW_LINEWIDTH,
+        "color": FIGURE_ARROW_COLOR,
+    }
 
 # 渲染单个 SVG 矩形框，统一输出标题和副标题两层文本。
 def render_svg_box(
@@ -243,23 +831,58 @@ def render_svg_box(
     - 无。
     """
 
-    # 对主标题文本做 HTML 转义，避免特殊字符破坏 SVG 结构。
-    str_safe_label = escape(str_label)  # 已转义的主标题文本
+    # 先按换行拆出主标题文本行，便于流程图和模块图共享多行框体渲染。
+    list_label_lines = [str_line.strip() for str_line in str_label.splitlines() if str_line.strip()]  # 主标题文本行列表
 
-    # 对副标题文本单独做 HTML 转义，确保说明文字同样不会破坏 SVG 结构。
-    str_safe_subtitle = escape(str_subtitle)  # 已转义的副标题文本
+    # 再按换行拆出副标题文本行，供功能说明多行渲染复用。
+    list_subtitle_lines = [str_line.strip() for str_line in str_subtitle.splitlines() if str_line.strip()]  # 副标题文本行列表
 
-    # 返回当前矩形框完整 SVG 片段，包含边框、主标题和副标题。
-    return (
+    # 先准备当前矩形框的基础 SVG 片段，保证多行文本逻辑不会影响边框输出。
+    list_parts = [
         f'<rect x="{int_x}" y="{int_y}" width="{int_width}" height="{int_height}" '
         'rx="10" ry="10" fill="white" stroke="black" stroke-width="1.5"/>'
-        f'<text x="{int_x + int_width / 2}" y="{int_y + 24}" text-anchor="middle" '
-        'font-size="15" font-family="Arial, sans-serif">'
-        f"{str_safe_label}</text>"
-        f'<text x="{int_x + int_width / 2}" y="{int_y + 48}" text-anchor="middle" '
-        'font-size="12" font-family="Arial, sans-serif">'
-        f"{str_safe_subtitle}</text>"
-    )
+    ]  # 当前矩形框 SVG 片段列表
+
+    # 依次登记主标题和副标题的字体规格，便于后续统一做纵向居中排版。
+    # 先为主标题生成字号规格列表，保持标题和说明的字号来源清晰分离。
+    list_label_specs = [(str_line, 15) for str_line in list_label_lines]  # 主标题文本行规格列表
+
+    # 再为副标题生成字号规格列表，保证说明文字统一使用较小字号。
+    list_subtitle_specs = [(str_line, 12) for str_line in list_subtitle_lines]  # 副标题文本行规格列表
+
+    # 最后再合并两组文本规格，供后续统一做盒内纵向居中排版。
+    list_line_specs = [*list_label_specs, *list_subtitle_specs]  # 盒内文本行规格列表
+
+    # 在当前框体没有可见文本时直接返回边框片段，避免后续居中计算出现空列表。
+    if not list_line_specs:
+
+        # 返回仅包含边框的 SVG 片段，保持调用方行为稳定。
+        return "".join(list_parts)
+
+    # 固定 SVG 文本行间距，保证多行标题与说明均匀分布在框体中部。
+    int_line_gap = 18  # SVG 框体文本行间距
+
+    # 先计算第一行中心线的纵坐标，保证多行文本整体相对框体纵向居中。
+    float_start_y = int_y + int_height / 2 - ((len(list_line_specs) - 1) * int_line_gap) / 2  # 第一行文本中心纵坐标
+
+    # 逐行写入当前矩形框文本，让多行标题和说明真正进入框体内部。
+    for int_index, tuple_line_spec in enumerate(list_line_specs):
+
+        # 解包当前文本内容和字号，供 SVG 文本节点直接复用。
+        str_line, int_font_size = tuple_line_spec  # 当前文本行内容和字号
+
+        # 计算当前文本行的纵坐标，保证行间距与整体居中关系稳定。
+        float_line_y = float_start_y + int_index * int_line_gap  # 当前文本行中心纵坐标
+
+        # 追加当前 SVG 文本节点，统一声明中文友好的字体族栈。
+        list_parts.append(
+            f'<text x="{int_x + int_width / 2}" y="{float_line_y}" text-anchor="middle" '
+            f'dominant-baseline="middle" font-size="{int_font_size}" '
+            f'font-family="{SVG_FONT_FAMILY_STACK}">{escape(str_line)}</text>'
+        )
+
+    # 返回完整矩形框 SVG 片段，包含边框和所有文本行。
+    return "".join(list_parts)
 
 # 渲染单条 SVG 箭头连接线，统一使用内置箭头标记。
 def render_svg_arrow(int_x1: int, int_y1: int, int_x2: int, int_y2: int) -> str:
@@ -326,23 +949,26 @@ def render_flow_svg(list_steps: list[dict[str, str]]) -> str:
     # 固定方法流程图宽度，保证步骤框与标题有稳定排版。
     int_width = 760  # 方法流程图画布宽度
 
-    # 根据步骤数量计算画布高度，给每个步骤框预留足够垂直空间。
-    int_height = 110 + len(list_steps) * 108  # 方法流程图画布高度
-
-    # 先准备 SVG 文本片段列表，后续逐项追加标题、节点与箭头。
-    list_parts = [  # 方法流程图 SVG 片段列表
-        render_svg_header(int_width, int_height),  # 通用 SVG 头部
-        '<text x="380" y="32" text-anchor="middle" font-size="18" font-family="Arial, sans-serif">图 1 方法流程图</text>',  # 图题文本
-    ]
-
     # 固定流程图矩形框横坐标，保证各步骤节点居中对齐。
     int_box_x = 120  # 方法步骤框横坐标
 
     # 固定流程图矩形框宽度，保证标题和摘要有稳定容纳空间。
     int_box_width = 520  # 方法步骤框宽度
 
-    # 固定流程图矩形框高度，保证标题和副标题两行均可完整显示。
-    int_box_height = 68  # 方法步骤框高度
+    # 固定流程图矩形框高度，保证三行中文摘要也能真正进入框内。
+    int_box_height = FLOW_SVG_BOX_HEIGHT  # 方法步骤框高度
+
+    # 根据步骤数量计算画布高度，给更高的多行步骤框和箭头预留空间。
+    int_height = 96 + len(list_steps) * (int_box_height + FLOW_SVG_BOX_GAP)  # 方法流程图画布高度
+
+    # 先准备 SVG 文本片段列表，后续逐项追加标题、节点与箭头。
+    list_parts = [  # 方法流程图 SVG 片段列表
+        render_svg_header(int_width, int_height),  # 通用 SVG 头部
+        (
+            f'<text x="380" y="32" text-anchor="middle" font-size="18" '
+            f'font-family="{SVG_FONT_FAMILY_STACK}">图 1 方法流程图</text>'
+        ),  # 图题文本
+    ]
 
     # 记录上一节点底部纵坐标，供后续箭头连接使用。
     int_previous_bottom = 0  # 上一节点底部纵坐标
@@ -350,11 +976,17 @@ def render_flow_svg(list_steps: list[dict[str, str]]) -> str:
     # 按方法步骤顺序逐项渲染节点和连接箭头。
     for int_index, dict_step in enumerate(list_steps):
 
-        # 计算当前步骤框纵坐标，保持各节点等距排布。
-        int_box_y = 60 + int_index * 98  # 当前步骤框纵坐标
+        # 计算当前步骤框纵坐标，保持更高的多行步骤框之间仍有稳定留白。
+        int_box_y = 60 + int_index * (int_box_height + FLOW_SVG_BOX_GAP)  # 当前步骤框纵坐标
 
-        # 组装当前步骤框主标题文本，合并步骤编号和摘要。
-        str_step_label = f"{dict_step['id']}：{dict_step['summary']}"  # 当前步骤框主标题文本
+        # 先整理当前步骤编号和摘要的拼接文本，供 SVG 换行 helper 按盒内宽度复用。
+        str_step_source_text = f"{dict_step['id']}：{dict_step['summary']}"  # 当前步骤框待换行原文
+
+        # 再包装当前步骤摘要，确保中文长句会真正落在 SVG 框体内部。
+        list_step_label_lines = wrap_figure_text(str_step_source_text, FLOW_TEXT_WRAP_WIDTH, FLOW_TEXT_MAX_LINES)  # 当前步骤框主标题文本行列表
+
+        # 把已经换行的步骤文本拼成单段多行字符串，供 SVG 框体直接写入主标题区域。
+        str_step_label = "\n".join(list_step_label_lines)  # 当前步骤框的多行 SVG 标题段落
 
         # 渲染当前步骤框并追加到 SVG 片段列表。
         list_parts.append(
@@ -364,7 +996,7 @@ def render_flow_svg(list_steps: list[dict[str, str]]) -> str:
                 int_box_width,
                 int_box_height,
                 str_step_label,
-                "输入 -> 动作 -> 输出",
+                "",
             )
         )
 
@@ -372,7 +1004,14 @@ def render_flow_svg(list_steps: list[dict[str, str]]) -> str:
         if int_index > 0:
 
             # 渲染上一节点到当前节点的竖向箭头。
-            list_parts.append(render_svg_arrow(380, int_previous_bottom, 380, int_box_y))
+            list_parts.append(
+                render_svg_arrow(
+                    380,
+                    int_previous_bottom + FLOW_ARROW_EDGE_PADDING * 10,
+                    380,
+                    int_box_y - FLOW_ARROW_EDGE_PADDING * 10,
+                )
+            )
 
         # 把当前步骤框底部坐标保存下来，下一轮箭头会从这里继续向下连接。
         int_previous_bottom = int_box_y + int_box_height  # 下一轮箭头起点的纵坐标
@@ -397,62 +1036,47 @@ def render_module_svg(list_modules: list[dict[str, str]]) -> str:
     - 无。
     """
 
-    # 在模块多于两个时使用双列布局，减少纵向长度。
+    # 在模块多于两个时切到双列布局，减少整张模块图的纵向长度。
     int_columns = MODULE_DOUBLE_COLUMN if len(list_modules) > MODULE_DOUBLE_COLUMN_THRESHOLD else MODULE_SINGLE_COLUMN  # 模块图列数
 
-    # 固定模块图画布宽度，兼顾单列与双列布局的阅读稳定性。
-    int_width = MODULE_CANVAS_WIDTH  # 系统模块图画布宽度
-
-    # 读取当前渲染要使用的模块框宽度，保证标题和功能副标题都可读。
-    int_box_width = MODULE_BOX_WIDTH  # 当前渲染使用的模块框宽度
-
-    # 读取当前渲染要使用的模块框高度，保证标题和副标题两行排版稳定。
-    int_box_height = MODULE_BOX_HEIGHT  # 当前渲染使用的模块框高度
-
-    # 读取当前渲染要使用的水平间距，避免双列布局时模块框相互拥挤。
-    int_gap_x = MODULE_GAP_X  # 当前渲染使用的模块框水平间距
-
-    # 读取当前渲染要使用的垂直间距，给跨行箭头留出连接空间。
-    int_gap_y = MODULE_GAP_Y  # 当前渲染使用的模块框垂直间距
-
-    # 根据模块数量和列数计算行数，供画布高度估算复用。
+    # 根据模块数量和列数推算实际行数，供画布高度估算复用。
     int_rows = (len(list_modules) + int_columns - MODULE_SINGLE_COLUMN) // int_columns  # 模块图总行数
 
-    # 根据行数计算画布高度，保证所有模块框都有稳定空间。
-    int_height = MODULE_CANVAS_BASE_HEIGHT + int_rows * (int_box_height + int_gap_y)  # 系统模块图画布高度
+    # 依据行数生成模块图 SVG 高度，保证高框体和跨行箭头都能落在画布内。
+    int_height = MODULE_CANVAS_BASE_HEIGHT + int_rows * (MODULE_SVG_BOX_HEIGHT + MODULE_GAP_Y)  # 系统模块图画布高度
 
     # 先准备系统模块图的 SVG 片段列表，后续逐项追加图题、模块框和箭头。
     list_parts = [  # 系统模块图 SVG 片段列表
-        render_svg_header(int_width, int_height),  # 注入模块图专用 SVG 头部与背景
+        render_svg_header(MODULE_CANVAS_WIDTH, int_height),  # 注入模块图专用 SVG 头部与背景
         (
             f'<text x="{MODULE_TITLE_CENTER_X}" y="{MODULE_TITLE_Y}" '
             'text-anchor="middle" '
             f'font-size="{MODULE_TITLE_FONT_SIZE}" '
-            'font-family="Arial, sans-serif">'
+            f'font-family="{SVG_FONT_FAMILY_STACK}">'
             "图 2 系统模块图</text>"
         ),  # 模块图标题文本
     ]
 
-    # 记录各模块框左上角坐标，供后续箭头连接逻辑复用。
-    list_positions: list[tuple[int, int]] = []  # 模块框坐标列表
+    # 记录各模块框边界坐标，供后续箭头连接逻辑复用。
+    list_box_positions: list[dict[str, int]] = []  # 模块框边界坐标列表
 
     # 按模块顺序逐项渲染模块框并记录其坐标。
     for int_index, dict_module in enumerate(list_modules):
 
-        # 计算当前模块所在行号，供布局定位使用。
-        int_row = int_index // int_columns  # 当前模块行号
+        # 先保存当前模块在蛇形路径中的成对坐标结果，避免 SVG 布局阶段重复调用解析 helper。
+        tuple_grid_position = resolve_module_grid_position(int_index, int_columns)  # 当前模块在 SVG 中的蛇形坐标二元组
 
-        # 根据索引计算当前模块落在第几列，后续用它决定横坐标。
-        int_column = int_index % int_columns  # 当前模块列号
+        # 先拆出蛇形坐标的纵向槽位，后续只用它推导当前模块落在哪一行。
+        int_row = tuple_grid_position[0]  # 当前模块的 SVG 行索引
 
-        # 判断当前模块图是否处于双列布局，后续横坐标逻辑会据此切换左右边距。
-        bool_use_double_column = int_columns == MODULE_DOUBLE_COLUMN  # 当前模块图是否使用双列布局
+        # 再拆出蛇形坐标的横向槽位，后续据此决定当前模块落在左列还是右列。
+        int_column = tuple_grid_position[1]  # 当前模块的 SVG 列索引
 
         # 根据布局模式计算当前模块框横坐标。
-        if bool_use_double_column:
+        if int_columns == MODULE_DOUBLE_COLUMN:
 
             # 在双列布局下按照列号和水平间距推导横坐标。
-            int_x = MODULE_DOUBLE_COLUMN_LEFT + int_column * (int_box_width + int_gap_x)  # 双列布局下的模块框横坐标
+            int_x = MODULE_DOUBLE_COLUMN_LEFT + int_column * (MODULE_BOX_WIDTH + MODULE_GAP_X)  # 双列布局下的模块框横坐标
 
         # 在单列布局下直接使用居中左边距，保证整张图保持稳定居中。
         else:
@@ -461,44 +1085,85 @@ def render_module_svg(list_modules: list[dict[str, str]]) -> str:
             int_x = MODULE_SINGLE_COLUMN_LEFT  # 单列布局模块框的居中横坐标
 
         # 根据行号计算当前模块框纵坐标。
-        int_y = MODULE_TOP_MARGIN + int_row * (int_box_height + int_gap_y)  # 当前模块框纵坐标
+        int_y = MODULE_TOP_MARGIN + int_row * (MODULE_SVG_BOX_HEIGHT + MODULE_GAP_Y)  # 当前模块框纵坐标
 
-        # 记录当前模块框坐标，供后续连接箭头使用。
-        list_positions.append((int_x, int_y))
+        # 先包装模块标题，避免名称在双列 SVG 模块图中横向外溢。
+        list_module_name_lines = wrap_figure_text(dict_module["name"], MODULE_NAME_WRAP_WIDTH, MODULE_NAME_MAX_LINES)  # 当前模块框标题文本行列表
 
-        # 渲染当前模块框并追加到 SVG 片段列表。
+        # 再把标题文本行拼成多行段落，供当前模块框直接复用。
+        str_module_name = "\n".join(list_module_name_lines)  # 当前模块框标题文本
+
+        # 先提取当前模块功能说明原文，便于后续受控换行调用保持短行可读。
+        str_module_function_source = dict_module["function"]  # 当前模块功能说明原文
+
+        # 先收拢 SVG 说明文本的每行宽度约束，避免后续包装调用行超出长度门限。
+        int_wrap_chars = MODULE_FUNCTION_WRAP_WIDTH  # SVG 说明每行字符上限
+
+        # 再收拢 SVG 说明文本的最大行数，保证副标题区域不会把模块框继续撑高。
+        int_line_limit = MODULE_FUNCTION_MAX_LINES  # SVG 说明允许的最大行数
+
+        # 再包装功能说明文本，让双列 SVG 框体里的副标题也能稳定落框。
+        list_module_function_lines = wrap_figure_text(str_module_function_source, int_wrap_chars, int_line_limit)  # 说明行列表
+
+        # 把功能说明文本行合并成单段副标题字符串，供模块框作为说明区正文直接渲染。
+        str_module_function = "\n".join(list_module_function_lines)  # 当前模块框功能说明文本
+
+        # 先构造当前 SVG 模块框的边界记录，供后续边缘锚点箭头复用。
+        dict_box_position = build_svg_box_position_record(int_x, int_y, MODULE_BOX_WIDTH, MODULE_SVG_BOX_HEIGHT)  # 当前模块框边界坐标记录
+
+        # 把当前 SVG 模块框边界记录登记到列表，供后续相邻模块连线复用。
+        list_box_positions.append(dict_box_position)
+
+        # 直接把当前模块框 SVG 片段压入结果列表，避免额外临时变量只做一次转手。
         list_parts.append(
             render_svg_box(
                 int_x,
                 int_y,
-                int_box_width,
-                int_box_height,
-                dict_module["name"],
-                dict_module["function"],
+                MODULE_BOX_WIDTH,
+                MODULE_SVG_BOX_HEIGHT,
+                # 最后两项传入已经换好的标题与说明文本，让 SVG 框体直接完成正文渲染。
+                str_module_name,
+                str_module_function,
             )
         )
 
     # 按模块顺序补充相邻模块之间的连接箭头。
-    for int_index in range(len(list_positions) - 1):
+    for int_index in range(len(list_box_positions) - 1):
 
-        # 读取当前模块框左上角坐标。
-        int_x1, int_y1 = list_positions[int_index]  # 当前模块框左上角坐标
+        # 读取待发起连线的当前模块框边界，后续会据此决定水平还是竖向锚点。
+        dict_current_box = list_box_positions[int_index]  # 当前模块框边界坐标
 
-        # 读取下一模块框左上角坐标。
-        int_x2, int_y2 = list_positions[int_index + 1]  # 下一模块框左上角坐标
+        # 读取即将接入的下一模块框边界，供边缘锚点连接做终点选择。
+        dict_next_box = list_box_positions[int_index + 1]  # 下一模块框边界坐标
 
         # 在同一行时绘制水平箭头，更符合模块左右串联的阅读方向。
-        if int_y1 == int_y2:
+        if dict_current_box["top"] == dict_next_box["top"]:
 
             # 追加当前模块到下一模块的水平箭头。
-            list_parts.append(
-                render_svg_arrow(
-                    int_x1 + int_box_width,
-                    int_y1 + int_box_height // 2,
-                    int_x2,
-                    int_y2 + int_box_height // 2,
+            if dict_current_box["center_x"] < dict_next_box["center_x"]:
+
+                # 在左到右场景下从右边缘连到下一模块左边缘，避免斜线穿过框体。
+                list_parts.append(
+                    render_svg_arrow(
+                        dict_current_box["right"] + 2,
+                        dict_current_box["center_y"],
+                        dict_next_box["left"] - 2,
+                        dict_next_box["center_y"],
+                    )
                 )
-            )
+
+            # 在右到左场景下从左边缘连回前一列，保持蛇形阅读方向一致。
+            else:
+
+                # 从当前模块左边缘连到下一模块右边缘，避免跨框对角线。
+                list_parts.append(
+                    render_svg_arrow(
+                        dict_current_box["left"] - 2,
+                        dict_current_box["center_y"],
+                        dict_next_box["right"] + 2,
+                        dict_next_box["center_y"],
+                    )
+                )
 
         # 在跨行时绘制竖向箭头，保持模块迁移路径可读。
         else:
@@ -506,18 +1171,327 @@ def render_module_svg(list_modules: list[dict[str, str]]) -> str:
             # 追加当前模块到底下一行模块的竖向箭头。
             list_parts.append(
                 render_svg_arrow(
-                    int_x1 + int_box_width // 2,
-                    int_y1 + int_box_height,
-                    int_x2 + int_box_width // 2,
-                    int_y2,
+                    dict_current_box["center_x"],
+                    dict_current_box["bottom"] + 2,
+                    dict_next_box["center_x"],
+                    dict_next_box["top"] - 2,
                 )
             )
 
-    # 追加 SVG 结束标签，形成完整系统模块图文本。
+    # 补上模块图 SVG 结束标签，封口当前矢量图文档。
     list_parts.append("</svg>")
 
-    # 返回完整系统模块图 SVG 文本，供案件目录落盘。
+    # 返回完整模块图 SVG 文本，供后续写盘和 DOCX 嵌图流程复用。
     return "\n".join(list_parts)
+
+# 把方法步骤写成 PNG 交付图，供 DOCX 导出阶段直接嵌入正文。
+def write_flow_png(path_output_png: Path, list_steps: list[dict[str, str]]) -> None:
+    """把方法流程图写成 PNG 文件。
+
+    参数：
+    - `path_output_png`：方法流程图 PNG 输出路径。
+    - `list_steps`：结构化方法步骤列表。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 图片写入失败时由底层异常上抛。
+    """
+
+    # 只在函数内部导入 matplotlib，避免模块导入期强依赖绘图库。
+    from matplotlib import pyplot as plt
+    from matplotlib.patches import FancyBboxPatch
+
+    # 根据步骤数量确定画布高度，给三行中文摘要和箭头都留出更稳定的空间。
+    float_height = FLOW_CANVAS_BASE_HEIGHT + len(list_steps) * 1.7  # 方法流程图画布高度（英寸）
+
+    # 创建白底画布，供方法步骤框和箭头稳定排版。
+    obj_figure, obj_axes = plt.subplots(figsize=(FLOW_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 方法流程图画布和坐标轴
+
+    # 解析当前 PNG 绘图要复用的中文字体属性，避免默认字体把步骤正文渲染成缺字方块。
+    obj_font_properties = build_png_cjk_font_properties()  # 方法流程图文本字体属性
+
+    # 固定流程图箭头样式参数，避免每次 annotate 都重复拼接同一套黑白样式。
+    dict_arrowprops = build_arrowprops()  # 流程图箭头样式参数
+
+    # 关闭坐标轴显示，避免 PNG 图内混入无关刻度和边框。
+    obj_axes.axis("off")
+
+    # 固定流程图的横向范围，供步骤框和箭头坐标稳定复用。
+    obj_axes.set_xlim(0.0, FLOW_X_AXIS_LIMIT)
+
+    # 固定纵向范围，保证步骤框按上到下顺序均匀排布。
+    obj_axes.set_ylim(0.0, float_height * FLOW_Y_AXIS_SCALE)
+
+    # 在画布顶部写入图题，保证导出 PNG 单独查看时也能识别图号与类型。
+    obj_axes.text(
+        FLOW_TITLE_CENTER_X,
+        float_height * FLOW_Y_AXIS_SCALE - FIGURE_TITLE_TOP_MARGIN,
+        "图 1 方法流程图",
+        ha="center",
+        va="center",
+        fontsize=FIGURE_TITLE_FONT_SIZE,
+        fontweight="bold",
+        fontproperties=obj_font_properties,
+    )
+
+    # 记录上一节点的纵坐标，供后续步骤框之间追加箭头连接。
+    float_previous_y = 0.0  # 上一节点纵坐标
+
+    # 按步骤顺序从上到下绘制方法步骤框和连接箭头。
+    for int_index, dict_step in enumerate(list_steps):
+
+        # 为当前步骤计算纵坐标，使更高的多行步骤框仍按稳定节奏自上而下排布。
+        float_center_y = float_height * FLOW_Y_AXIS_SCALE - FLOW_FIRST_STEP_OFFSET - int_index * 2.7  # 当前步骤框垂直中心
+
+        # 先构造当前步骤框起点坐标，供统一样式的圆角框对象复用。
+        tuple_box_origin = (FLOW_BOX_LEFT, float_center_y - FLOW_BOX_HALF_HEIGHT)  # 当前步骤框左下角坐标
+
+        # 准备当前步骤框对象，沿用统一的圆角框样式保持专利附图风格一致。
+        obj_box = build_rounded_box_patch(FancyBboxPatch, tuple_box_origin, FLOW_BOX_WIDTH, FLOW_BOX_HEIGHT)  # 当前步骤框图形对象
+
+        # 把当前步骤框追加到画布，形成正式 PNG 图形主体。
+        obj_axes.add_patch(obj_box)
+
+        # 在步骤框中央写入步骤编号和摘要，保持与 SVG 版本语义一致。
+        obj_axes.text(
+            FLOW_TITLE_CENTER_X,
+            float_center_y,
+            "\n".join(
+                wrap_figure_text(
+                    f"{dict_step['id']}：{dict_step['summary']}",
+                    FLOW_TEXT_WRAP_WIDTH,
+                    FLOW_TEXT_MAX_LINES,
+                )
+            ),
+            ha="center",
+            va="center",
+            fontsize=FLOW_TEXT_FONT_SIZE,
+            fontproperties=obj_font_properties,
+            linespacing=FLOW_TEXT_LINE_SPACING,
+        )
+
+        # 从第二步开始为相邻步骤框补画箭头，形成完整流程链路。
+        if int_index > 0:
+
+            # 把上一节点和当前节点之间补上竖向箭头，强调步骤先后次序。
+            obj_axes.annotate(
+                "",
+                xy=(FLOW_ARROW_CENTER_X, float_center_y + FLOW_ARROW_OFFSET_Y),
+                xytext=(FLOW_ARROW_CENTER_X, float_previous_y - FLOW_ARROW_OFFSET_Y),
+                arrowprops=dict_arrowprops,
+            )
+
+        # 把当前节点中心纵坐标登记为下一轮箭头的起点参考。
+        float_previous_y = float_center_y  # 下一轮箭头使用的上一节点纵坐标
+
+    # 先确保输出目录存在，再把当前流程图写成白底 PNG 文件。
+    path_output_png.parent.mkdir(parents=True, exist_ok=True)
+
+    # 把流程图主体保存成紧凑 PNG，供 DOCX 主稿直接嵌入正文。
+    obj_figure.savefig(path_output_png, bbox_inches="tight", facecolor="white")
+
+    # 释放流程图画布对象，避免批量案件连续生成时积累绘图库句柄。
+    plt.close(obj_figure)
+
+# 把系统模块写成 PNG 交付图，供 DOCX 导出阶段直接嵌入正文。
+def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) -> None:
+    """把系统模块图写成 PNG 文件。
+
+    参数：
+    - `path_output_png`：系统模块图 PNG 输出路径。
+    - `list_modules`：结构化系统模块列表。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 图片写入失败时由底层异常上抛。
+    """
+
+    # 只在函数内部导入 matplotlib，避免模块导入期强依赖绘图库。
+    from matplotlib import pyplot as plt
+    from matplotlib.patches import FancyBboxPatch
+
+    # 依据模块数量确定列数，少量模块单列，多于两个模块时使用双列布局。
+    int_columns = MODULE_DOUBLE_COLUMN if len(list_modules) > MODULE_DOUBLE_COLUMN_THRESHOLD else MODULE_SINGLE_COLUMN  # 当前模块图列数
+
+    # 按列数推算行数，保证所有模块都能落在画布内。
+    int_rows = (len(list_modules) + int_columns - 1) // int_columns  # 当前模块图行数
+
+    # 根据行数生成画布高度，给更高的多行模块框和边缘箭头留出稳定留白。
+    float_height = MODULE_PLOT_BASE_HEIGHT + int_rows * MODULE_PLOT_ROW_HEIGHT  # 系统模块图画布高度（英寸）
+
+    # 创建白底画布，供模块框和连接箭头排版。
+    obj_figure, obj_axes = plt.subplots(figsize=(MODULE_PLOT_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 系统模块图画布和坐标轴
+
+    # 解析当前 PNG 绘图要复用的中文字体属性，避免模块名和功能摘要退化成缺字方块。
+    obj_font_properties = build_png_cjk_font_properties()  # 系统模块图文本字体属性
+
+    # 固定模块图箭头样式参数，避免每次 annotate 都重复拼接同一套黑白样式。
+    dict_arrowprops = build_arrowprops()  # 模块图箭头样式参数
+
+    # 关闭坐标轴显示，保证模块图只保留结构框、标题和箭头。
+    obj_axes.axis("off")
+
+    # 固定横向范围，供单列和双列布局共用一套坐标语义。
+    obj_axes.set_xlim(0.0, MODULE_X_AXIS_LIMIT)
+
+    # 固定纵向范围，让图题和模块框位置稳定。
+    obj_axes.set_ylim(0.0, float_height * MODULE_Y_AXIS_SCALE)
+
+    # 在画布顶部写入系统模块图图题，保证单独查看 PNG 时也能识别图号与类型。
+    obj_axes.text(
+        MODULE_TITLE_CENTER_X,
+        float_height * MODULE_Y_AXIS_SCALE - FIGURE_TITLE_TOP_MARGIN,
+        "图 2 系统模块图",
+        ha="center",
+        va="center",
+        fontsize=FIGURE_TITLE_FONT_SIZE,
+        fontweight="bold",
+        fontproperties=obj_font_properties,
+    )
+
+    # 记录每个模块框的边界与中心坐标，供后续边缘锚点箭头复用。
+    list_boxes: list[dict[str, float]] = []  # 模块框边界与中心坐标列表
+
+    # 按模块顺序绘制模块框并记录其中心坐标。
+    for int_index, dict_module in enumerate(list_modules):
+
+        # 先拿到当前模块在 PNG 蛇形路径里的完整行列结果，后续再分别取出行号和列号。
+        tuple_grid_position = resolve_module_grid_position(int_index, int_columns)  # PNG 蛇形行列二元组
+
+        # 这里先读取纵向索引，只负责决定当前模块应该落在哪一行。
+        int_row = tuple_grid_position[0]  # 当前模块在 PNG 画布上的目标行号
+
+        # 这一位只负责控制蛇形回折时的左右摆放，不参与纵向排版节奏。
+        int_column = tuple_grid_position[1]  # 当前 PNG 模块的折返列位
+
+        # 根据列序号计算当前模块框左上角横坐标。
+        float_box_x = MODULE_BOX_LEFT + int_column * MODULE_BOX_COLUMN_GAP  # 当前模块框左上角横坐标
+
+        # 根据行序号计算当前模块框左上角纵坐标。
+        float_box_y = float_height * MODULE_Y_AXIS_SCALE - MODULE_FIRST_ROW_OFFSET - int_row * MODULE_ROW_GAP  # 当前模块框左上角纵坐标
+
+        # 先推导当前模块框左下角锚点，后续统一交给圆角框构造器使用。
+        tuple_box_origin = (float_box_x, float_box_y - MODULE_BOX_HEIGHT_PLOT + 0.72)  # 当前模块框左下角坐标
+
+        # 直接把当前模块框对象挂到画布，避免只转手一次的临时 patch 变量占用视觉空间。
+        obj_axes.add_patch(
+            build_rounded_box_patch(
+                FancyBboxPatch,
+                tuple_box_origin,
+                MODULE_BOX_WIDTH_PLOT,
+                MODULE_BOX_HEIGHT_PLOT,
+            )
+        )
+
+        # 先包装模块标题，保证 PNG 图里的名称不会沿水平方向撑破双列框体。
+        list_module_name_lines = wrap_figure_text(dict_module["name"], MODULE_NAME_WRAP_WIDTH, MODULE_NAME_MAX_LINES)  # 当前模块标题文本行列表
+
+        # 先提取当前模块说明原文，便于控制 PNG 文本节点的横向换行密度。
+        str_module_function_source = dict_module["function"]  # 当前 PNG 模块说明原文
+
+        # 先收拢 PNG 说明文本的每行宽度约束，避免 matplotlib 调用行超出长度门限。
+        int_wrap_chars = MODULE_FUNCTION_WRAP_WIDTH  # PNG 说明单行宽度上限
+
+        # 再收拢 PNG 说明文本的最大行数，保证说明区不会继续把图框向下拉长。
+        int_line_limit = MODULE_FUNCTION_MAX_LINES  # PNG 说明段落保留行数上限
+
+        # 再包装模块功能说明，让 PNG 双列框体里的说明文字稳定落在边界内。
+        list_module_function_lines = wrap_figure_text(str_module_function_source, int_wrap_chars, int_line_limit)  # PNG 说明分行结果
+
+        # 最后把标题和说明拼成多行正文文本，供 PNG 文本节点直接复用。
+        str_module_box_text = "\n".join([*list_module_name_lines, *list_module_function_lines])  # 当前模块框的多行正文文本
+
+        # 再把多行模块文本写入框体中央，保持 PNG 与 SVG 版本语义一致。
+        obj_axes.text(
+            float_box_x + MODULE_BOX_CENTER_OFFSET_X,
+            float_box_y - MODULE_BOX_CENTER_OFFSET_Y,
+            str_module_box_text,
+            ha="center",
+            va="center",
+            fontsize=MODULE_TEXT_FONT_SIZE,
+            fontproperties=obj_font_properties,
+            linespacing=MODULE_TEXT_LINE_SPACING,
+        )
+
+        # 先记录当前模块框底边纵坐标，供边界记录和后续箭头落点统一复用。
+        float_box_bottom = float_box_y - MODULE_BOX_HEIGHT_PLOT + 0.72  # 当前模块框底边纵坐标
+
+        # 再记录当前模块框中心横坐标，供文本居中和箭头贴边计算共享。
+        float_box_center_x = float_box_x + MODULE_BOX_CENTER_OFFSET_X  # 当前模块框中心横坐标
+
+        # 最后记录当前模块框中心纵坐标，供边界记录 helper 与文本节点共用。
+        float_box_center_y = float_box_y - 0.255  # 当前模块框中心纵坐标
+
+        # 直接把当前 PNG 模块框的边界记录压入列表，供后续 annotate 阶段串联相邻模块。
+        list_boxes.append(
+            build_png_box_geometry_record(
+                float_box_x,
+                float_box_bottom,
+                MODULE_BOX_WIDTH_PLOT,
+                MODULE_BOX_HEIGHT_PLOT,
+                # 最后两项传入当前模块框中心点，让后续箭头总能围绕真实中心线落笔。
+                float_box_center_x,
+                float_box_center_y,
+            )
+        )
+
+    # 按原模块顺序给相邻模块追加箭头，保持系统数据流关系可视化。
+    for int_index in range(1, len(list_boxes)):
+
+        # 读取上一模块框的边界与中心坐标，供后续确定箭头起点边缘。
+        dict_previous_box = list_boxes[int_index - 1]  # 上一模块框边界与中心坐标
+
+        # 读取本轮要接入的目标模块框边界，供后续确定箭头终点应贴哪一侧边缘。
+        dict_current_box = list_boxes[int_index]  # 当前模块框边界与中心坐标
+
+        # 在同一行时沿左右边缘连接模块，避免对角线穿过框体正文。
+        if dict_previous_box["top"] == dict_current_box["top"]:
+
+            # 在左到右场景下沿右边缘连到下一框左边缘。
+            if dict_previous_box["center_x"] < dict_current_box["center_x"]:
+
+                # 追加水平向右箭头，保持同一行模块的顺序关系清晰。
+                obj_axes.annotate(
+                    "",
+                    xy=(dict_current_box["left"] - MODULE_ARROW_EDGE_PADDING, dict_current_box["center_y"]),
+                    xytext=(dict_previous_box["right"] + MODULE_ARROW_EDGE_PADDING, dict_previous_box["center_y"]),
+                    arrowprops=dict_arrowprops,
+                )
+
+            # 在右到左场景下沿左边缘连回前一列，适配蛇形布局的回折阅读方向。
+            else:
+
+                # 追加水平向左箭头，避免箭头穿过上一行或当前行框体。
+                obj_axes.annotate(
+                    "",
+                    xy=(dict_current_box["right"] + MODULE_ARROW_EDGE_PADDING, dict_current_box["center_y"]),
+                    xytext=(dict_previous_box["left"] - MODULE_ARROW_EDGE_PADDING, dict_previous_box["center_y"]),
+                    arrowprops=dict_arrowprops,
+                )
+
+        # 在跨行场景下沿上下边缘做竖向连接，保持跨行箭头贴边可读。
+        else:
+
+            # 追加竖向箭头，把上一行模块的下边缘连到下一行模块的上边缘。
+            obj_axes.annotate(
+                "",
+                xy=(dict_current_box["center_x"], dict_current_box["top"] + MODULE_ARROW_EDGE_PADDING),
+                xytext=(dict_previous_box["center_x"], dict_previous_box["bottom"] - MODULE_ARROW_EDGE_PADDING),
+                arrowprops=dict_arrowprops,
+            )
+
+    # 先确保输出目录存在，再把当前模块图写成白底 PNG 文件。
+    path_output_png.parent.mkdir(parents=True, exist_ok=True)
+
+    # 把模块图主体保存成紧凑 PNG，供正式交底书主稿直接嵌图。
+    obj_figure.savefig(path_output_png, bbox_inches="tight", facecolor="white")
+
+    # 释放模块图画布对象，避免多案件连续生成时持续占用绘图库资源。
+    plt.close(obj_figure)
 
 # 生成 Mermaid 源文件，便于后续外部渲染或人工细化。
 def write_mermaid_files(
@@ -589,11 +1563,56 @@ def write_mermaid_files(
     # 把系统模块图 Mermaid 文本写入案件目录。
     module_runtime_support.write_text_file(path_module_mermaid, "\n".join(list_module_lines) + "\n")
 
-# 组装 figures manifest 结构化数据，供 review 和 export 阶段复用。
-def build_manifest(
+# 把附图资产路径收敛成轻量结构，避免 manifest 构造函数携带过多离散路径参数。
+@dataclass(frozen=True)
+class FigureArtifactPaths:
+    """承载附图交付资产路径。"""
+
+    # 记录正文草稿路径，供 manifest 溯源原始 disclosure draft。
+    path_markdown: Path  # 正文草稿路径
+
+    # 记录方法流程图 SVG 路径，供 review 阶段复用矢量稿。
+    path_flow_svg: Path  # 方法流程图 SVG 路径
+
+    # 记录方法流程图 PNG 路径，供正式 DOCX 主稿嵌图复用。
+    path_flow_png: Path  # 交付主稿嵌图使用的流程图 PNG
+
+    # 记录系统模块图 SVG 路径，供 review 阶段复用矢量稿。
+    path_module_svg: Path  # 系统模块图 SVG 路径
+
+    # 记录系统模块图 PNG 路径，供正式 DOCX 主稿嵌图复用。
+    path_module_png: Path  # 交付主稿嵌图使用的系统图 PNG
+
+# 以短函数名集中构造附图资产路径对象，避免主流程里出现超长 dataclass 初始化语句。
+def make_artifact_paths(
     path_markdown: Path,
     path_flow_svg: Path,
+    path_flow_png: Path,
     path_module_svg: Path,
+    path_module_png: Path,
+) -> FigureArtifactPaths:
+    """构造附图资产路径对象。
+
+    参数：
+    - `path_markdown`：正文草稿路径。
+    - `path_flow_svg`：方法流程图 SVG 路径。
+    - `path_flow_png`：方法流程图 PNG 路径。
+    - `path_module_svg`：系统模块图 SVG 路径。
+    - `path_module_png`：系统模块图 PNG 路径。
+
+    返回：
+    - `FigureArtifactPaths`：统一封装后的附图资产路径对象。
+
+    异常：
+    - 无。
+    """
+
+    # 返回统一封装后的附图资产路径对象，供 manifest 构造逻辑直接消费。
+    return FigureArtifactPaths(path_markdown, path_flow_svg, path_flow_png, path_module_svg, path_module_png)
+
+# 组装 figures manifest 结构化数据，供 review 和 export 阶段复用。
+def build_manifest(
+    obj_artifact_paths: FigureArtifactPaths,
     list_steps: list[dict[str, str]],
     list_modules: list[dict[str, str]],
     module_runtime_support: Any,
@@ -601,9 +1620,7 @@ def build_manifest(
     """构造 figures manifest 结构化数据。
 
     参数：
-    - `path_markdown`：正文草稿路径。
-    - `path_flow_svg`：方法流程图 SVG 路径。
-    - `path_module_svg`：系统模块图 SVG 路径。
+    - `obj_artifact_paths`：附图交付资产路径集合。
     - `list_steps`：结构化方法步骤列表。
     - `list_modules`：结构化系统模块列表。
     - `module_runtime_support`：共享运行时支持模块对象。
@@ -621,24 +1638,38 @@ def build_manifest(
     # 提取系统模块图中的模块名称列表，供 manifest 索引与后续校验复用。
     list_module_names = [dict_module["name"] for dict_module in list_modules]  # 系统模块图模块名称列表
 
+    # 先组装附图元数据条目列表，保持图1 与图2 的交付语义集中管理。
+    list_figures = [
+        {
+            "figure_no": "图1",  # 方法流程图图号
+            "title": "方法流程图",  # 方法流程图标题
+            "file": obj_artifact_paths.path_flow_svg.name,  # review 阶段复用的 SVG 文件名
+            "delivery_file": obj_artifact_paths.path_flow_png.name,  # 正式交付 PNG 文件名
+            "steps": list_step_ids,  # 方法流程图步骤索引列表
+        },
+        {
+            "figure_no": "图2",  # 系统模块图图号
+            "title": "系统模块图",  # 系统模块图标题
+            "file": obj_artifact_paths.path_module_svg.name,  # review 阶段读取的系统图 SVG 文件名
+            "delivery_file": obj_artifact_paths.path_module_png.name,  # 正式交付使用的系统图 PNG 文件名
+            "modules": list_module_names,  # 系统模块图模块索引列表
+        },
+    ]  # figures manifest 附图条目列表
+
+    # 再组装正式交付要暴露的附图文件清单，固定 PNG+SVG 双输出顺序。
+    list_delivery_files = [
+        obj_artifact_paths.path_flow_png.name,  # 方法流程图 PNG 文件名
+        obj_artifact_paths.path_flow_svg.name,  # 正式交付中的流程图 SVG 文件名
+        obj_artifact_paths.path_module_png.name,  # 系统模块图 PNG 文件名
+        obj_artifact_paths.path_module_svg.name,  # 正式交付中的系统图 SVG 文件名
+    ]  # 正式交付附图文件名列表
+
     # 返回完整 figures manifest 结构化数据，供 JSON 落盘与后链工具复用。
     return {
         "generated_at": module_runtime_support.iso_now(),
-        "source_draft": str(path_markdown.resolve()),
-        "figures": [
-            {
-                "figure_no": "图1",
-                "title": "方法流程图",
-                "file": path_flow_svg.name,
-                "steps": list_step_ids,
-            },
-            {
-                "figure_no": "图2",
-                "title": "系统模块图",
-                "file": path_module_svg.name,
-                "modules": list_module_names,
-            },
-        ],
+        "source_draft": str(obj_artifact_paths.path_markdown.resolve()),
+        "figures": list_figures,
+        "delivery_files": list_delivery_files,
     }
 
 # 生成 figures manifest 的 Markdown 摘要文本，便于人工快速审阅。
@@ -719,30 +1750,41 @@ def main() -> int:
     # 固定方法流程图 SVG 输出路径，保持附图目录命名稳定。
     path_flow_svg = path_output_dir / "图1_方法流程图.svg"  # 方法流程图 SVG 输出路径
 
+    # 固定方法流程图 PNG 输出路径，作为正式主稿嵌图交付资产。
+    path_flow_png = path_output_dir / "图1_方法流程图.png"  # 方法流程图 PNG 交付路径
+
     # 固定系统模块图 SVG 输出路径，保持附图目录命名稳定。
     path_module_svg = path_output_dir / "图2_系统模块图.svg"  # 系统模块图 SVG 输出路径
+
+    # 固定系统模块图 PNG 输出路径，作为正式主稿嵌图交付资产。
+    path_module_png = path_output_dir / "图2_系统模块图.png"  # 系统模块图 PNG 交付路径
 
     # 渲染并写出方法流程图 SVG 文本。
     module_runtime_support.write_text_file(path_flow_svg, render_flow_svg(list_steps))
 
+    # 渲染并写出方法流程图 PNG 文件，作为正文嵌图交付资产。
+    write_flow_png(path_flow_png, list_steps)
+
     # 渲染并写出系统模块图 SVG 文本。
     module_runtime_support.write_text_file(path_module_svg, render_module_svg(list_modules))
+
+    # 渲染并写出系统模块图 PNG 文件，作为正文嵌图交付资产。
+    write_module_png(path_module_png, list_modules)
 
     # 写出两份 Mermaid 源文件，便于后续增强渲染。
     write_mermaid_files(path_output_dir, list_steps, list_modules, module_runtime_support)
 
-    # 为 manifest 组装调用准备共享支持别名，缩短调用行并保持上下文清晰。
-    module_support = module_runtime_support  # build_manifest 调用使用的共享支持模块别名
+    # 先收拢附图资产路径参数序列，避免命名合规修复引入新的超长单行。
+    list_artifact_path_args = [path_markdown, path_flow_svg, path_flow_png, path_module_svg, path_module_png]  # 附图资产路径参数序列
 
-    # 生成 figures manifest 结构化数据，供 JSON 落盘与后链工具复用。
-    dict_manifest = build_manifest(  # figures manifest 结构化结果
-        path_markdown,  # 正文草稿路径
-        path_flow_svg,  # 方法流程图 SVG 路径
-        path_module_svg,  # 系统模块图 SVG 路径
-        list_steps,  # 供图1 写入步骤索引的结构化方法步骤列表
-        list_modules,  # 供图2 写入模块索引的结构化系统模块列表
-        module_support,  # 共享支持模块对象
-    )
+    # 先组装附图资产路径对象，供 manifest 构造逻辑统一消费。
+    figure_artifact_paths_artifact_paths = make_artifact_paths(*list_artifact_path_args)  # 附图路径集
+
+    # 为 manifest 构造调用准备共享支持别名，避免调用行超过当前项目长度阈值。
+    module_support = module_runtime_support  # manifest 构造使用的共享支持模块
+
+    # 再生成 figures manifest 结构化数据，供 JSON 落盘与后链工具复用。
+    dict_manifest = build_manifest(figure_artifact_paths_artifact_paths, list_steps, list_modules, module_support)  # 待落盘的 figures manifest 结果
 
     # 固定 figures manifest JSON 输出路径，保持后链读取约定稳定。
     path_manifest_json = path_output_dir / "figures_manifest.json"  # figures manifest JSON 输出路径

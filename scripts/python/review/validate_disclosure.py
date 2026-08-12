@@ -18,13 +18,29 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 REQUIRED_HEADINGS = [  # 正文主骨架必需章节标题列表
     "## 一、发明名称",  # 发明名称章节
     "## 二、所属技术领域",  # 技术领域章节
-    "## 三、现有技术",  # 现有技术章节
-    "### 3.3 现有技术缺点",  # 现有技术缺点小节
-    "## 四、发明内容",  # 发明内容章节
+    "## 三、现有技术（背景技术）",  # 现有技术章节
+    "### 3.1相关技术背景以及最接近的现有技术",  # 相关技术背景小节
+    "### 3.2与本发明最相似的现有技术实现方案",  # 最相似现有技术小节
+    "### 3.3现有技术的缺点",  # 现有技术缺点小节
+    "## 四、发明内容：",  # 发明内容章节
     "### 4.2 技术解决方案",  # 技术解决方案小节
-    "### 4.3 技术效果",  # 技术效果小节
-    "## 五、附图及附图说明",  # 附图说明章节
+    "#### 4.2.1 装置、结构类",  # 装置结构小节
+    "#### 4.2.2 方法类",  # 方法类小节
+    "### 4.3、技术效果",  # 技术效果小节
+    "## 五、附图及附图的简单说明",  # 附图说明章节
     "## 六、具体实施方式",  # 具体实施方式章节
+]
+
+# 固定主交底书草稿禁止残留的内部或模板提示文本。
+FORBIDDEN_MAIN_DRAFT_TEXTS = [  # 主草稿禁止文本片段
+    "## 七、术语说明",  # 内部术语章节
+    "## 八、来源证据摘要",  # 内部证据章节
+    "## 九、待确认事项",  # 内部待确认章节
+    "【",  # 模板提示左括号
+    "】",  # 模板提示右括号
+    "待确认",  # 待确认占位
+    "TODO",  # 英文待办占位
+    "todo",  # 小写待办占位
 ]
 
 # 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
@@ -209,6 +225,39 @@ def validate_required_headings(
                 "补齐说明书主骨架后再进入导出和交付。",
             )
 
+# 校验主草稿没有混入内部审查章节或模板提示占位。
+def validate_main_draft_clean(
+    str_markdown: str,
+    list_findings: list[dict[str, str]],
+) -> None:
+    """校验主草稿内部材料清理状态。
+
+    参数：
+    - `str_markdown`：正文草稿 Markdown 全文。
+    - `list_findings`：待追加的 finding 列表。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 无。
+    """
+
+    # 逐项扫描主草稿禁止文本，确保内部材料只进入 sidecar。
+    for str_forbidden_text in FORBIDDEN_MAIN_DRAFT_TEXTS:
+
+        # 禁止文本一旦出现在主草稿中，就阻止进入最终交付。
+        if str_forbidden_text in str_markdown:
+
+            # 记录主草稿残留内部或模板提示文本的 blocker finding。
+            add_finding(
+                list_findings,
+                "blocker",
+                "main_draft_internal_or_placeholder_text",
+                f"主交底书草稿残留禁止文本：{str_forbidden_text}",
+                "将术语、证据、待确认事项和模板提示移入内部 sidecar 或补齐正式正文。",
+            )
+
 # 校验已核验查新记录，确保正文至少绑定一组真实、已核验的近似现有技术。
 def validate_prior_art(
     path_case_dir: Path,
@@ -306,7 +355,7 @@ def validate_figures(
                 "重新生成附图，确保清单与文件一致。",
             )
 
-# 校验权利要求草案及其说明书映射文件，确保后链产物配套齐全。
+# 校验权利要求草案及其说明书映射文件，作为内部辅助材料完整性提示。
 def validate_claims(path_case_dir: Path, list_findings: list[dict[str, str]]) -> None:
     """校验权利要求草案及映射文件。
 
@@ -324,31 +373,31 @@ def validate_claims(path_case_dir: Path, list_findings: list[dict[str, str]]) ->
     # 固定权利要求草案 Markdown 路径，供权利要求产物存在性校验复用。
     path_claims_markdown = path_case_dir / "03_drafts" / "claims_draft.md"  # 权利要求草案 Markdown 路径
 
-    # 在权利要求草案缺失时追加 major finding。
+    # 在权利要求草案缺失时追加 minor finding，不阻断交底书主交付质量。
     if not path_claims_markdown.exists():
 
-        # 记录缺少权利要求草案的 major finding。
+        # 记录缺少权利要求草案的 minor finding。
         add_finding(
             list_findings,
-            "major",
+            "minor",
             "missing_claims_draft",
             "未生成 claims_draft.md。",
-            "先生成权利要求草案，再进入最终交付。",
+            "如用户需要权利要求辅助材料，再生成权利要求草案。",
         )
 
     # 固定权利要求映射 JSON 路径，供权利要求与说明书映射关系校验复用。
     path_claims_map = path_case_dir / "03_drafts" / "claims_map.json"  # 权利要求映射 JSON 路径
 
-    # 在权利要求映射缺失时追加 major finding。
+    # 在权利要求映射缺失时追加 minor finding，不作为主交底书完成硬门槛。
     if not path_claims_map.exists():
 
-        # 记录缺少权利要求映射的 major finding。
+        # 记录缺少权利要求映射的 minor finding。
         add_finding(
             list_findings,
-            "major",
+            "minor",
             "missing_claims_map",
             "未生成 claims_map.json。",
-            "补齐权利要求与说明书的映射文件。",
+            "如用户需要权利要求辅助材料，再补齐权利要求与说明书的映射文件。",
         )
 
 # 校验正文来源证据映射，确保关键技术特征不会脱离真实研发材料。
@@ -632,6 +681,9 @@ def main() -> int:
 
     # 校验正文主骨架标题，确保最基本的说明书结构已经具备。
     validate_required_headings(str_markdown, list_findings)
+
+    # 校验主草稿没有残留内部章节、模板提示或待确认占位。
+    validate_main_draft_clean(str_markdown, list_findings)
 
     # 校验已核验查新记录，确保当前方案绑定真实且已核验的近似现有技术。
     validate_prior_art(path_case_dir, list_findings, module_runtime_support)

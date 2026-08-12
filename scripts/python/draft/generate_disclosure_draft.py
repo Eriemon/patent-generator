@@ -7,6 +7,7 @@ from __future__ import annotations
 # 引入参数解析、按路径加载模块、文件复制、标准输出和路径能力，供正式草稿入口稳定运行。
 import argparse
 import importlib.util
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -14,6 +15,9 @@ from typing import Any
 
 # 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
+
+# 预编译 display-math 公式块匹配规则，供从本地研究材料中抽取可追溯公式复用。
+RE_DISPLAY_FORMULA_BLOCK = re.compile(r"\$\$(.*?)\$\$", flags=re.DOTALL)  # display-math 公式块匹配规则
 
 # 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
 def load_runtime_support_module() -> Any:
@@ -794,7 +798,7 @@ def build_evidence_map(
     # 返回已经落盘的来源证据映射字典，便于当前正文阶段继续复用。
     return dict_evidence_map
 
-# 把方法步骤整理成正文 4.2.1 小节可直接拼接的行列表。
+# 把方法步骤整理成正文 4.2.2 小节可直接拼接的行列表。
 def build_step_markdown_lines(list_steps: list[dict[str, str]]) -> list[str]:
     """构建方法步骤 Markdown 行列表。
 
@@ -802,7 +806,7 @@ def build_step_markdown_lines(list_steps: list[dict[str, str]]) -> list[str]:
     - `list_steps`：结构化方法步骤列表。
 
     返回：
-    - `list[str]`：正文 4.2.1 小节可直接拼接的行列表。
+    - `list[str]`：正文 4.2.2 小节可直接拼接的行列表。
 
     异常：
     - 无。
@@ -814,7 +818,7 @@ def build_step_markdown_lines(list_steps: list[dict[str, str]]) -> list[str]:
     # 逐项遍历方法步骤，按固定顺序输出摘要、条件、输入、动作和输出说明。
     for dict_step in list_steps:
 
-        # 把当前步骤拆成固定说明块，保持 4.2.1 小节的阅读节奏稳定。
+        # 把当前步骤拆成固定说明块，保持 4.2.2 小节的阅读节奏稳定。
         list_step_lines.extend(
             [
                 f"{dict_step['id']}：{dict_step['summary']}",
@@ -830,7 +834,7 @@ def build_step_markdown_lines(list_steps: list[dict[str, str]]) -> list[str]:
     # 返回方法步骤 Markdown 行列表，供正文渲染阶段直接拼接。
     return list_step_lines
 
-# 把系统模块整理成正文 4.2.2 小节可直接拼接的行列表。
+# 把系统模块整理成正文 4.2.1 小节可直接拼接的行列表。
 def build_module_markdown_lines(list_modules: list[dict[str, str]]) -> list[str]:
     """构建系统模块 Markdown 行列表。
 
@@ -838,7 +842,7 @@ def build_module_markdown_lines(list_modules: list[dict[str, str]]) -> list[str]
     - `list_modules`：结构化系统模块列表。
 
     返回：
-    - `list[str]`：正文 4.2.2 小节可直接拼接的行列表。
+    - `list[str]`：正文 4.2.1 小节可直接拼接的行列表。
 
     异常：
     - 无。
@@ -850,7 +854,7 @@ def build_module_markdown_lines(list_modules: list[dict[str, str]]) -> list[str]
     # 逐条生成系统模块说明，保持模块名称和功能表述的稳定顺序。
     for int_index, dict_module in enumerate(list_modules, start=1):
 
-        # 追加当前模块条目文本，供正文 4.2.2 小节直接写入模块清单。
+        # 追加当前模块条目文本，供正文 4.2.1 小节直接写入模块清单。
         list_module_lines.append(f"{int_index}. {dict_module['name']}，用于 {dict_module['function']}")
 
     # 返回系统模块 Markdown 行列表，供正文渲染阶段直接拼接。
@@ -882,7 +886,138 @@ def build_effect_markdown_lines(list_effects: list[str]) -> list[str]:
     # 返回技术效果 Markdown 行列表，供正文渲染阶段直接拼接。
     return list_effect_lines
 
-# 把待确认事项整理成正文末尾可直接拼接的行列表；为空时补一条受控默认提醒。
+# 从研究根目录的本地材料中提取 display-math 公式块，保证正式交付源稿可追溯公式来源。
+def collect_formula_blocks_from_research_root(
+    path_case_dir: Path,
+    module_runtime_support: Any,
+) -> list[str]:
+    """从研究根目录提取 display-math 公式块。
+
+    参数：
+    - `path_case_dir`：当前案件根目录路径。
+    - `module_runtime_support`：共享运行时支持模块对象。
+
+    返回：
+    - `list[str]`：按材料扫描顺序去重后的公式块正文列表。
+
+    异常：
+    - 文件读取失败时由底层异常上抛。
+    """
+
+    # 载入当前案件配置，后续只从中读取研究材料根目录用于本地公式追溯。
+    dict_case_config = module_runtime_support.load_case_config(path_case_dir)  # research_root 来源的案件配置映射
+
+    # 读取研究根目录文本；缺失时直接返回空列表。
+    str_research_root = dict_case_config.get("research_root", "")  # 研究材料根目录文本
+
+    # 在案件配置未登记研究根目录时直接返回空列表。
+    if not str_research_root:
+
+        # 空列表表示当前案件暂无可追溯的本地公式块材料。
+        return []
+
+    # 解析研究根目录绝对路径，后续据此扫描 Markdown 和文本材料。
+    path_research_root = Path(str_research_root).resolve()  # 研究材料根目录路径
+
+    # 在研究根目录不存在时直接返回空列表，避免引用无效外部路径。
+    if not path_research_root.exists():
+
+        # 空列表表示当前案件的研究材料目录不可用。
+        return []
+
+    # 先准备去重后的公式块正文列表，保持多材料扫描结果稳定。
+    list_formula_blocks: list[str] = []  # 去重后的公式块正文列表
+
+    # 记录已见公式键，避免同一公式因多份同步材料重复进入正文。
+    set_seen_formulas: set[str] = set()  # 已见公式去重键集合
+
+    # 逐个扫描常见文本材料后缀，只从本地文本源抽取 display-math 公式块。
+    for path_source in sorted(path_research_root.rglob("*")):
+
+        # 只处理常见文本材料，避免对二进制文件盲读造成噪声。
+        if path_source.suffix.lower() not in {".md", ".txt"} or not path_source.is_file():
+
+            # 当前文件不是受支持的本地文本材料，继续检查下一项。
+            continue
+
+        # 读取当前文本材料全文，供 display-math 匹配规则复用。
+        str_source_text = path_source.read_text(encoding="utf-8")  # 当前材料全文
+
+        # 顺序提取当前材料中的所有 display-math 公式块。
+        for str_formula in RE_DISPLAY_FORMULA_BLOCK.findall(str_source_text):
+
+            # 先读取当前公式块的原始行序列，供后续统一规整空白和保留原始换行顺序。
+            list_raw_formula_lines = str_formula.splitlines()  # 当前公式块原始正文行列表
+
+            # 先把每一行做去首尾空白处理，供后续统一过滤空行。
+            list_stripped_formula_lines = [str_formula_line.strip() for str_formula_line in list_raw_formula_lines]  # 当前公式块去空白后的正文行
+
+            # 再过滤掉空行，避免空白内容干扰去重与主稿保留。
+            list_formula_text_lines = [str_line for str_line in list_stripped_formula_lines if str_line]  # 当前公式块有效正文行
+
+            # 再按保留换行的形式拼回公式正文，供 Markdown 主稿直接复用。
+            str_formula_text = "\n".join(list_formula_text_lines)  # 当前公式块保留换行的正文文本
+
+            # 把当前公式块压缩成单行键，用于跨文件去重。
+            str_formula_key = re.sub(r"\s+", "", str_formula_text)  # 当前公式块去重键
+
+            # 空公式或重复公式都不再进入结果列表。
+            if not str_formula_key or str_formula_key in set_seen_formulas:
+
+                # 当前公式块无效或已收录，继续检查下一条公式。
+                continue
+
+            # 登记当前公式块去重键，避免后续重复追加。
+            set_seen_formulas.add(str_formula_key)
+
+            # 把当前本地公式块追加到结果列表，供正式交付源稿复用。
+            list_formula_blocks.append(str_formula_text)
+
+    # 返回已去重的公式块正文列表，供 Markdown 正文插入受控公式段。
+    return list_formula_blocks
+
+# 把公式块整理成正文 4.2.2 小节可直接拼接的 Markdown 行列表。
+def build_formula_markdown_lines(list_formula_blocks: list[str]) -> list[str]:
+    """构建公式块 Markdown 行列表。
+
+    参数：
+    - `list_formula_blocks`：从本地研究材料抽取的公式块正文列表。
+
+    返回：
+    - `list[str]`：正文 4.2.2 小节可直接拼接的公式说明与公式块行列表。
+
+    异常：
+    - 无。
+    """
+
+    # 没有公式块时返回空列表，让正文安全降级为纯文字方案描述。
+    if not list_formula_blocks:
+
+        # 空列表表示当前正文无需额外插入公式块段落。
+        return []
+
+    # 先准备公式说明首句，作为后续所有 display-math 公式块的统一导语。
+    str_formula_intro = "在一个实施例中，所述评分、筛选或参数更新逻辑可结合本地研发材料中的公式表达进一步限定如下："  # 正文公式说明首句
+
+    # 再初始化公式说明与公式块行列表，后续按顺序继续追加每个公式块。
+    list_formula_lines = [str_formula_intro, ""]  # 公式块 Markdown 行列表
+
+    # 按公式顺序逐个写出 display-math 公式块，保持与本地材料语义一致。
+    for str_formula_block in list_formula_blocks:
+
+        # 先写入公式块起始标记，保持 Markdown 源稿可直接追溯和继续编辑。
+        list_formula_lines.append("$$")
+
+        # 再写入当前公式块正文，保持数学表达与本地材料一致。
+        list_formula_lines.extend(str_formula_block.splitlines())
+
+        # 最后闭合当前公式块，并补空行分隔后续内容。
+        list_formula_lines.extend(["$$", ""])
+
+    # 返回整理后的公式块 Markdown 行列表，供正文 4.2.2 小节直接拼接。
+    return list_formula_lines
+
+# 把待确认事项整理成内部审查 sidecar 可直接拼接的行列表；为空时补一条受控默认提醒。
 def build_missing_information_lines(
     list_missing_information: list[str],
     module_runtime_support: Any,
@@ -894,7 +1029,7 @@ def build_missing_information_lines(
     - `module_runtime_support`：共享运行时支持模块对象。
 
     返回：
-    - `list[str]`：正文末尾待确认事项可直接拼接的行列表。
+    - `list[str]`：内部审查待确认事项可直接拼接的行列表。
 
     异常：
     - 无。
@@ -903,7 +1038,7 @@ def build_missing_information_lines(
     # 先准备待确认事项 Markdown 行列表，后续按上游条目依次追加。
     list_missing_lines: list[str] = []  # 待确认事项 Markdown 行列表
 
-    # 逐条清洗待确认事项文本，只保留真正可写入正文的条目。
+    # 逐条清洗待确认事项文本，只保留真正可写入 sidecar 的条目。
     for str_item in list_missing_information:
 
         # 把当前待确认事项清洗成单行文本，便于统一判断可用性。
@@ -912,13 +1047,13 @@ def build_missing_information_lines(
         # 在当前待确认事项存在有效文本时再生成 Markdown 条目。
         if str_missing_item:
 
-            # 把当前待确认事项追加为 Markdown 列表项，供正文末尾直接写入。
+            # 把当前待确认事项追加为 Markdown 列表项，供内部审查 sidecar 写入。
             list_missing_lines.append(f"- {str_missing_item}")
 
     # 在上游已经给出待确认事项时直接返回当前条目列表。
     if list_missing_lines:
 
-        # 返回上游待确认事项列表，保持正文末尾的工作项真实可追溯。
+        # 返回上游待确认事项列表，保持内部审查工作项真实可追溯。
         return list_missing_lines
 
     # 在上游没有给出待确认事项时补一条最小正式提醒。
@@ -984,17 +1119,17 @@ def build_prior_art_section(
     # 先写入现有技术章节的固定骨架，建立背景与最接近现有技术描述。
     list_section_lines.extend(
         [
-            "## 三、现有技术",
+            "## 三、现有技术（背景技术）",
             "",
-            "### 3.1 相关技术背景",
+            "### 3.1相关技术背景以及最接近的现有技术",
             "",
             f"围绕 {str_terms} 的工程场景，现有方案往往依赖固定规则或单指标决策，难以同时兼顾状态变化、异常反馈和处理效率。",
             "",
-            "### 3.2 最接近现有技术",
+            "### 3.2与本发明最相似的现有技术实现方案",
             "",
             str_prior_summary,
             "",
-            "### 3.3 现有技术缺点",
+            "### 3.3现有技术的缺点",
             "",
         ]
     )
@@ -1015,6 +1150,7 @@ def build_prior_art_section(
 def build_invention_section(
     str_problem: str,
     list_step_lines: list[str],
+    list_formula_lines: list[str],
     list_module_lines: list[str],
     list_effect_lines: list[str],
 ) -> list[str]:
@@ -1023,6 +1159,7 @@ def build_invention_section(
     参数：
     - `str_problem`：主案问题文本。
     - `list_step_lines`：方法步骤 Markdown 行列表。
+    - `list_formula_lines`：公式块 Markdown 行列表。
     - `list_module_lines`：系统模块 Markdown 行列表。
     - `list_effect_lines`：技术效果 Markdown 行列表。
 
@@ -1039,7 +1176,7 @@ def build_invention_section(
     # 先写入发明目的与方法流程小节标题，建立正文主体章节骨架。
     list_section_lines.extend(
         [
-            "## 四、发明内容",
+            "## 四、发明内容：",
             "",
             "### 4.1 发明目的",
             "",
@@ -1047,24 +1184,30 @@ def build_invention_section(
             "",
             "### 4.2 技术解决方案",
             "",
-            "#### 4.2.1 方法流程",
+            "#### 4.2.1 装置、结构类",
             "",
         ]
     )
 
-    # 拼接方法步骤说明块，保持每一步都带条件、输入、动作和输出。
-    list_section_lines.extend(list_step_lines)
+    # 拼接系统/装置方案模块条目，对齐模板中 4.2.1 装置结构小节。
+    list_section_lines.extend(list_module_lines)
 
-    # 拼接系统/装置方案小节标题与模块条目。
+    # 拼接方法方案小节标题与步骤条目。
     list_section_lines.extend(
         [
-            "#### 4.2.2 系统/装置方案",
+            "#### 4.2.2 方法类",
             "",
         ]
     )
 
-    # 追加系统模块条目列表，保持模块职责与方法步骤顺序一致。
-    list_section_lines.extend(list_module_lines)
+    # 追加方法步骤说明块，保持每一步都带条件、输入、动作和输出。
+    list_section_lines.extend(list_step_lines)
+
+    # 在存在本地可追溯公式块时，把它们追加到方法小节尾部供正式源稿保留公式表达。
+    if list_formula_lines:
+
+        # 先补一个空行，再把公式说明与公式块写入当前技术方案小节。
+        list_section_lines.extend(["", *list_formula_lines])
 
     # 在系统方案小节与技术效果小节之间补一个空行。
     list_section_lines.append("")
@@ -1072,7 +1215,7 @@ def build_invention_section(
     # 拼接技术效果小节标题与编号条目。
     list_section_lines.extend(
         [
-            "### 4.3 技术效果",
+            "### 4.3、技术效果",
             "",
         ]
     )
@@ -1083,16 +1226,12 @@ def build_invention_section(
     # 返回发明内容章节行列表，供正文渲染阶段统一拼接。
     return list_section_lines
 
-# 构建附图说明、实施方式、术语说明与待确认事项章节。
-def build_tail_section(
-    list_terms: list[str],
-    list_missing_lines: list[str],
-) -> list[str]:
+# 构建附图说明与具体实施方式章节，内部审查材料另写 sidecar。
+def build_tail_section() -> list[str]:
     """构建正文尾部章节。
 
     参数：
-    - `list_terms`：聚合后的技术术语列表。
-    - `list_missing_lines`：待确认事项 Markdown 行列表。
+    - 无。
 
     返回：
     - `list[str]`：正文尾部章节的 Markdown 行列表。
@@ -1101,14 +1240,14 @@ def build_tail_section(
     - 无。
     """
 
-    # 先准备正文尾部章节 Markdown 行列表，后续顺序补齐术语与待确认事项。
+    # 先准备正文尾部章节 Markdown 行列表，只保留可提交代理的主交底书章节。
     list_section_lines: list[str] = []  # 正文尾部章节 Markdown 行列表
 
-    # 先写入附图说明、具体实施方式和术语说明章节骨架。
+    # 写入附图说明与具体实施方式章节骨架。
     list_section_lines.extend(
         [
             "",
-            "## 五、附图及附图说明",
+            "## 五、附图及附图的简单说明",
             "",
             "图 1 为方法流程图，用于示出 S101 起至末步骤的处理流程。",
             "图 2 为系统模块图，用于示出状态采集、评分筛选、任务分配和反馈更新之间的数据关系。",
@@ -1119,32 +1258,8 @@ def build_tail_section(
             "在异常实施例中，当候选对象响应失败、状态不满足阈值或反馈记录出现异常时，系统触发回退与更新逻辑，避免持续选择不可用对象。",
             "在效果验证实施例中，应至少记录输入规模、运行环境、评价指标和对比对象，以支撑 4.3 小节技术效果。",
             "",
-            "## 七、术语说明",
-            "",
         ]
     )
-
-    # 逐条写入术语说明列表，保持术语说明与上游术语聚合结果同步。
-    for str_term in list_terms[:12]:
-
-        # 追加当前术语条目，便于审阅人快速对齐正文里的关键名词。
-        list_section_lines.append(f"- {str_term}")
-
-    # 拼接来源证据摘要与待确认事项章节。
-    list_section_lines.extend(
-        [
-            "",
-            "## 八、来源证据摘要",
-            "",
-            "正式技术特征应回溯到 `latest_evidence_map.json` 中的来源编号；缺少来源支撑的内容不得作为定稿必要技术特征。",
-            "",
-            "## 九、待确认事项",
-            "",
-        ]
-    )
-
-    # 追加待确认事项列表，提醒正式提交前仍需人工补齐的内容。
-    list_section_lines.extend(list_missing_lines)
 
     # 在正文尾部补一个空行，保持导出器读取结尾时的版式稳定。
     list_section_lines.append("")
@@ -1152,7 +1267,66 @@ def build_tail_section(
     # 返回正文尾部章节行列表，供正文渲染阶段统一拼接。
     return list_section_lines
 
-# 渲染正式中文交底书草稿，统一拼接标题、背景、方案、效果和待确认事项。
+# 渲染内部审查 sidecar，承接术语、证据和待确认事项。
+def render_internal_review_markdown(
+    str_case_name: str,
+    list_terms: list[str],
+    list_missing_lines: list[str],
+) -> str:
+    """渲染内部审查 Markdown 文本。
+
+    参数：
+    - `str_case_name`：当前案件名称文本。
+    - `list_terms`：聚合后的技术术语列表。
+    - `list_missing_lines`：待确认事项 Markdown 行列表。
+
+    返回：
+    - `str`：内部审查 sidecar Markdown 文本。
+
+    异常：
+    - 无。
+    """
+
+    # 先准备内部审查 sidecar 标题和来源说明。
+    list_lines = [  # 内部审查 Markdown 行列表
+        "# 内部审查材料",  # 固定 sidecar 标题
+        "",  # 标题后的 Markdown 空行
+        f"- case: {str_case_name}",  # 记录案件名而非本地路径
+        "- note: 本文件不属于提交给代理的主交底书正文。",  # 明确提交边界
+        "",  # 来源说明和术语小节分隔
+        "## 术语说明",  # 内部术语审查入口
+        "",  # 术语小节标题后的空行
+    ]
+
+    # 逐条写入术语说明列表，保持术语说明与上游术语聚合结果同步。
+    for str_term in list_terms[:12]:
+
+        # 追加当前术语条目，便于审阅人快速对齐正文里的关键名词。
+        list_lines.append(f"- {str_term}")
+
+    # 追加来源证据摘要说明，提示审阅人回看结构化证据映射。
+    list_lines.extend(
+        [
+            "",
+            "## 来源证据摘要",
+            "",
+            "正式技术特征应回溯到 `latest_evidence_map.json` 中的来源编号；缺少来源支撑的内容不得作为定稿必要技术特征。",
+            "",
+            "## 待确认事项",
+            "",
+        ]
+    )
+
+    # 追加待确认事项列表，提醒正式提交前仍需人工补齐的内容。
+    list_lines.extend(list_missing_lines)
+
+    # 在文件尾部补空行，保持 Markdown 结尾稳定。
+    list_lines.append("")
+
+    # 返回完整内部审查文本，供草稿阶段落盘。
+    return "\n".join(list_lines)
+
+# 渲染正式中文交底书草稿，统一拼接标题、背景、方案和效果。
 def render_markdown(
     dict_render_payload: dict[str, Any],
     module_runtime_support: Any,
@@ -1173,20 +1347,17 @@ def render_markdown(
     # 读取最接近现有技术摘要列表，供背景技术与现有技术小节复用。
     list_prior_summaries = dict_render_payload["list_prior_summaries"]  # 最接近现有技术摘要列表
 
-    # 读取技术术语列表，供背景技术与术语说明小节复用。
+    # 读取技术术语列表，供背景技术小节复用。
     list_terms = dict_render_payload["list_terms"]  # 聚合后的技术术语列表
 
-    # 读取方法步骤列表，供 4.2.1 小节生成结构化流程说明。
+    # 读取方法步骤列表，供 4.2.2 小节生成结构化流程说明。
     list_steps = dict_render_payload["list_steps"]  # 结构化方法步骤列表
 
-    # 读取系统模块列表，供 4.2.2 小节生成模块化方案说明。
+    # 读取系统模块列表，供 4.2.1 小节生成模块化方案说明。
     list_modules = dict_render_payload["list_modules"]  # 结构化系统模块列表
 
     # 提取技术效果条目列表，供技术效果小节生成编号说明。
     list_effects = dict_render_payload["list_effects"]  # 4.3 小节的效果原始条目列表
-
-    # 提取待确认事项列表，供正文末尾列出仍需人工补齐的内容。
-    list_missing_information = dict_render_payload["list_missing_information"]  # 正文末尾待确认事项条目列表
 
     # 在存在最接近现有技术摘要时优先使用首条摘要，否则回退到受控默认说明。
     if list_prior_summaries:
@@ -1203,17 +1374,17 @@ def render_markdown(
     # 串接前几项技术术语，供背景技术小节形成更贴近主案的领域描述。
     str_terms = "、".join(list_terms[:8]) or "状态参数、处理规则和输出结果"  # 背景技术小节使用的术语串接文本
 
-    # 生成 4.2.1 小节的步骤说明行列表，供正文渲染阶段直接插入。
-    list_step_lines = build_step_markdown_lines(list_steps)  # 4.2.1 小节步骤说明行列表
+    # 生成 4.2.2 小节的步骤说明行列表，供正文渲染阶段直接插入。
+    list_step_lines = build_step_markdown_lines(list_steps)  # 4.2.2 小节步骤说明行列表
 
-    # 生成 4.2.2 小节的系统模块行列表，供正文渲染阶段直接插入。
-    list_module_lines = build_module_markdown_lines(list_modules)  # 4.2.2 小节系统模块行列表
+    # 生成 4.2.2 小节末尾的公式说明与公式块，保留本地材料中的原始数学表达。
+    list_formula_lines = dict_render_payload["list_formula_lines"]  # 4.2.2 小节公式块行列表
+
+    # 生成 4.2.1 小节的系统模块行列表，供正文渲染阶段直接插入。
+    list_module_lines = build_module_markdown_lines(list_modules)  # 4.2.1 小节系统模块行列表
 
     # 生成 4.3 小节的技术效果行列表，供正文渲染阶段直接插入。
     list_effect_lines = build_effect_markdown_lines(list_effects)  # 4.3 小节技术效果行列表
-
-    # 先把待确认事项预格式化成列表项，避免正文拼接时再做清洗。
-    list_missing_lines = build_missing_information_lines(list_missing_information, module_runtime_support)  # 第九节待确认事项 Markdown 条目
 
     # 先准备正文 Markdown 行列表，后续按章节顺序逐段追加正式内容。
     list_markdown_lines: list[str] = []  # 正文 Markdown 文本行列表
@@ -1240,13 +1411,14 @@ def render_markdown(
         build_invention_section(
             dict_render_payload["str_problem"],
             list_step_lines,
+            list_formula_lines,
             list_module_lines,
             list_effect_lines,
         )
     )
 
-    # 最后拼接正文尾部章节，补齐附图说明、术语和待确认事项。
-    list_markdown_lines.extend(build_tail_section(list_terms, list_missing_lines))
+    # 最后拼接正文尾部章节，只保留附图说明和具体实施方式。
+    list_markdown_lines.extend(build_tail_section())
 
     # 返回完整 Markdown 文本，供案件目录落盘与后链工具继续复用。
     return "\n".join(list_markdown_lines)
@@ -1341,13 +1513,19 @@ def main() -> int:
     list_terms = module_runtime_support.collect_terms(dict_selected, dict_facts)  # 背景与术语说明聚合结果
 
     # 基于主案方案和术语列表生成方法步骤骨架，作为正文主链的核心结构。
-    list_steps = build_method_steps(dict_selected, list_terms, module_runtime_support)  # 4.2.1 方法流程结构化步骤
+    list_steps = build_method_steps(dict_selected, list_terms, module_runtime_support)  # 4.2.2 方法流程结构化步骤
 
     # 把方法步骤归并成系统模块骨架，供装置方案与附图说明复用同一术语。
-    list_modules = build_modules(list_steps)  # 4.2.2 装置方案模块清单
+    list_modules = build_modules(list_steps)  # 4.2.1 装置方案模块清单
 
     # 生成 4.3 小节的技术效果条目列表，保持效果表述与真实材料一致。
     list_effects = build_effect_lines(dict_selected, module_runtime_support)  # 4.3 小节效果编号条目
+
+    # 从本地研究材料中提取可追溯公式块，供正式交付源稿保留公式表达。
+    list_formula_blocks = collect_formula_blocks_from_research_root(path_case_dir, module_runtime_support)  # 本地研究材料公式块列表
+
+    # 把去重公式块展开成正文插入片段，供 4.2.2 方法小节直接拼接。
+    list_formula_lines = build_formula_markdown_lines(list_formula_blocks)  # 正文方法小节公式片段
 
     # 读取并筛选已核验查新记录，供背景技术与证据映射阶段复用。
     list_prior_records = module_runtime_support.read_verified_prior_art_records(path_case_dir)  # 已核验查新记录列表
@@ -1365,22 +1543,23 @@ def main() -> int:
         "str_problem": str_problem,  # 发明目的核心问题文本
     }
 
-    # 再登记正文主体章节依赖的条目列表，保持问题、步骤、模块与效果同源。
+    # 再登记正文主体章节依赖列表，确保方法、模块、公式与效果能按章节直接渲染。
     dict_render_payload.update(
         {
             "list_problem_lines": list_problem_lines,  # 3.3 小节问题条目列表
-            "list_steps": list_steps,  # 4.2.1 方法步骤列表
-            "list_modules": list_modules,  # 4.2.2 模块条目列表
+            "list_steps": list_steps,  # 4.2.2 方法步骤列表
+            "list_formula_lines": list_formula_lines,  # 4.2.2 方法小节公式片段
+            "list_modules": list_modules,  # 4.2.1 模块条目列表
             "list_effects": list_effects,  # 4.3 小节效果条目列表
         }
     )
 
-    # 最后登记辅助渲染字段，供背景、术语说明和待确认事项章节统一读取。
+    # 最后登记辅助渲染字段，供背景、导出和内部审查 sidecar 统一读取。
     dict_render_payload.update(
         {
             "list_terms": list_terms,  # 背景与术语说明词表
             "list_prior_summaries": list_prior_summaries,  # 3.2 小节现有技术摘要
-            "list_missing_information": list_missing_information,  # 末尾待确认事项列表
+            "list_missing_information": list_missing_information,  # 内部审查待确认事项列表
         }
     )
 
@@ -1396,11 +1575,24 @@ def main() -> int:
     # 渲染完整正式中文交底书 Markdown 文本。
     str_markdown = render_markdown(dict_render_payload, module_runtime_support)  # 完整正式中文交底书 Markdown 文本
 
+    # 把待确认事项预格式化成内部审查条目，避免其进入主交底书正文。
+    list_missing_lines = build_missing_information_lines(list_missing_information, module_runtime_support)  # 内部审查待确认事项条目
+
+    # 渲染内部审查 sidecar，承接术语、证据摘要和待确认事项。
+    str_internal_review_markdown = render_internal_review_markdown(  # 内部审查 Markdown 文本
+        str_case_name,  # 当前案件展示名称
+        list_terms,  # 从材料和主案聚合的术语列表
+        list_missing_lines,  # 已整理成 Markdown 条目的待确认事项
+    )
+
     # 确保草稿输出目录存在，供稳定草稿和快照草稿共同落盘。
     path_output_dir = module_runtime_support.ensure_dir(path_case_dir / "03_drafts")  # 草稿输出目录路径
 
     # 固定稳定主草稿路径，供后链默认读取当前最新正文。
     path_stable_draft = path_output_dir / "disclosure_draft.md"  # 稳定主草稿路径
+
+    # 固定内部审查 sidecar 路径，供人工复核但不作为代理提交正文。
+    path_internal_review = path_output_dir / "disclosure_internal_review.md"  # 内部审查 sidecar 路径
 
     # 先把案件名规整成安全快照前缀，避免快照文件名包含非法字符。
     str_snapshot_name = module_runtime_support.sanitize_name(str_case_name)  # 草稿快照安全文件名前缀
@@ -1413,6 +1605,9 @@ def main() -> int:
 
     # 把稳定主草稿写入案件目录，供后链默认按约定路径读取。
     module_runtime_support.write_text_file(path_stable_draft, str_markdown)
+
+    # 把内部审查材料写入 sidecar，避免术语、证据摘要和待确认事项进入主交底书。
+    module_runtime_support.write_text_file(path_internal_review, str_internal_review_markdown)
 
     # 把时间快照草稿也写入案件目录，保留本轮生成历史供人工回看。
     module_runtime_support.write_text_file(path_snapshot_draft, str_markdown)

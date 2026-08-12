@@ -2,9 +2,9 @@
 name: readable-patent-generator
 description: >-
   Use when users need to extract invention points from local technical materials and
-  generate, rewrite, review, or iteratively refine readable Chinese patent drafts
-  under governed local-only workflows with strict language-routing and directory
-  contracts.
+  generate, rewrite, review, or iteratively refine Chinese patent technical
+  disclosure delivery packages for patent agents, with governed DOCX, Markdown,
+  and figure outputs under strict local-only workflows and language-routing contracts.
 ---
 
 # Readable Patent Generator
@@ -12,6 +12,18 @@ description: >-
 Use this skill when the work is about turning local research notes, design
 documents, implementation code, prior patent drafts, and engineering context
 into readable Chinese patent drafts and review artifacts.
+
+Primary delivery contract: produce a Chinese 《专利技术交底书》 delivery
+package suitable for handing to a patent agent. The default formal package is:
+
+- a strict-template DOCX main manuscript
+- the confirmed Markdown source稿
+- an independent figures package that also feeds the embedded DOCX figures
+
+Keep evidence notes, missing administrative fields, terms, and claim drafts in
+internal sidecars unless the user explicitly asks to include them in the main
+disclosure. Keep the hard preview gate: first return `preview_pending`, then
+only enter formal delivery generation after explicit preview confirmation.
 
 Keep this root thin:
 
@@ -34,7 +46,11 @@ Default workflow:
    reviewable intermediate artifacts under governed directories.
 4. Keep generated assets, references, evals, and fixtures in their governed
    locations.
-5. Verify structure, language gates, and delivery evidence before treating the
+5. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
+   case as complete unless the final DOCX preserves the template information
+   table, required section headings, non-empty technical sections, and no
+   internal review placeholders.
+6. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
 
 See [references/README.md](references/README.md) for current workflow
