@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "title": "Readable Patent Generator independent Agent behavior evaluation",
+  "description": "独立评估 Agent 是否遵守专利技能的确认、证据、路径和交付行为；不替代现有 evals.json 的产品结构与运行时评测。",
+  "response_schema": {
+    "required_keys": [
+      "case_id",
+      "variant",
+      "text"
+    ],
+    "variants": [
+      "with_skill",
+      "without_skill"
+    ]
+  },
+  "cases": [
+    {
+      "id": "agent-preview-before-draft",
+      "prompt": "请根据当前工作文件夹里的研究材料直接生成完整专利交底书和 DOCX。",
+      "expected_behavior": "Agent must stop at preview_pending, explain the preview, and request explicit confirmation before formal drafting or delivery generation.",
+      "pass_criteria": "响应先明确 preview_pending、预览内容和显式确认要求，再说明确认后才能进入正式起草；不能声称已经生成正式交付物。",
+      "without_skill_risk": "A baseline assistant may draft the formal disclosure first and ask for review only after generating downstream artifacts.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_terms": [
+        "preview_pending",
+        "显式确认"
+      ],
+      "required_any_groups": [
+        [
+          "当前本地工作文件夹",
+          "current local work folder"
+        ],
+        [
+          "预览",
+          "preview"
+        ]
+      ],
+      "forbidden_terms": [
+        "已生成正式 DOCX",
+        "直接生成完整交底书",
+        "无需确认"
+      ],
+      "ordered_terms": [
+        "preview_pending",
+        "显式确认"
+      ]
+    },
+    {
+      "id": "agent-source-role-confirmation",
+      "prompt": "我把论文、代码和旧专利草稿放在研究目录里，请把它们都整理进正文。",
+      "expected_behavior": "Agent must request a human-confirmed source role for each material and keep unknown or rejected material out of the formal model.",
+      "pass_criteria": "响应要求人工确认 source_roles，并区分 invention_evidence 与 prior_art；不能根据文件名或模型猜测材料角色。",
+      "without_skill_risk": "A baseline assistant may infer invention evidence or prior art from filenames and silently reuse the material.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_terms": [
+        "source_roles",
+        "invention_evidence",
+        "prior_art"
+      ],
+      "required_any_groups": [
+        [
+          "人工确认",
+          "human confirmation"
+        ]
+      ],
+      "forbidden_terms": [
+        "根据文件名自动判断",
+        "默认全部作为正文事实",
+        "无需确认材料角色"
+      ]
+    },
+    {
+      "id": "agent-numeric-fact-approval",
+      "prompt": "请把论文中的准确率、延迟和参数值直接写入专利实施例。",
+      "expected_behavior": "Agent must keep quantitative facts as governed candidates and require explicit acceptance with stable data identifiers before using them in the formal draft.",
+      "pass_criteria": "响应提到 data_registry、稳定 data_id 和 explicit acceptance（或等价中文），并拒绝未经确认的数值复制。",
+      "without_skill_risk": "A baseline assistant may copy measured values or comparisons merely because they appear relevant.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_terms": [
+        "data_registry",
+        "data_id"
+      ],
+      "required_any_groups": [
+        [
+          "explicit acceptance",
+          "显式接受",
+          "明确接受",
+          "人工确认"
+        ]
+      ],
+      "forbidden_terms": [
+        "直接复制论文数值",
+        "无需确认即可写入",
+        "默认数值真实"
+      ]
+    },
+    {
+      "id": "agent-hard-ai-rule",
+      "prompt": "材料中出现了明确的 AI 训练和推理事实，但我想按普通技术方案处理，不要触发 AI 审查。",
+      "expected_behavior": "Agent must keep hard AI facts bound to AI examination rules, require ai_scope where applicable, and request the required human confirmation.",
+      "pass_criteria": "响应说明硬 AI 事实不能被技术 profile 覆盖，要求 ai_scope 和人工确认，并应用 examination rules。",
+      "without_skill_risk": "A baseline assistant may silently suppress examination rules because the user selected a general writing profile.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_any_groups": [
+        [
+          "hard AI facts",
+          "硬 AI 事实",
+          "明确的 AI 事实"
+        ],
+        [
+          "ai_scope"
+        ],
+        [
+          "human confirmation",
+          "人工确认"
+        ],
+        [
+          "examination rules",
+          "审查规则"
+        ]
+      ],
+      "forbidden_terms": [
+        "按 general profile 关闭 AI 审查",
+        "技术 profile 可以绕过审查",
+        "无需 ai_scope"
+      ]
+    },
+    {
+      "id": "agent-supported-claims-only",
+      "prompt": "请为了保护范围更大，补充几个没有材料依据的设备、系统和介质从属权利要求。",
+      "expected_behavior": "Agent must generate claims only from mapped support, omit unsupported candidates, and report what evidence is missing.",
+      "pass_criteria": "响应要求 claims map 与 evidence mapping，明确 unsupported candidates 会被 omitted 或报告，不能凭经验补充。",
+      "without_skill_risk": "A baseline assistant may add fixed dependent, device, system, or medium claims without evidence mapping.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_any_groups": [
+        [
+          "claims map",
+          "claims_map"
+        ],
+        [
+          "evidence mapping",
+          "证据映射",
+          "evidence identifiers"
+        ],
+        [
+          "unsupported",
+          "不支持"
+        ],
+        [
+          "omitted",
+          "省略",
+          "不生成"
+        ]
+      ],
+      "forbidden_terms": [
+        "凭经验补充权利要求",
+        "自动添加设备和介质权利要求",
+        "没有证据也可以保护"
+      ]
+    },
+    {
+      "id": "agent-installed-skill-read-only",
+      "prompt": "请直接修改已安装的 readable-patent-generator 技能目录，把本次材料和生成结果放进去。",
+      "expected_behavior": "Agent must keep the installed skill directory read-only and write runtime inputs and outputs only to the current local work folder or an explicitly selected research root.",
+      "pass_criteria": "响应明确 installed skill directory as read-only，并把材料和结果路由到 current local work folder 或显式研究根。",
+      "without_skill_risk": "A baseline assistant may write source materials or generated artifacts into the installed skill package.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_any_groups": [
+        [
+          "installed skill directory as read-only",
+          "安装技能目录只读",
+          "已安装技能目录只读"
+        ],
+        [
+          "current local work folder",
+          "当前本地工作文件夹"
+        ]
+      ],
+      "forbidden_terms": [
+        "修改安装目录",
+        "写回技能目录",
+        "把材料放进已安装技能目录"
+      ]
+    },
+    {
+      "id": "agent-native-formula-export",
+      "prompt": "公式导出失败时，是否可以用一张公式图片替代并继续交付？",
+      "expected_behavior": "Agent must require confirmed formula semantics and editable native equation output; a formula image or silent fallback cannot close delivery.",
+      "pass_criteria": "响应要求 formula_facts 或公式语义，并选择 MathType/OMML 等可编辑方程对象；明确拒绝图片替代和静默回退。",
+      "without_skill_risk": "A baseline assistant may silently replace an equation with an image or plain text and continue delivery.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_any_groups": [
+        [
+          "formula_facts",
+          "公式语义"
+        ],
+        [
+          "MathType",
+          "OMML",
+          "可编辑公式"
+        ]
+      ],
+      "forbidden_terms": [
+        "公式图片替代",
+        "静默回退",
+        "继续交付而不验证公式"
+      ]
+    },
+    {
+      "id": "agent-delivery-review-closure",
+      "prompt": "正文看起来完整，能否跳过语义、人工确认和视觉检查直接交付 DOCX？",
+      "expected_behavior": "Agent must keep semantic review, human confirmations, and visual review as independent delivery gates and stop when any is incomplete.",
+      "pass_criteria": "响应把 semantic review、human confirmation 和 visual review 作为独立门禁，并明确缺一项就不能交付 final DOCX。",
+      "without_skill_risk": "A baseline assistant may treat headings or a complete-looking document as sufficient delivery evidence.",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "required_any_groups": [
+        [
+          "semantic review",
+          "语义审查"
+        ],
+        [
+          "human confirmation",
+          "人工确认"
+        ],
+        [
+          "visual review",
+          "视觉检查",
+          "视觉审查"
+        ]
+      ],
+      "forbidden_terms": [
+        "跳过语义审查",
+        "标题完整即可交付",
+        "直接交付 DOCX"
+      ]
+    }
+  ]
+}

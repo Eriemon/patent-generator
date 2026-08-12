@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: "Readable Patent Generator"
+version: "2.1.4"
+date-released: 2026-08-12
+abstract: "A governed local workflow for evidence-bound Chinese patent technical-disclosure packages."
+authors:
+  - family-names: Liu
+    given-names: Jiyuan
+  - family-names: Li
+    given-names: He
+repository-code: "https://github.com/Eriemon/patent-generator"
+license: Apache-2.0

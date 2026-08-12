@@ -6,6 +6,13 @@
 - Python 依赖只保留一个入口：`pip install -r requirements.txt`
 - CNIPA 在线检索复用标准库 `urllib` 生产入口，无需安装浏览器运行时。
 
+## 独立 Agent 行为评测
+- `evals/evals.json` 保留产品结构与 runtime 用例；`evals/agent_behavior.json` 单独声明 Agent prompt、行为合同和风险。
+- 将真实响应写成 `{"responses": [{"case_id": "...", "variant": "with_skill", "text": "..."}]}` 后运行：
+  `python -B scripts/python/support/evaluate_agent_behavior.py --manifest evals/agent_behavior.json --responses <responses.json> --output <report.json>`。
+- `with_skill` 每个用例都必须有合规响应；`without_skill` 只在显式提供时作为可选对照，缺失响应不会被伪装成通过。
+- 报告只保留术语缺口、禁止项和顺序问题，不回显完整 Agent 响应；缺失响应、重复响应和清单错误均 fail-closed。
+
 ## Canonical References
 - [01_end_to_end_pipeline.md](canonical/01_end_to_end_pipeline.md)
 - [02_intake_and_project_scan_protocol.md](canonical/02_intake_and_project_scan_protocol.md)

@@ -10,7 +10,7 @@
       ],
       "kind": "skill",
       "path": "SKILL.md",
-      "sha256": "a921ca7fbb1c9f155300eccd94265f560ec0ae736024d014e637638f94d3f372",
+      "sha256": "2fa33ed02e4a22ac74245a028a49b35dd1ab8d050c775af78a9cca0a3bca9555",
       "summary": "技能入口、强制流程、能力路由和交付边界。",
       "title": "Readable Patent Generator"
     },
@@ -23,7 +23,7 @@
       ],
       "kind": "index",
       "path": "references/README.md",
-      "sha256": "4a147c69823d0c36a795742080991ea6b9ab6b5918c1bd49fb8ae0b0021cfcdc",
+      "sha256": "2915e07b5036cc9ce3e1d132ab9774bc141cac38178a98ea99b784189bd4f382",
       "summary": "规范文档的渐进加载索引与主题路由。",
       "title": "References Index"
     },

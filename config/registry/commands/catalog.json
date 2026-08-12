@@ -178,6 +178,14 @@
       "entrypoint": "scripts/python/support/evaluate_skill_cases.py"
     },
     {
+      "id": "support.evaluate-agent-behavior",
+      "category": "support",
+      "title": "评估 Agent 行为",
+      "summary": "依据独立行为清单核验 Agent 响应的确认、证据、路径和交付合同。",
+      "aliases": ["Agent 行为评估", "evaluate agent behavior"],
+      "entrypoint": "scripts/python/support/evaluate_agent_behavior.py"
+    },
+    {
       "id": "model.migrate",
       "category": "model",
       "title": "迁移结构化模型",

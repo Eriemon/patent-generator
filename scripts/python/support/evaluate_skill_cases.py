@@ -7,7 +7,9 @@ from __future__ import annotations
 # 引入参数解析、JSON 序列化、标准输出和路径处理能力。
 import argparse
 import base64
+import binascii
 import json
+import re
 
 # 引入进程、临时目录、路径和类型支持，限制运行时评测副作用。
 import os
@@ -16,6 +18,17 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+# 声明需要在 Base64 夹具中拒绝的绝对路径与私有目录标记。
+BASE64_MARKER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("windows_absolute", re.compile(r"(?i)(?<![A-Za-z0-9])[A-Z]:[\\/]+")),  # Windows 盘符绝对路径标记
+    ("unc_absolute", re.compile(r"(?<![A-Za-z0-9])\\\\[^\\/\s]+[\\/]+")),  # UNC 网络绝对路径标记
+    (
+        "unix_private_absolute",  # Unix 私有根目录绝对路径标记
+        re.compile(r"(?<![A-Za-z0-9])/(?:Users|home|private|workspace|var|tmp)/"),  # Unix 私有目录正则
+    ),
+    ("superpowers_marker", re.compile(r"(?i)(?<![A-Za-z0-9])\.superpowers[\\/]+")),  # 内部工作目录标记
+)
 
 # 构造命令行参数解析器，统一声明评测输入与报告输出路径。
 def parse_arguments() -> argparse.Namespace:
@@ -108,6 +121,245 @@ def replace_runtime_tokens(str_value: str, path_skill_root: Path, path_case_root
 
     # 返回同时完成两类根目录替换的文本。
     return str_replaced.replace("{case_root}", str(path_case_root))
+
+# 收集单个文本中命中的私有路径标记名称，不返回原始敏感内容。
+def find_sensitive_markers(str_text: str) -> list[str]:
+    """识别文本内的绝对路径和私有目录标记。
+
+    参数：
+    - `str_text`：待扫描的 UTF-8 文本。
+
+    返回：
+    - `list[str]`：稳定排序的标记名称列表。
+
+    异常：
+    - 无。
+    """
+
+    # 准备去重后的标记名称，保持同一文本的报告稳定。
+    list_marker_names: list[str] = []  # 当前文本命中的标记名称
+
+    # 逐项运行受控正则，避免把具体路径内容写入评测报告。
+    for str_marker_name, obj_marker_pattern in BASE64_MARKER_PATTERNS:
+
+        # 只登记命中的标记类型，不保存匹配片段。
+        if obj_marker_pattern.search(str_text):
+
+            # 追加当前命中的标记名称，并保留清单声明顺序。
+            list_marker_names.append(str_marker_name)
+
+    # 返回不含重复项的标记名称，保证多次匹配不会放大报告。
+    return list(dict.fromkeys(list_marker_names))
+
+# 将 Base64 字段解码为可扫描的 UTF-8 文本，并把失败原因归一化。
+def decode_base64_text(str_base64: str) -> tuple[str | None, str | None]:
+    """解码一个 Base64 夹具文本。
+
+    参数：
+    - `str_base64`：评测清单中的 Base64 字符串。
+
+    返回：
+    - `tuple[str | None, str | None]`：成功时返回文本和空错误，失败时返回空文本和稳定错误码。
+
+    异常：
+    - Base64 字符串非法或内容不是 UTF-8 时不向外抛出异常，而是返回稳定错误码。
+    """
+
+    # 尝试按严格校验规则解码，拒绝被忽略的非法字符。
+    try:
+
+        # 还原清单声明的原始字节，供后续 UTF-8 检查使用。
+        bytes_decoded = base64.b64decode(str_base64, validate=True)  # Base64 解码后的原始字节
+
+        # 只允许可审计的 UTF-8 文本进入路径扫描流程。
+        str_decoded = bytes_decoded.decode("utf-8")  # 已确认可扫描的夹具文本
+
+    # 将解码或编码失败统一映射为不泄露内容的错误标记。
+    except (binascii.Error, UnicodeDecodeError):
+
+        # 返回稳定错误码，阻止不可审计的夹具绕过发布门禁。
+        return None, "invalid_base64_utf8"
+
+    # 返回可继续解析的 UTF-8 文本及空错误。
+    return str_decoded, None
+
+# 递归遍历已解码 JSON 的所有字符串字段，形成不含敏感值的发现清单。
+def collect_sensitive_payload_findings(
+    str_fixture_path: str, obj_payload: Any
+) -> list[dict[str, str]]:
+    """递归扫描已解码夹具中的字符串字段。
+
+    参数：
+    - `str_fixture_path`：清单内夹具相对路径或其脱敏标签。
+    - `obj_payload`：JSON 对象、数组或普通文本对象。
+
+    返回：
+    - `list[dict[str, str]]`：包含夹具、字段路径和标记名称的发现列表。
+
+    异常：
+    - 无。
+    """
+
+    # 使用显式栈遍历任意嵌套深度，避免递归深度受外部夹具控制。
+    list_pending_nodes: list[tuple[str, Any]] = [("$", obj_payload)]  # 待扫描的字段节点栈
+
+    # 准备不含原始路径值的发现列表，供用例报告直接写出。
+    list_findings: list[dict[str, str]] = []  # 当前夹具的敏感标记发现
+
+    # 持续处理尚未扫描的对象、数组和字符串节点。
+    while list_pending_nodes:
+
+        # 取出一个待扫描节点，并保留其 JSON 字段路径。
+        str_field_path, obj_node = list_pending_nodes.pop()  # 当前待扫描字段节点
+
+        # 字典键需要加入字段路径，子值继续进入显式栈。
+        if isinstance(obj_node, dict):
+
+            # 逆序压栈以保持最终报告与 JSON 声明顺序一致。
+            for str_key, obj_child in reversed(list(obj_node.items())):
+
+                # 登记当前字典子字段，后续统一处理其字符串内容。
+                list_pending_nodes.append(
+                    (f"{str_field_path}.{str_key}", obj_child)
+                )
+
+            # 当前字典节点已经展开，不再执行字符串分支。
+            continue
+
+        # 数组元素使用下标扩展字段路径，保持嵌套结构可定位。
+        if isinstance(obj_node, list):
+
+            # 逆序压栈，抵消栈后进先出的顺序变化。
+            for int_index, obj_child in reversed(list(enumerate(obj_node))):
+
+                # 登记当前数组元素，后续统一处理其字符串内容。
+                list_pending_nodes.append(
+                    (f"{str_field_path}[{int_index}]", obj_child)
+                )
+
+            # 当前数组节点已经展开，不再执行字符串分支。
+            continue
+
+        # 只有字符串叶节点需要运行路径标记扫描。
+        if not isinstance(obj_node, str):
+
+            # 忽略数字、布尔值和空值，避免误报非文本字段。
+            continue
+
+        # 收集当前字符串叶节点命中的标记类型。
+        list_marker_names = find_sensitive_markers(obj_node)  # 当前字段命中的标记名称
+
+        # 为每个标记类型登记一条可定位但不含敏感值的发现。
+        for str_marker_name in list_marker_names:
+
+            # 记录夹具路径、JSON 字段路径和标记类型，不回显原始内容。
+            list_findings.append(
+                {
+                    "fixture": str_fixture_path,
+                    "field": str_field_path,
+                    "marker": str_marker_name,
+                }
+            )
+
+    # 返回递归扫描得到的全部发现，供用例状态计算使用。
+    return list_findings
+
+# 审计一个用例内全部 Base64 夹具，阻止绝对路径和不可解码内容进入发布证据。
+def audit_base64_fixtures(dict_case: dict[str, Any]) -> dict[str, Any]:
+    """审计 runtime 用例声明的 Base64 夹具。
+
+    参数：
+    - `dict_case`：包含可选 runtime.setup_files 的评测用例。
+
+    返回：
+    - `dict[str, Any]`：包含审计状态、检查数量、发现列表和错误列表的结果。
+
+    异常：
+    - 清单结构异常由调用方统一转换为配置失败。
+    """
+
+    # 读取 runtime 夹具列表；静态用例没有需要审计的 Base64 内容。
+    list_setup_files: list[Any] = []  # 当前用例的运行时夹具声明
+
+    # 只接受字典形式的 runtime，避免异常类型绕过审计分支。
+    if isinstance(dict_case.get("runtime"), dict):
+
+        # 复制夹具列表，避免审计流程改写输入评测清单对象。
+        list_setup_files = list(dict_case["runtime"].get("setup_files", []))  # runtime 夹具列表副本
+
+    # 准备审计发现与不可解码错误列表。
+    list_findings: list[dict[str, str]] = []  # 当前用例的路径标记发现
+
+    # 单独记录解码失败，避免不可审计内容与路径发现混淆。
+    list_errors: list[dict[str, str]] = []  # 当前用例的 Base64 解码错误
+
+    # 统计实际检查的 Base64 字段数量，便于报告证明递归审计已执行。
+    int_checked_count = 0  # 当前用例已检查的 Base64 夹具数量
+
+    # 逐项处理 runtime 夹具声明中的 Base64 字段。
+    for dict_file in list_setup_files:
+
+        # 忽略非字典项和不含 Base64 字段的普通文本夹具。
+        if not isinstance(dict_file, dict) or "base64" not in dict_file:
+
+            # 当前项不属于 Base64 审计范围，继续检查后续夹具。
+            continue
+
+        # 增加审计计数，明确当前项已经进入严格解码路径。
+        int_checked_count += 1  # 已完成严格 Base64 解码的夹具数量
+
+        # 获取夹具路径并在报告中保留相对定位信息。
+        str_fixture_path = str(dict_file.get("path", "<missing-path>"))  # 当前夹具清单路径
+
+        # 绝对路径或私有目录标记只保留统一脱敏标签，避免报告二次泄露。
+        if find_sensitive_markers(str_fixture_path):
+
+            # 把可能泄露本机目录的清单路径替换为稳定占位符。
+            str_fixture_path = "<redacted-fixture-path>"  # 已脱敏的夹具报告标签
+
+        # 严格解码当前 Base64 字段，失败时记录稳定错误码并继续收集其余问题。
+        tuple_str_decoded, tuple_str_error = decode_base64_text(  # Base64 解码文本与错误码
+            str(dict_file["base64"])  # 当前 Base64 字段文本
+        )
+
+        # 不可解码的内容不能进入运行时执行，必须 fail-closed。
+        if tuple_str_error is not None:
+
+            # 只登记夹具标签与错误码，不回显 Base64 或原始字节。
+            list_errors.append(
+                {"fixture": str_fixture_path, "error": tuple_str_error}
+            )
+
+            # 当前夹具已经完成错误登记，继续审计后续夹具。
+            continue
+
+        # 尝试按 JSON 解析，以便递归定位具体字段；普通文本走字符串叶节点路径。
+        try:
+
+            # 将可解析的结构还原为对象，保留字段路径证据。
+            obj_payload = json.loads(tuple_str_decoded)  # 已解析的 JSON 夹具对象
+
+        # 普通文本并非错误，直接作为单一字符串节点扫描。
+        except json.JSONDecodeError:
+
+            # 将非 JSON 文本交给同一递归扫描器，统一报告格式。
+            obj_payload = tuple_str_decoded  # 作为普通文本扫描的夹具内容
+
+        # 追加当前夹具所有敏感标记发现，不写入具体路径值。
+        list_findings.extend(
+            collect_sensitive_payload_findings(str_fixture_path, obj_payload)
+        )
+
+    # 发现路径标记或解码错误时均判定审计失败，禁止 runtime 入口执行。
+    bool_passed = not list_findings and not list_errors  # 当前用例 Base64 审计状态
+
+    # 返回稳定审计结构，供逐例报告和汇总计数共同使用。
+    return {
+        "status": "passed" if bool_passed else "failed",
+        "checked": int_checked_count,
+        "findings": list_findings,
+        "errors": list_errors,
+    }
 
 # 把清单声明的最小夹具写入临时案例根目录。
 def prepare_runtime_files(path_case_root: Path, list_setup_files: list[dict[str, Any]]) -> None:
@@ -359,6 +611,9 @@ def evaluate_case(path_skill_root: Path, dict_case: dict[str, Any]) -> dict[str,
     # 准备缺失术语列表，记录具体文件与未命中的合同文本。
     list_missing_terms: list[dict[str, str]] = []  # 当前用例缺失术语明细
 
+    # 先审计运行时 Base64 夹具，防止敏感路径或不可解码内容进入执行阶段。
+    dict_fixture_audit = audit_base64_fixtures(dict_case)  # 当前用例 Base64 夹具审计结果
+
     # 逐个检查当前用例声明的必需文件，先建立结构完整性证据。
     for str_relative_path in dict_case["required_files"]:
 
@@ -406,8 +661,12 @@ def evaluate_case(path_skill_root: Path, dict_case: dict[str, Any]) -> dict[str,
                     {"file": str_relative_path, "term": str(str_required_term)}
                 )
 
-    # 只有文件和术语两个维度均无缺口时，当前用例才算通过。
-    bool_static_passed = not list_missing_files and not list_missing_terms  # 当前用例静态检查状态
+    # 只有文件、术语和夹具审计三个维度均无缺口时，当前用例才算通过。
+    bool_static_passed = (
+        not list_missing_files  # 文件结构未发现缺失项
+        and not list_missing_terms  # 合同术语未发现缺失项
+        and dict_fixture_audit["status"] == "passed"  # Base64 夹具审计通过
+    )  # 当前用例静态检查状态
 
     # 默认静态 lint 用例没有运行时结果。
     dict_runtime_report: dict[str, Any] | None = None  # 当前用例可选运行时报告
@@ -430,6 +689,7 @@ def evaluate_case(path_skill_root: Path, dict_case: dict[str, Any]) -> dict[str,
         "status": "passed" if bool_passed else "failed",
         "missing_files": list_missing_files,
         "missing_terms": list_missing_terms,
+        "fixture_audit": dict_fixture_audit,
         "mode": str(dict_case.get("mode", "lint")),
         "runtime": dict_runtime_report,
     }

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """执行正式主链，并在预览确认后继续进入后链。"""
-
-# 启用未来版本注解行为，保证类型标注在当前解释器下稳定可用。
+# 启用未来注解行为，保证模块加载时类型标注保持惰性解析。
 from __future__ import annotations
 
-# 引入命令行、按路径加载模块、结构化数据、子进程、标准输出和路径能力，供正式流水线稳定运行。
+# 导入命令行、动态加载、JSON、子进程、标准输出和路径能力。
 import argparse
 import importlib.util
 import json
@@ -14,170 +13,216 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
-PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
+# 追踪模块入口阶段的流水线目录字段，保持数据边界。
+PATH_PIPELINE_DIR = Path(__file__).resolve().parent  # 组装模块入口阶段的流水线目录字段。
 
-# 固定命名能力预检入口，流水线必须在本轮首次输出前完成所需能力检查。
-PATH_CAPABILITY_PREFLIGHT = Path(__file__).resolve().parents[1] / "support" / "check_dependencies.py"  # 能力预检入口路径
+# 追踪模块入口阶段的Python入口根字段，保持数据边界。
+PATH_PYTHON_ROOT = PATH_PIPELINE_DIR.parent  # 组装模块入口阶段的Python入口根字段。
 
-# Model 4 来源链集中在支持模块，pipeline 不复制哈希和路径边界。
-PATH_MODEL4_PROVENANCE = Path(__file__).resolve().parents[1] / "support" / "model_provenance.py"  # Model 4 来源链模块
+# 读取模块入口阶段的JSON支持模块字段，保持数据边界。
+PATH_RUNTIME_SUPPORT = PATH_PYTHON_ROOT / "support" / "runtime_support.py"  # 传递模块入口阶段的JSON支持模块字段。
 
-# 固定正式 skill 的 Python 入口根目录，供各主链与后链脚本路径拼接复用。
-PATH_PYTHON_ROOT = Path(__file__).resolve().parents[1]  # 正式 skill 的 Python 入口根目录
+# 拆分模块入口阶段的能力预检入口字段，保持数据边界。
+PATH_CAPABILITY_PREFLIGHT = PATH_PYTHON_ROOT / "support" / "check_dependencies.py"  # 返回模块入口阶段的能力预检入口字段。
 
-# 固定建案入口脚本路径，供新案件初始化阶段复用。
-PATH_CREATE_CASE_SCRIPT = PATH_PYTHON_ROOT / "case" / "create_case.py"  # 建案入口脚本路径
+# 校验模块入口阶段的Model4来源链模块字段，保持数据边界。
+PATH_MODEL4_PROVENANCE = PATH_PYTHON_ROOT / "support" / "model_provenance.py"  # 执行模块入口阶段的Model4来源链模块字段。
 
-# 固定材料盘点入口脚本路径，供研究材料扫描阶段复用。
-PATH_RESEARCH_INVENTORY_SCRIPT = PATH_PYTHON_ROOT / "intake" / "research_inventory.py"  # 材料盘点入口脚本路径
+# 校验模块入口阶段的流水线运行模块字段，保持数据边界。
+PATH_PIPELINE_RUNTIME = PATH_PIPELINE_DIR / "pipeline_runtime.py"  # 执行模块入口阶段的流水线运行模块字段。
 
-# 固定事实抽取入口脚本路径，供候选专利点提炼阶段复用。
-PATH_EXTRACT_RESEARCH_FACTS_SCRIPT = PATH_PYTHON_ROOT / "facts" / "extract_research_facts.py"  # 事实抽取入口脚本路径
+# 传递模块入口阶段的后链模块字段，保持数据边界。
+PATH_POST_PREVIEW_CHAIN = PATH_PIPELINE_DIR / "post_preview_chain.py"  # 阻断模块入口阶段的后链模块字段。
 
-# 固定主案选择入口脚本路径，供主方案锁定阶段复用。
-PATH_SELECT_INVENTION_POINT_SCRIPT = PATH_PYTHON_ROOT / "invention" / "select_invention_point.py"  # 主案选择入口脚本路径
+# 汇总模块入口阶段的建案入口字段，保持数据边界。
+PATH_CREATE_CASE_SCRIPT = PATH_PYTHON_ROOT / "case" / "create_case.py"  # 维护模块入口阶段的建案入口字段。
 
-# 固定查新规划入口脚本路径，供预览前查新准备阶段复用。
-PATH_PLAN_PRIOR_ART_SCRIPT = PATH_PYTHON_ROOT / "prior_art" / "plan_prior_art_queries.py"  # 查新规划入口脚本路径
+# 恢复模块入口阶段的材料盘点入口字段，保持数据边界。
+PATH_RESEARCH_INVENTORY_SCRIPT = PATH_PYTHON_ROOT / "intake" / "research_inventory.py"  # 收敛模块入口阶段的材料盘点入口字段。
 
-# 固定 CNIPA 在线检索入口，显式查询不得只选择能力而不执行生产实现。
-PATH_CNIPA_SEARCH_SCRIPT = PATH_PYTHON_ROOT / "search" / "cnipa_epub_search.py"  # CNIPA 在线检索公共入口
+# 转换模块入口阶段的事实抽取入口字段，保持数据边界。
+PATH_EXTRACT_RESEARCH_FACTS_SCRIPT = PATH_PYTHON_ROOT / "facts" / "extract_research_facts.py"  # 准备模块入口阶段的事实抽取入口字段。
 
-# 固定预览生成入口脚本路径，供预览确认门生成阶段复用。
-PATH_GENERATE_PREVIEW_SCRIPT = PATH_PYTHON_ROOT / "preview" / "generate_preview.py"  # 预览生成入口脚本路径
+# 确认模块入口阶段的主案选择入口字段，保持数据边界。
+PATH_SELECT_INVENTION_POINT_SCRIPT = PATH_PYTHON_ROOT / "invention" / "select_invention_point.py"  # 导出模块入口阶段的主案选择入口字段。
 
-# 固定正式正文生成入口脚本路径，供预览确认后的正文阶段复用。
-PATH_GENERATE_DRAFT_SCRIPT = PATH_PYTHON_ROOT / "draft" / "generate_disclosure_draft.py"  # 正文生成入口脚本路径
+# 维护模块入口阶段的查新规划入口字段，保持数据边界。
+PATH_PLAN_PRIOR_ART_SCRIPT = PATH_PYTHON_ROOT / "prior_art" / "plan_prior_art_queries.py"  # 确认模块入口阶段的查新规划入口字段。
 
-# 固定附图生成入口脚本路径，供正式后链附图阶段复用。
-PATH_GENERATE_FIGURES_SCRIPT = PATH_PYTHON_ROOT / "figures" / "generate_figures.py"  # 附图生成入口脚本路径
+# 阻断模块入口阶段的CNIPA检索入口字段，保持数据边界。
+PATH_CNIPA_SEARCH_SCRIPT = PATH_PYTHON_ROOT / "search" / "cnipa_epub_search.py"  # 转换模块入口阶段的CNIPA检索入口字段。
 
-# 固定权利要求生成入口脚本路径，供正式后链权利要求阶段复用。
-PATH_GENERATE_CLAIMS_SCRIPT = PATH_PYTHON_ROOT / "claims" / "generate_claims.py"  # 权利要求生成入口脚本路径
+# 传播模块入口阶段的预览生成入口字段，保持数据边界。
+PATH_GENERATE_PREVIEW_SCRIPT = PATH_PYTHON_ROOT / "preview" / "generate_preview.py"  # 约束模块入口阶段的预览生成入口字段。
 
-# 固定自检入口脚本路径，供正式后链自检阶段复用。
-PATH_VALIDATE_DISCLOSURE_SCRIPT = PATH_PYTHON_ROOT / "review" / "validate_disclosure.py"  # 自检入口脚本路径
+# 保留正式正文入口路径，兼容仍引用旧常量的调用方。
+PATH_GENERATE_DRAFT_SCRIPT = PATH_PYTHON_ROOT / "draft" / "generate_disclosure_draft.py"  # 正式正文生成入口路径。
 
-# 固定 DOCX 导出入口脚本路径，供可选导出阶段复用。
-PATH_EXPORT_DOCX_SCRIPT = PATH_PYTHON_ROOT / "export" / "export_docx.py"  # DOCX 导出入口脚本路径
+# 保留附图入口路径，兼容后链阶段的路径审计。
+PATH_GENERATE_FIGURES_SCRIPT = PATH_PYTHON_ROOT / "figures" / "generate_figures.py"  # 附图生成入口路径。
 
-# 固定无状态流水线工具模块路径，入口继续对外暴露原有函数名。
-PATH_PIPELINE_RUNTIME = Path(__file__).resolve().with_name("pipeline_runtime.py")  # 流水线运行工具模块路径
+# 保留权利要求入口路径，兼容后链阶段的路径审计。
+PATH_GENERATE_CLAIMS_SCRIPT = PATH_PYTHON_ROOT / "claims" / "generate_claims.py"  # 权利要求生成入口路径。
 
-# 加载同目录无状态运行工具，不依赖包式导入。
+# 保留自检入口路径，兼容交付前检查的路径审计。
+PATH_VALIDATE_DISCLOSURE_SCRIPT = PATH_PYTHON_ROOT / "review" / "validate_disclosure.py"  # 正文自检入口路径。
+
+# 保留 DOCX 导出入口路径，兼容交付导出的路径审计。
+PATH_EXPORT_DOCX_SCRIPT = PATH_PYTHON_ROOT / "export" / "export_docx.py"  # DOCX 导出入口路径。
+
+# 进入模块加载的功能边界。
+def load_module(path_module: Path, name_module: str) -> Any:
+    """执行 load_module 的受管流水线职责。
+
+    参数：
+    - path_module、name_module：当前入口上下文。
+
+    返回：
+    - Any：当前阶段的稳定结果。
+
+    异常：
+    - 参数、模块或子入口不满足合同时抛出对应异常。
+    """
+
+    # 维护模块加载阶段的对象字段，保持数据边界。
+    obj_spec = importlib.util.spec_from_file_location(name_module, path_module)  # 确认模块加载阶段的对象字段。
+
+    # 分别判断模块加载阶段门禁条件。
+    if obj_spec is None or obj_spec.loader is None:
+
+        # 阻断模块加载阶段不满足合同的路径。
+        raise ImportError(f"> ERR: [Python] 无法加载 {path_module.name}。")
+
+    # 收敛模块加载阶段的模块字段，保持数据边界。
+    module_loaded = importlib.util.module_from_spec(obj_spec)  # 复用模块加载阶段的模块字段。
+
+    # 先登记动态模块，使 dataclass 前向注解能够解析所属模块。
+    sys.modules[name_module] = module_loaded  # 动态模块注册表项。
+
+    # 执行模块加载阶段的受管调用。
+    obj_spec.loader.exec_module(module_loaded)
+
+    # 返回模块加载阶段函数的稳定结果。
+    return module_loaded
+
+# 进入运行模块加载的功能边界。
 def load_pipeline_runtime_module() -> Any:
-    """加载流水线能力选择和子进程协议工具。
+    """执行 load_pipeline_runtime_module 的受管流水线职责。
 
     参数：
     - 无。
 
     返回：
-    - `Any`：已经执行源码的流水线运行工具模块。
+    - Any：当前阶段的稳定结果。
 
     异常：
-    - `ImportError`：无法定位或加载运行工具时抛出。
+    - 参数、模块或子入口不满足合同时抛出对应异常。
     """
 
-    # 为同目录运行工具创建隔离加载规格。
-    obj_spec = importlib.util.spec_from_file_location(  # 流水线运行工具加载规格
-        "readable_patent_pipeline_runtime",  # 运行工具专属模块名
-        PATH_PIPELINE_RUNTIME,  # 正式技能内运行工具文件
-    )
+    # 返回运行模块加载阶段函数的稳定结果。
+    return load_module(PATH_PIPELINE_RUNTIME, "readable_patent_pipeline_runtime")
 
-    # 缺少规格或加载器时禁止进入任何主链副作用。
-    if obj_spec is None or obj_spec.loader is None:
+# 封存模块入口阶段的模块字段，保持数据边界。
+module_pipeline_runtime = load_pipeline_runtime_module()  # 筛选模块入口阶段的模块字段。
 
-        # 抛出指向真实落盘文件的明确导入错误。
-        raise ImportError("> ERR: [Python] 无法加载 pipeline/pipeline_runtime.py。")
+# 转换模块入口阶段的阶段变量字段，保持数据边界。
+collect_research_suffixes = module_pipeline_runtime.collect_research_suffixes  # 准备模块入口阶段的阶段变量字段。
 
-    # 根据有效规格创建本轮独享的运行工具模块。
-    module_pipeline_runtime = importlib.util.module_from_spec(obj_spec)  # 待执行运行工具模块
+# 封存模块入口阶段的阶段变量字段，保持数据边界。
+will_run_post_preview = module_pipeline_runtime.will_run_post_preview  # 筛选模块入口阶段的阶段变量字段。
 
-    # 执行工具源码，使能力选择和子进程协议入口可用。
-    obj_spec.loader.exec_module(module_pipeline_runtime)
+# 导出模块入口阶段的阶段变量字段，保持数据边界。
+determine_required_capabilities = module_pipeline_runtime.determine_required_capabilities  # 读取模块入口阶段的阶段变量字段。
 
-    # 返回已初始化模块，供兼容别名绑定。
-    return module_pipeline_runtime
+# 传播模块入口阶段的阶段变量字段，保持数据边界。
+run_child_entrypoint = module_pipeline_runtime.run_child_entrypoint  # 约束模块入口阶段的阶段变量字段。
 
-# 在模块导入期只执行一次无状态工具加载。
-module_pipeline_runtime = load_pipeline_runtime_module()  # 当前流水线运行工具模块
+# 维护模块入口阶段的阶段变量字段，保持数据边界。
+require_success = module_pipeline_runtime.require_success  # 确认模块入口阶段的阶段变量字段。
 
-# 保持原入口对能力选择 helper 的公开访问兼容。
-collect_research_suffixes = module_pipeline_runtime.collect_research_suffixes  # 研究材料扩展名收集入口
+# 确认模块入口阶段的阶段变量字段，保持数据边界。
+read_last_stdout_line = module_pipeline_runtime.read_last_stdout_line  # 导出模块入口阶段的阶段变量字段。
 
-# 保持原入口对后链能力判定 helper 的公开访问兼容。
-will_run_post_preview = module_pipeline_runtime.will_run_post_preview  # 预览后链判定入口
+# 隔离模块入口阶段的阶段变量字段，保持数据边界。
+run_required_stage = module_pipeline_runtime.run_required_stage  # 串联模块入口阶段的阶段变量字段。
 
-# 保持原入口对最小能力推导 helper 的公开访问兼容。
-determine_required_capabilities = module_pipeline_runtime.determine_required_capabilities  # 流水线能力推导入口
+# 传播模块入口阶段的路径字段，保持数据边界。
+read_output_path = module_pipeline_runtime.read_output_path  # 约束模块入口阶段的路径字段。
 
-# 保持原入口对子进程执行 helper 的公开访问兼容。
-run_child_entrypoint = module_pipeline_runtime.run_child_entrypoint  # 子入口执行入口
+# 归档模块入口阶段的阶段变量字段，保持数据边界。
+collect_delivery_figure_files = module_pipeline_runtime.collect_delivery_figure_files  # 校验模块入口阶段的阶段变量字段。
 
-# 保持原入口对子进程成功断言 helper 的公开访问兼容。
-require_success = module_pipeline_runtime.require_success  # 子入口成功断言入口
+# 进入后链模块加载的功能边界。
+def load_post_preview_chain_module() -> Any:
+    """执行 load_post_preview_chain_module 的受管流水线职责。
 
-# 保持原入口对标准输出解析 helper 的公开访问兼容。
-read_last_stdout_line = module_pipeline_runtime.read_last_stdout_line  # 最后一条非空输出读取入口
+    参数：
+    - 无。
 
-# 保持原入口对必需阶段执行 helper 的公开访问兼容。
-run_required_stage = module_pipeline_runtime.run_required_stage  # 必需子阶段执行入口
+    返回：
+    - Any：当前阶段的稳定结果。
 
-# 保持原入口对路径型结果解析 helper 的公开访问兼容。
-read_output_path = module_pipeline_runtime.read_output_path  # 路径结果解析入口
+    异常：
+    - 参数、模块或子入口不满足合同时抛出对应异常。
+    """
 
-# 保持原入口对交付附图清单 helper 的公开访问兼容。
-collect_delivery_figure_files = module_pipeline_runtime.collect_delivery_figure_files  # 正式附图文件收集入口
+    # 返回后链模块加载阶段函数的稳定结果。
+    return load_module(PATH_POST_PREVIEW_CHAIN, "readable_patent_post_preview_chain")
 
-# 描述推进到预览阶段后需要交给主流程继续处理的案件上下文。
+# 回收模块入口阶段的模块字段，保持数据边界。
+module_post_preview_chain = load_post_preview_chain_module()  # 传播模块入口阶段的模块字段。
+
+# 定位模块入口阶段的阶段变量字段，保持数据边界。
+PostPreviewChainResult = module_post_preview_chain.PostPreviewChainResult  # 绑定模块入口阶段的阶段变量字段。
+
+# 生成模块入口阶段的阶段变量字段，保持数据边界。
+PostPreviewArtifacts = module_post_preview_chain.PostPreviewArtifacts  # 恢复模块入口阶段的阶段变量字段。
+
+# 执行模块入口阶段的阶段变量字段，保持数据边界。
+PostPreviewValidation = module_post_preview_chain.PostPreviewValidation  # 封存模块入口阶段的阶段变量字段。
+
+# 暴露草稿查找入口，供主链准备阶段复用。
+find_existing_draft = module_post_preview_chain.find_existing_draft  # 后链草稿查找公共入口。
+
+# 记录模块入口阶段的阶段变量字段，保持数据边界。
+validate_reviewed_model_artifact = module_post_preview_chain.validate_reviewed_model_artifact  # 追踪模块入口阶段的阶段变量字段。
+
+# 准备模块入口阶段的阶段变量字段，保持数据边界。
+locate_reviewed_companion_artifacts = module_post_preview_chain.locate_reviewed_companion_artifacts  # 编排模块入口阶段的阶段变量字段。
+
+# 暴露首轮后预览工件生成入口，保持协调器只负责委托。
+generate_initial_post_preview_artifacts = (  # 首轮后预览工件委托字段。
+    module_post_preview_chain.generate_initial_post_preview_artifacts  # 首轮后预览工件生成公共入口。
+)
+
+# 暴露后预览模型封印入口，沿用稳定公共名称。
+seal_initial_post_preview_model = module_post_preview_chain.seal_initial_post_preview_model  # 后预览模型封印公共入口。
+
+# 暴露后预览准备入口，保留既有调用协议。
+prepare_post_preview_artifacts = module_post_preview_chain.prepare_post_preview_artifacts  # 后预览准备公共入口。
+
+# 复用模块入口阶段的阶段变量字段，保持数据边界。
+validate_post_preview_artifacts = module_post_preview_chain.validate_post_preview_artifacts  # 固定模块入口阶段的阶段变量字段。
+
+# 暴露交付导出入口，继续由后链模块实现。
+export_post_preview_delivery = module_post_preview_chain.export_post_preview_delivery  # 后预览交付导出公共入口。
+
+# 收敛模块入口阶段的阶段变量字段，保持数据边界。
+run_post_preview_chain = module_post_preview_chain.run_post_preview_chain  # 复用模块入口阶段的阶段变量字段。
+
 @dataclass(frozen=True)
+
+# 定义PreviewCheckpoint的数据契约。
 class PreviewCheckpoint:
-    """预览阶段准备结果。"""
+    """推进到预览阶段后交给确认门的案件上下文。"""
 
-    # 固定当前案件根目录，供预览门和后链路径组装共同复用。
-    path_case_dir: Path  # 当前案件根目录路径
+    # 转换模块入口阶段的路径字段，保持数据边界。
+    path_case_dir: Path  # 准备模块入口阶段的路径字段。
 
-    # 固定当前案件预览材料路径，供确认门和最终返回载荷共同复用。
-    path_preview_markdown: Path  # 当前案件预览 Markdown 路径
+    # 复用模块入口阶段的路径字段，保持数据边界。
+    path_preview_markdown: Path  # 固定模块入口阶段的路径字段。
 
-# 描述预览确认后的后链执行结果，统一封装退出码和 JSON 载荷。
-@dataclass(frozen=True)
-class PostPreviewChainResult:
-    """预览后链执行结果。"""
-
-    # 固定正式后链返回的退出码，供主流程保持既有协议复用。
-    int_return_code: int  # 正式后链返回的退出码
-
-    # 固定正式后链返回的机器可读载荷，供主流程补齐预览路径后写回标准输出。
-    dict_payload: dict[str, Any]  # 正式后链返回的机器可读载荷
-
-# 固定后链准备阶段产生的权威工件，避免后续阶段重新猜测路径。
-@dataclass(frozen=True)
-class PostPreviewArtifacts:
-    """后链准备阶段的工件集合。"""
-
-    # 保存公共自检和导出共同消费的正式正文。
-    path_draft: Path  # 正式正文路径
-
-    # 保存交付阶段定位附图目录所需的正式清单。
-    path_figures_manifest: Path  # 正式附图清单路径
-
-    # 保存 reviewed 重入时必须显式传递的唯一模型。
-    path_authoritative_model: Path | None  # reviewed 重入的权威模型路径
-
-# 固定公共自检入口的协议结果，供状态分流与交付阶段共同消费。
-@dataclass(frozen=True)
-class PostPreviewValidation:
-    """后链公共自检结果。"""
-
-    # 保存公共入口用于业务状态分流的退出码。
-    int_return_code: int  # 公共自检入口退出码
-
-    # 保存验证报告中用于交付状态传播的统一结论。
-    str_status: str  # 自检报告中的统一状态
-
-# 按文件路径加载共享运行时支持模块，避免在导入期改写解释器模块搜索路径。
+# 进入案件支持加载的功能边界。
 def load_runtime_support_module() -> Any:
     """按路径加载共享运行时支持模块。
 
@@ -736,480 +781,6 @@ def build_pending_payload(preview_checkpoint: PreviewCheckpoint) -> dict[str, st
     }
 
 # 定位重入案件的既有正文，禁止为取得路径而重新生成并覆盖 Model 4.0。
-def find_existing_draft(path_case_dir: Path) -> Path:
-    """定位案件中已经存在的正式正文草稿。
-
-    参数：
-    - `path_case_dir`：当前重入案件根目录。
-
-    返回：
-    - `Path`：已经存在的正式正文草稿绝对路径。
-
-    异常：
-    - `FileNotFoundError`：案件中不存在正式正文草稿时抛出。
-    """
-
-    # 加载共享运行时支持模块，复用正式正文定位规则。
-    module_runtime_support: Any = load_runtime_support_module()  # 确认状态读写支持对象
-
-    # 只查找已有正文，不调用任何生成入口。
-    path_draft = module_runtime_support.find_disclosure_draft(path_case_dir, None)  # 既有正文草稿路径
-
-    # 正文缺失时拒绝 reviewed-model 重入，避免模型与空白正文脱节。
-    if path_draft is None or not path_draft.exists():
-
-        # 抛出明确文件缺失错误，提示调用方先完成首次正文生成。
-        raise FileNotFoundError("> ERR: [Python] reviewed-model 重入缺少既有 disclosure draft。")
-
-    # 返回规范化绝对路径，确保后续子入口消费同一正文。
-    return path_draft.resolve()
-
-# 校验 reviewed Model 4 并定位与其绑定的既有正文。
-def validate_reviewed_model_artifact(
-    path_case_dir: Path,
-    path_reviewed_model: Path,
-) -> tuple[Path, Path]:
-    """校验 reviewed Model 4 与当前案件的来源链。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-    - `path_reviewed_model`：调用方显式提交的 reviewed Model 4。
-
-    返回：
-    - `tuple[Path, Path]`：权威模型和既有正文的绝对路径。
-
-    异常：
-    - 模型缺失、版本错误或来源链不匹配时抛出对应异常。
-    """
-
-    # 规范化权威模型路径，避免后续阶段回退读取 latest 模型。
-    path_authoritative_model: Path = path_reviewed_model.resolve()  # 权威模型绝对路径
-
-    # 权威模型必须已经真实落盘。
-    if not path_authoritative_model.exists():
-
-        # 缺失时报告实际路径，便于调用方修复重入参数。
-        raise FileNotFoundError(
-            f"> ERR: [Python] reviewed model 不存在:{path_authoritative_model}"
-        )
-
-    # 加载正式来源链模块，复用案件身份和父工件摘要校验。
-    module_provenance: Any = load_model4_provenance_module()  # 来源链验证模块
-
-    # 对当前案件执行正式 reviewed 模型验证。
-    obj_model: Any = module_provenance.validate_reviewed_model_for_case(  # 已验证模型对象
-        path_case_dir,  # 当前模型所属案件
-        path_authoritative_model,  # 调用方提交的唯一模型文件
-    )
-
-    # 只允许结构化 Model 4 进入正式后链。
-    if not isinstance(obj_model, dict) or obj_model.get("contract_version") != "4.0":
-
-        # 旧版本或非对象输入必须显式失败。
-        raise ValueError("> ERR: [Python] --reviewed-model 必须是 Model 4.0 JSON 对象。")
-
-    # 定位与权威模型配套的既有正文，禁止重新生成覆盖。
-    path_draft: Path = find_existing_draft(path_case_dir)  # reviewed 配套正文路径
-
-    # 返回已经完成案件绑定的两项权威路径。
-    return path_authoritative_model, path_draft
-
-# 定位 reviewed 重入必须复用的附图清单与 Claims Map 3。
-def locate_reviewed_companion_artifacts(
-    path_case_dir: Path,
-) -> tuple[Path, Path]:
-    """定位 reviewed 模型的配套工件。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-
-    返回：
-    - `tuple[Path, Path]`：附图清单和 Claims Map 3 路径。
-
-    异常：
-    - 任一配套工件缺失时抛出 `FileNotFoundError`。
-    """
-
-    # 定位首次后链已经生成的正式附图清单。
-    path_figures_manifest: Path = path_case_dir / "05_figures" / "figures_manifest.json"  # 附图清单路径
-
-    # 定位来源链摘要已经绑定的 Claims Map 3。
-    path_claims_map: Path = path_case_dir / "03_drafts" / "claims_map.json"  # reviewed 配套 claims 路径
-
-    # 两项配套工件都必须存在，禁止重生成改变权威边界。
-    for path_required_artifact in (path_figures_manifest, path_claims_map):
-
-        # 缺少任一配套工件时拒绝 reviewed 重入。
-        if not path_required_artifact.exists():
-
-            # 报告实际缺失路径，便于恢复同一案件。
-            raise FileNotFoundError(
-                f"> ERR: [Python] reviewed-model 重入缺少既有配套工件:"
-                f"{path_required_artifact}"
-            )
-
-    # 返回后续自检与交付阶段共用的配套路径。
-    return path_figures_manifest, path_claims_map
-
-# 首次后链按固定顺序生成正文、附图和权利要求工件。
-def generate_initial_post_preview_artifacts(
-    path_case_dir: Path,
-) -> tuple[Path, Path, Path]:
-    """生成首次后链的三类正式工件。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-
-    返回：
-    - `tuple[Path, Path, Path]`：正文、附图清单和 Claims Map 3 路径。
-
-    异常：
-    - 任一生产入口失败或机器输出无效时抛出 `RuntimeError`。
-    """
-
-    # 执行正文生成入口并保留其机器输出。
-    completed_process_draft: subprocess.CompletedProcess[str] = run_required_stage(  # 正文生成结果
-        PATH_GENERATE_DRAFT_SCRIPT,  # 正文生产入口路径
-        ["--case-dir", str(path_case_dir)],  # 当前案件生成参数
-    )
-
-    # 解析正式正文路径，供后续阶段共同消费。
-    path_draft: Path = read_output_path(completed_process_draft)  # 后续附图与 claims 的正文输入
-
-    # 执行附图生成入口并保留正式清单。
-    completed_process_figures: subprocess.CompletedProcess[str] = run_required_stage(  # 附图生成结果
-        PATH_GENERATE_FIGURES_SCRIPT,  # 附图生产入口路径
-        ["--case-dir", str(path_case_dir), "--input", str(path_draft)],  # 正文绑定参数
-    )
-
-    # 解析附图入口唯一机器输出路径。
-    path_figures_manifest: Path = read_output_path(completed_process_figures)  # 交付阶段附图根依据
-
-    # 执行权利要求生成入口，形成 Claims Map 3。
-    completed_process_claims: subprocess.CompletedProcess[str] = run_required_stage(  # 权利要求生成结果
-        PATH_GENERATE_CLAIMS_SCRIPT,  # 权利要求生产入口路径
-        ["--case-dir", str(path_case_dir), "--input", str(path_draft)],  # claims 所属案件与主稿
-    )
-
-    # 读取机器输出，确认权利要求阶段真实完成落盘。
-    path_claims_output: Path = read_output_path(completed_process_claims)  # 权利要求输出校验路径
-
-    # 固定正式 Claims Map 3 路径，供来源链封印复用。
-    path_claims_map: Path = path_case_dir / "03_drafts" / "claims_map.json"  # 初始模型封印的 claims 依据
-
-    # 保留显式校验变量，避免机器输出只被解析却未消费。
-    _ = path_claims_output  # 权利要求阶段落盘证据
-
-    # 返回首次后链产生的三类正式工件。
-    return path_draft, path_figures_manifest, path_claims_map
-
-# 在首次 claims 生成后一次性封印初始 Model 4 的案件内容摘要。
-def seal_initial_post_preview_model(
-    path_case_dir: Path,
-    path_draft: Path,
-    path_claims_map: Path,
-) -> None:
-    """封印首次后链的初始 Model 4。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-    - `path_draft`：正式正文路径。
-    - `path_claims_map`：Claims Map 3 路径。
-
-    返回：
-    - `None`：初始模型完成案件与内容绑定。
-
-    异常：
-    - 来源链模块加载或封印失败时由底层异常上抛。
-    """
-
-    # 加载正式来源链模块，执行唯一初始封印。
-    module_provenance: Any = load_model4_provenance_module()  # 初始模型封印模块
-
-    # 写入案件身份、正文、预览和 Claims Map 3 摘要。
-    module_provenance.seal_initial_model_artifact(
-        path_case_dir,
-        path_case_dir / "03_drafts" / "latest_disclosure_model.json",
-        path_draft,
-        path_case_dir / "03_drafts" / "pre_draft_preview.md",
-        path_claims_map,
-    )
-
-# 准备后链权威工件；首次运行负责生成并封印，reviewed 重入只复用既有工件。
-def prepare_post_preview_artifacts(
-    path_case_dir: Path,
-    path_reviewed_model: Path | None,
-) -> PostPreviewArtifacts:
-    """准备公共自检和交付阶段需要的权威工件。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-    - `path_reviewed_model`：可选 reviewed Model 4 路径。
-
-    返回：
-    - `PostPreviewArtifacts`：正文、附图清单与可选权威模型路径。
-
-    异常：
-    - 生成入口失败、工件缺失或来源链不匹配时抛出对应异常。
-    """
-
-    # reviewed 重入只验证并复用既有权威工件。
-    if path_reviewed_model is not None:
-
-        # 校验 reviewed 模型并定位其绑定正文。
-        tuple_reviewed_paths: tuple[Path, Path] = validate_reviewed_model_artifact(  # reviewed 路径集合
-            path_case_dir,  # 当前重入案件根
-            path_reviewed_model,  # 显式 reviewed 模型
-        )
-
-        # 分离权威模型路径，供公共自检显式传参。
-        path_authoritative_model: Path = tuple_reviewed_paths[0]  # reviewed 权威模型路径
-
-        # 分离既有正文路径，禁止生成器覆盖 reviewed 内容。
-        path_draft: Path = tuple_reviewed_paths[1]  # 公共自检使用的 reviewed 正文
-
-        # 定位 reviewed 模型绑定的配套附图与 claims 工件。
-        tuple_companion_paths: tuple[Path, Path] = locate_reviewed_companion_artifacts(  # 配套路径集合
-            path_case_dir  # 配套工件所属案件根
-        )
-
-        # 分离附图清单路径，供交付阶段定位附图根。
-        path_figures_manifest: Path = tuple_companion_paths[0]  # reviewed 交付附图索引
-
-        # 分离 Claims Map 3 路径，确认配套 claims 已落盘。
-        path_claims_map: Path = tuple_companion_paths[1]  # reviewed 权利要求映射依据
-
-    # 首次后链生成正式工件并封印初始模型。
-    else:
-
-        # 首次后链没有调用方外部权威模型。
-        path_authoritative_model = None  # 首次后链权威模型标记
-
-        # 按固定顺序生成正文、附图和 Claims Map 3。
-        tuple_initial_paths: tuple[Path, Path, Path] = generate_initial_post_preview_artifacts(  # 首次工件路径集合
-            path_case_dir  # 当前首次后链案件根
-        )
-
-        # 分离正文路径，供来源链封印和公共自检复用。
-        path_draft = tuple_initial_paths[0]  # 首次生成正文路径
-
-        # 提取首次附图清单，供正式交付定位已生成的图件。
-        path_figures_manifest = tuple_initial_paths[1]  # 首次生成附图清单路径
-
-        # 分离 Claims Map 3 路径，供初始 Model 4 封印。
-        path_claims_map = tuple_initial_paths[2]  # 首次生成 claims 路径
-
-        # 将首次生成内容一次性绑定到初始 Model 4。
-        seal_initial_post_preview_model(
-            path_case_dir,
-            path_draft,
-            path_claims_map,
-        )
-
-    # 返回后续公共自检和导出阶段唯一消费的工件集合。
-    return PostPreviewArtifacts(
-        path_draft=path_draft.resolve(),
-        path_figures_manifest=path_figures_manifest.resolve(),
-        path_authoritative_model=path_authoritative_model,
-    )
-
-# 始终调用公共 validate_disclosure 入口，不在 pipeline 内复制或放宽审查规则。
-def validate_post_preview_artifacts(
-    path_case_dir: Path,
-    post_preview_artifacts_obj_artifacts: PostPreviewArtifacts,
-) -> PostPreviewValidation:
-    """执行公共自检入口并解析稳定状态协议。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-    - `post_preview_artifacts_obj_artifacts`：准备阶段权威工件。
-
-    返回：
-    - `PostPreviewValidation`：公共入口退出码和报告状态。
-
-    异常：
-    - 公共入口返回协议外退出码或报告无效时抛出 `RuntimeError`。
-    """
-
-    # 准备公共自检入口的案件与正文参数。
-    list_review_args: list[str] = [  # 公共自检参数列表
-        "--case-dir",  # 案件根参数名
-        str(path_case_dir),  # 当前案件根路径
-        "--input",  # 正式正文参数名
-        str(post_preview_artifacts_obj_artifacts.path_draft),  # 权威正文路径
-    ]
-
-    # reviewed 重入必须把唯一权威模型显式传给公共入口。
-    if post_preview_artifacts_obj_artifacts.path_authoritative_model is not None:
-
-        # 追加权威模型参数，禁止公共入口回退 latest 模型。
-        list_review_args.extend(
-            [
-                "--model",
-                str(post_preview_artifacts_obj_artifacts.path_authoritative_model),
-            ]
-        )
-
-    # 执行真实公共自检入口并保留全部协议输出。
-    completed_process_review: subprocess.CompletedProcess[str] = run_child_entrypoint(  # 公共自检结果
-        PATH_VALIDATE_DISCLOSURE_SCRIPT,  # 公共验证入口路径
-        list_review_args,  # 当前案件验证参数
-    )
-
-    # 只接受公共入口声明的三类业务退出码。
-    if completed_process_review.returncode not in (0, 1, 2):
-
-        # 协议外退出码必须携带标准输出与错误摘要。
-        raise RuntimeError(
-            "> ERR: [Python] 自检入口执行异常。\n"
-            f"stdout:\n{completed_process_review.stdout}\n"
-            f"stderr:\n{completed_process_review.stderr}"
-        )
-
-    # 解析公共入口输出的唯一验证报告路径。
-    path_validation_report: Path = read_output_path(completed_process_review)  # 验证报告路径
-
-    # 读取结构化状态，禁止从诊断文本推断交付结论。
-    dict_validation_report: dict[str, Any] = json.loads(  # 验证报告对象
-        path_validation_report.read_text(encoding="utf-8")  # 公共报告 UTF-8 文本
-    )
-
-    # 返回供状态分流和交付阶段共同消费的公共验证结果。
-    return PostPreviewValidation(
-        int_return_code=completed_process_review.returncode,
-        str_status=str(dict_validation_report.get("status", "needs_revision")),
-    )
-
-# 只在公共自检允许交付后执行 DOCX 导出，并组装稳定交付载荷。
-def export_post_preview_delivery(
-    path_case_dir: Path,
-    str_equation_mode: str,
-    post_preview_artifacts_obj_artifacts: PostPreviewArtifacts,
-    post_preview_validation_obj_validation: PostPreviewValidation,
-) -> dict[str, Any]:
-    """导出正式交付件并返回机器可读载荷。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-    - `str_equation_mode`：Office 或原生 MathType 公式模式。
-    - `post_preview_artifacts_obj_artifacts`：准备阶段权威工件。
-    - `post_preview_validation_obj_validation`：公共自检结果。
-
-    返回：
-    - `dict[str, Any]`：完整正式交付载荷。
-
-    异常：
-    - DOCX 导出失败或机器输出无效时抛出 `RuntimeError`。
-    """
-
-    # 执行正式 DOCX 导出入口，消费已通过公共自检的正文。
-    completed_process_export: subprocess.CompletedProcess[str] = run_required_stage(  # DOCX 导出结果
-        PATH_EXPORT_DOCX_SCRIPT,  # 正式 DOCX 导出入口路径
-        [
-            "--case-dir",  # 导出案件根参数名
-            str(path_case_dir),  # 当前导出案件根
-            "--input",  # 导出正文参数名
-            str(post_preview_artifacts_obj_artifacts.path_draft),  # 已审正式正文
-            "--equation-mode",  # 公式对象模式参数名
-            str_equation_mode,  # 调用方确认的公式模式
-        ],
-    )
-
-    # 解析正式 DOCX 路径，供交付载荷稳定引用。
-    path_delivery_docx: Path = read_output_path(completed_process_export).resolve()  # DOCX 交付路径
-
-    # 返回正式主稿、附图和状态组成的机器可读交付载荷。
-    return {
-        "case_dir": str(path_case_dir.resolve()),
-        "delivery_docx": str(path_delivery_docx),
-        "delivery_markdown": str(post_preview_artifacts_obj_artifacts.path_draft),
-        "delivery_figures_dir": str(
-            post_preview_artifacts_obj_artifacts.path_figures_manifest.parent.resolve()
-        ),
-        "delivery_figure_files": collect_delivery_figure_files(path_case_dir),
-        "delivery_status": post_preview_validation_obj_validation.str_status,
-    }
-
-# 在预览已确认后按准备、自检、交付三段职责编排正式后链。
-def run_post_preview_chain(
-    path_case_dir: Path,
-    str_equation_mode: str,
-    path_reviewed_model: Path | None = None,
-) -> PostPreviewChainResult:
-    """执行预览确认后的正式后链。
-
-    参数：
-    - `path_case_dir`：当前案件根目录。
-    - `str_equation_mode`：Office 或原生 MathType 公式模式。
-    - `path_reviewed_model`：可选 reviewed Model 4 路径。
-
-    返回：
-    - `PostPreviewChainResult`：稳定退出码与机器可读载荷。
-
-    异常：
-    - 准备、自检或导出阶段异常时由对应入口上抛。
-    """
-
-    # 准备后链唯一消费的权威工件集合。
-    post_preview_artifacts_obj_artifacts: PostPreviewArtifacts = prepare_post_preview_artifacts(  # 权威工件集合
-        path_case_dir,  # 工件准备所属案件
-        path_reviewed_model,  # 工件准备的可选权威模型
-    )
-
-    # 通过公共 validate_disclosure 入口取得唯一审查结论。
-    post_preview_validation_obj_validation: PostPreviewValidation = validate_post_preview_artifacts(  # 公共审查结论
-        path_case_dir,  # 公共自检所属案件
-        post_preview_artifacts_obj_artifacts,  # 准备阶段权威工件
-    )
-
-    # 初始化阻断或待修订分支使用的最小载荷。
-    dict_payload: dict[str, Any] = {  # 后链机器载荷
-        "case_dir": str(path_case_dir.resolve())  # 当前案件绝对路径
-    }
-
-    # 退出码一仅在非视觉待验状态下表示真实 blocker。
-    if (
-        post_preview_validation_obj_validation.int_return_code == 1
-        and post_preview_validation_obj_validation.str_status
-        != "visual_review_required"
-    ):
-
-        # 明确记录当前案件被公共自检阻断。
-        dict_payload["delivery_status"] = "blocked"  # 公共自检阻断状态
-
-        # 返回 blocker 对应退出码，不执行正式导出。
-        return PostPreviewChainResult(
-            int_return_code=1,
-            dict_payload=dict_payload,
-        )
-
-    # 退出码二表示正文或模型需要修订。
-    if post_preview_validation_obj_validation.int_return_code == 2:
-
-        # 明确记录当前案件仍需修订。
-        dict_payload["delivery_status"] = "needs_revision"  # 公共自检待修订状态
-
-        # 返回待修订退出码，不执行正式导出。
-        return PostPreviewChainResult(
-            int_return_code=2,
-            dict_payload=dict_payload,
-        )
-
-    # 公共自检允许交付后执行唯一正式导出入口。
-    dict_payload = export_post_preview_delivery(  # 完整正式交付载荷
-        path_case_dir,  # 正式导出所属案件
-        str_equation_mode,  # 正式导出公式模式
-        post_preview_artifacts_obj_artifacts,  # 已通过准备门的工件
-        post_preview_validation_obj_validation,  # 公共自检允许交付的结论
-    )
-
-    # 返回成功退出码和完整正式交付载荷。
-    return PostPreviewChainResult(
-        int_return_code=0,
-        dict_payload=dict_payload,
-    )
-
-# 把机器可读 JSON 载荷写到标准输出，供测试与自动化调用方稳定解析。
 def write_json_stdout(dict_payload: dict[str, Any]) -> None:
     """把机器可读 JSON 载荷写到标准输出。
 
