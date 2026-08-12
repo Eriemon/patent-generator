@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResearchSummary",
+  "type": "object",
+  "required": [
+    "case_name",
+    "research_root",
+    "sources",
+    "candidate_invention_points",
+    "missing_information"
+  ],
+  "properties": {
+    "case_name": {
+      "type": "string"
+    },
+    "research_root": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "summary"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "evidence_snippets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "candidate_invention_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "problem",
+          "solution",
+          "effects",
+          "source_paths"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "solution": {
+            "type": "string"
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        }
+      }
+    },
+    "prior_art_notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "technical_terms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

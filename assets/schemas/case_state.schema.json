@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "case_name",
+    "research_root",
+    "stage",
+    "artifacts"
+  ],
+  "properties": {
+    "case_name": {
+      "type": "string"
+    },
+    "research_root": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "object"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "title": "Readable Patent Generator Evaluation Corpus",
+  "design_patterns": [
+    "Tool Wrapper",
+    "Generator",
+    "Reviewer",
+    "Pipeline"
+  ],
+  "cases": [
+    {
+      "id": "preview-pending-gate",
+      "title": "Preview gate blocks downstream drafting before confirmation",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline assistant is not guaranteed to preserve the local preview-first hard gate before generating downstream patent artifacts.",
+      "required_files": [
+        "scripts/python/pipeline/run_pipeline.py",
+        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/pipeline/run_pipeline.py",
+          "terms": [
+            "\"validation_status\": \"preview_pending\"",
+            "preview_status.json",
+            "--confirmed-preview"
+          ]
+        },
+        {
+          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
+          "terms": [
+            "test_run_pipeline_stops_at_preview_without_confirmation",
+            "\"preview_pending\""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "post-preview-full-chain",
+      "title": "Confirmed preview unlocks draft, figures, claims, review, and export outputs",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Without the governed skill, there is no repo-local guarantee that the confirmed preview path emits the full downstream artifact bundle.",
+      "required_files": [
+        "scripts/python/pipeline/run_pipeline.py",
+        "scripts/python/draft/generate_disclosure_draft.py",
+        "scripts/python/figures/generate_figures.py",
+        "scripts/python/claims/generate_claims.py",
+        "scripts/python/review/validate_disclosure.py",
+        "scripts/python/export/export_docx.py",
+        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/pipeline/run_pipeline.py",
+          "terms": [
+            "\"draft\"",
+            "\"figures_manifest\"",
+            "\"claims\"",
+            "\"review_json\"",
+            "\"export_docx\""
+          ]
+        },
+        {
+          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
+          "terms": [
+            "test_run_pipeline_generates_post_preview_artifacts_after_confirmation",
+            "\"completed\""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "single-requirements-entry",
+      "title": "Dependency surface stays merged into one governed requirements entry",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline path does not inherit this repo's single requirements contract or the dependency-check entrypoint.",
+      "required_files": [
+        "requirements.txt",
+        "scripts/python/support/check_dependencies.py",
+        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/support/check_dependencies.py",
+          "terms": [
+            "SINGLE_REQUIREMENTS_PATH = \"requirements.txt\"",
+            "\"requirements\": SINGLE_REQUIREMENTS_PATH",
+            "pip install -r requirements.txt"
+          ]
+        },
+        {
+          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
+          "terms": [
+            "test_dependency_check_uses_single_requirements_entry",
+            "{\"requirements.txt\"}"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local-cnipa-search-smoke",
+      "title": "CNIPA search workflow stays local and supports offline fixture parsing",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "Without the skill, there is no repo-local contract for local-only CNIPA wrappers and offline HTML fixture smoke coverage.",
+      "required_files": [
+        "scripts/python/search/cnipa_epub_search.py",
+        "scripts/python/search/cnipa_epub_parse.py",
+        "scripts/python/search/cnipa_epub_crawler.py",
+        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+      ],
+      "required_terms": [
+        {
+          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
+          "terms": [
+            "test_cnipa_local_html_workflow_smoke",
+            "\"CN110000001A\""
+          ]
+        }
+      ]
+    }
+  ]
+}

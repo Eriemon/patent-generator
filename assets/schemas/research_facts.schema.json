@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "case_name",
+    "sources",
+    "candidate_invention_points",
+    "missing_information"
+  ],
+  "properties": {
+    "case_name": {
+      "type": "string"
+    },
+    "research_root": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "technical_problem_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          },
+          "technical_solution_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          },
+          "technical_effect_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          },
+          "prior_art_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          }
+        }
+      }
+    },
+    "candidate_invention_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "problem",
+          "solution",
+          "effects",
+          "source_paths"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "solution": {
+            "type": "string"
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "source_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "technical_terms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "technical_problem_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          },
+          "technical_solution_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          },
+          "technical_effect_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          },
+          "prior_art_evidence": {
+            "$ref": "#/$defs/evidenceArray"
+          }
+        }
+      }
+    },
+    "prior_art_notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "technical_terms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "evidenceArray": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "text",
+          "path",
+          "section",
+          "kind"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

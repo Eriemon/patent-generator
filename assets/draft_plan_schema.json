@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PatentDraftPlan",
+  "type": "object",
+  "required": [
+    "invention_title",
+    "technical_field",
+    "technical_problem",
+    "core_solution",
+    "technical_effects",
+    "draft_sections"
+  ],
+  "properties": {
+    "invention_title": {
+      "type": "string"
+    },
+    "invention_type": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "technical_field": {
+      "type": "string"
+    },
+    "technical_problem": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "core_solution": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "technical_effects": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "closest_prior_art": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "draft_sections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "claim_bias": {
+      "type": "string"
+    },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
