@@ -39,6 +39,12 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 # 固定模板槽位渲染器路径，避免脚本直执行与测试按路径导入时依赖 sys.path 副作用。
 PATH_TEMPLATE_RENDERER = Path(__file__).resolve().with_name("template_docx_renderer.py")  # 模板槽位渲染器路径
 
+# 固定独立模板验证器路径，最终交付校验不复用生成端判断。
+PATH_TEMPLATE_VALIDATOR = Path(__file__).resolve().with_name("template_docx_validator.py")  # 模板样式验证器路径
+
+# 固定中文 DOCX 样式合同路径，验证器读取与渲染器相同的受管 JSON。
+PATH_DOCX_STYLE_CONTRACT = Path(__file__).resolve().parents[3] / "assets" / "docx_style_contract.json"  # 中文排版合同路径
+
 # 固定 Office 数学转换模块路径，避免脚本直执行时依赖包导入搜索路径。
 PATH_OFFICE_MATH = Path(__file__).resolve().with_name("office_math.py")  # Office 原生公式模块路径
 
@@ -311,6 +317,41 @@ def load_template_renderer_module() -> Any:
 
     # 返回完成初始化的渲染器模块供导出协调层调用。
     return obj_renderer_module
+
+# 按文件路径加载独立模板验证器，避免最终排版门禁依赖模块搜索路径。
+def load_template_validator_module() -> Any:
+    """加载最终 DOCX 独立验证器模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行的独立模板验证器模块对象。
+
+    异常：
+    - 验证器文件缺失或无法加载时抛出 `RuntimeError`。
+    """
+
+    # 从受管导出目录创建验证器加载规格，禁止从安装环境命中旧副本。
+    obj_validator_spec = importlib.util.spec_from_file_location(  # 独立验证器加载规格
+        "readable_patent_template_validator",  # 验证器内部模块名
+        PATH_TEMPLATE_VALIDATOR,  # 独立验证器源码路径
+    )
+
+    # 加载器缺失时不能执行最终排版门禁。
+    if obj_validator_spec is None or obj_validator_spec.loader is None:
+
+        # 使用稳定错误阻断未验证的 DOCX 交付。
+        raise RuntimeError("> ERR: [Python] 无法加载独立模板验证器。")
+
+    # 根据已验证规格创建隔离模块对象。
+    obj_validator_module = importlib.util.module_from_spec(obj_validator_spec)  # 待执行的模板验证器模块
+
+    # 执行正式验证器源码以暴露最终 DOCX finding 入口。
+    obj_validator_spec.loader.exec_module(obj_validator_module)
+
+    # 返回独立验证器供严格输出校验调用。
+    return obj_validator_module
 
 # 按文件路径加载 Office 原生公式模块，禁止导出链回退到公式图片。
 def load_office_math_module() -> Any:
@@ -1850,6 +1891,21 @@ def validate_template_docx_output(
     # 收集当前 DOCX 的结构与正文质量问题。
     list_findings = collect_template_docx_findings(path_docx, int_expected_media_count)  # 阻断导出的模板问题列表
 
+    # 加载独立验证器，从最终落盘 OOXML 检查中文排版角色和槽位边界。
+    obj_template_validator = load_template_validator_module()  # 最终 DOCX 样式验证器模块
+
+    # 收集结构验证器之外的字体、行距、缩进、对齐和空段问题。
+    list_style_findings = obj_template_validator.collect_docx_style_findings(  # 最终 DOCX 样式问题
+        path_docx,  # 已保存的严格模板交付件
+        PATH_DOCX_STYLE_CONTRACT,  # 正式中文排版合同
+    )
+
+    # 把结构化样式 finding 转成既有错误列表使用的可读文本。
+    list_findings.extend(
+        f"{dict_finding['code']}: {dict_finding['message']} (paragraph={dict_finding['paragraph']})"  # 当前样式偏差文本
+        for dict_finding in list_style_findings  # 独立验证器 finding 来源
+    )
+
     # 没有发现问题时直接返回，表示最终 DOCX 可以作为主交付件。
     if not list_findings:
 
@@ -2651,4 +2707,3 @@ if __name__ == "__main__":
 
     # 把主流程退出码交还给当前 shell 调用方。
     raise SystemExit(main())
-

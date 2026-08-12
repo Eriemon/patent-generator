@@ -47,6 +47,11 @@ Default workflow:
 2. Read only the local source material needed for the current patent task.
 3. Extract invention points, draft the required patent sections, and record
    reviewable intermediate artifacts under governed directories.
+   Background technology must explain the prior mechanism, inputs/outputs,
+   constraints, and technical gap from verified prior-art records. Cite every
+   sourced background statement with stable numeric references and include the
+   corresponding bibliographic entries; unverifiable non-patent background
+   text must block formal drafting.
 4. When display formulas enter the formal draft, provide confirmed semantics
    in `<research-root>/formula_facts.json`, including purpose, sources,
    references, inputs/outputs, constraints, and every symbol's meaning, unit,
@@ -62,7 +67,13 @@ Default workflow:
 6. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
    case as complete unless the final DOCX preserves the template information
    table, required section headings, non-empty technical sections, and no
-   internal review placeholders.
+   internal review placeholders. Apply the governed Chinese layout contract:
+   body text uses 宋体 14 pt, 1.5 line spacing, and a two-character first-line
+   indent; numbered steps and reference entries use a two-character hanging
+   indent; display formulas and figures are centered; each populated template
+   slot ends with exactly one blank paragraph and each empty slot with none.
+   Validate these properties independently from the final saved DOCX before
+   delivery.
 7. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
 

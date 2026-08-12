@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "roles": {
+    "body": {
+      "font_family": "宋体",
+      "font_size_pt": 14,
+      "line_spacing": 1.5,
+      "first_line_indent_chars": 2,
+      "left_indent_chars": 0,
+      "alignment": "left",
+      "bold": false
+    },
+    "numbered_step": {
+      "font_family": "宋体",
+      "font_size_pt": 14,
+      "line_spacing": 1.5,
+      "first_line_indent_chars": -2,
+      "left_indent_chars": 2,
+      "hanging_indent_chars": 2,
+      "alignment": "left",
+      "bold": false
+    },
+    "reference_heading": {
+      "font_family": "宋体",
+      "font_size_pt": 14,
+      "line_spacing": 1.5,
+      "first_line_indent_chars": 0,
+      "left_indent_chars": 0,
+      "alignment": "left",
+      "bold": true
+    },
+    "reference_entry": {
+      "font_family": "宋体",
+      "font_size_pt": 14,
+      "line_spacing": 1.5,
+      "first_line_indent_chars": -2,
+      "left_indent_chars": 2,
+      "hanging_indent_chars": 2,
+      "alignment": "left",
+      "bold": false
+    },
+    "display_formula": {
+      "first_line_indent_chars": 0,
+      "left_indent_chars": 0,
+      "alignment": "center"
+    },
+    "figure": {
+      "first_line_indent_chars": 0,
+      "left_indent_chars": 0,
+      "alignment": "center"
+    },
+    "section_blank": {
+      "first_line_indent_chars": 0,
+      "left_indent_chars": 0,
+      "alignment": "left"
+    }
+  },
+  "slot_spacing": {
+    "populated_trailing_blank_paragraphs": 1,
+    "empty_trailing_blank_paragraphs": 0
+  },
+  "slot_headings": [
+    "一、发明名称",
+    "二、所属技术领域",
+    "三、现有技术（背景技术）",
+    "3.1相关技术背景以及最接近的现有技术",
+    "3.2与本发明最相似的现有技术实现方案",
+    "3.3现有技术的缺点",
+    "四、发明内容：",
+    "4.1 发明目的",
+    "4.2 技术解决方案",
+    "4.2.1 装置、结构类",
+    "4.2.2 方法类",
+    "4.3、技术效果",
+    "五、附图及附图的简单说明",
+    "六、具体实施方式"
+  ]
+}

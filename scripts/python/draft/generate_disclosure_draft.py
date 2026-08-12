@@ -1324,16 +1324,18 @@ def build_cover_section(
 
 # 构建现有技术章节，包括背景、最接近现有技术和缺点条目。
 def build_prior_art_section(
-    str_terms: str,
-    str_prior_summary: str,
+    list_background_lines: list[str],
+    list_prior_summaries: list[str],
     list_problem_lines: list[str],
+    list_reference_entries: list[str],
 ) -> list[str]:
     """构建现有技术章节。
 
     参数：
-    - `str_terms`：背景技术小节使用的术语串接文本。
-    - `str_prior_summary`：最接近现有技术主摘要文本。
+    - `list_background_lines`：带来源编号的技术机制与应用约束段落。
+    - `list_prior_summaries`：最接近现有技术摘要列表。
     - `list_problem_lines`：现有技术缺点条目列表。
+    - `list_reference_entries`：与正文编号对应的参考文献条目列表。
 
     返回：
     - `list[str]`：现有技术章节的 Markdown 行列表。
@@ -1352,16 +1354,38 @@ def build_prior_art_section(
             "",
             "### 3.1相关技术背景以及最接近的现有技术",
             "",
-            f"围绕 {str_terms} 的工程场景，现有方案往往依赖固定规则或单指标决策，难以同时兼顾状态变化、异常反馈和处理效率。",
-            "",
-            "### 3.2与本发明最相似的现有技术实现方案",
-            "",
-            str_prior_summary,
-            "",
-            "### 3.3现有技术的缺点",
-            "",
         ]
     )
+
+    # 逐条写入来源支持的技术机制和应用约束，避免用术语串替代技术背景。
+    for str_background_line in list_background_lines:
+
+        # 当前段落后保留一个 Markdown 空行，使不同来源的背景陈述边界清晰。
+        list_section_lines.extend([str_background_line, ""])
+
+    # 缺少核验来源时保留明确待补状态，正式交付仍由 blocker 门禁阻止。
+    if not list_background_lines:
+
+        # 写入不含推测事实的缺源说明，避免生成器伪造技术背景。
+        list_section_lines.extend(["尚未提供可核验来源，无法形成正式技术背景说明。", ""])
+
+    # 进入最接近现有技术小节，后续按同一来源顺序写入摘要。
+    list_section_lines.extend(["### 3.2与本发明最相似的现有技术实现方案", ""])
+
+    # 逐条写入带稳定引用编号的最接近现有技术摘要。
+    for str_prior_summary in list_prior_summaries:
+
+        # 每条现有技术摘要独立成段，便于读者按编号回查来源。
+        list_section_lines.extend([str_prior_summary, ""])
+
+    # 缺少现有技术摘要时不生成通用方案句，只标明待核验状态。
+    if not list_prior_summaries:
+
+        # 受控缺源文本与正式 blocker 保持一致，不冒充可提交的现有技术分析。
+        list_section_lines.extend(["正式提交前需补齐已核验的最接近现有技术。", ""])
+
+    # 写入现有技术缺点标题，继续组织由案件事实提供的因果问题条目。
+    list_section_lines.extend(["### 3.3现有技术的缺点", ""])
 
     # 逐条写入现有技术缺点条目，保持 3.3 小节的编号结构稳定。
     for int_index, str_problem_line in enumerate(list_problem_lines, start=1):
@@ -1369,8 +1393,14 @@ def build_prior_art_section(
         # 追加当前缺点编号行，保持问题条目与人工审阅顺序一致。
         list_section_lines.append(f"{int_index}. {str_problem_line.rstrip('。；;')}。")
 
-    # 在现有技术缺点小节结束后补一个空行，便于进入发明内容总章。
-    list_section_lines.append("")
+    # 在问题条目后建立参考文献标题，使正文引用形成可回查闭环。
+    list_section_lines.extend(["", "参考文献", ""])
+
+    # 逐条写入与 3.1、3.2 共用编号顺序的参考文献条目。
+    for str_reference_entry in list_reference_entries:
+
+        # 每条著录项单独成段，便于 DOCX 导出器应用悬挂缩进。
+        list_section_lines.extend([str_reference_entry, ""])
 
     # 返回现有技术章节行列表，供正文渲染阶段统一拼接。
     return list_section_lines
@@ -1576,8 +1606,11 @@ def render_markdown(
     # 读取最接近现有技术摘要列表，供背景技术与现有技术小节复用。
     list_prior_summaries = dict_render_payload["list_prior_summaries"]  # 最接近现有技术摘要列表
 
-    # 读取技术术语列表，供背景技术小节复用。
-    list_terms = dict_render_payload["list_terms"]  # 聚合后的技术术语列表
+    # 读取来源支持的背景说明段落，供 3.1 小节直接复用。
+    list_background_lines = dict_render_payload["list_background_lines"]  # 技术机制与应用约束段落
+
+    # 读取参考文献列表，使正文引用与文末著录项共享同一编号顺序。
+    list_reference_entries = dict_render_payload["list_reference_entries"]  # 参考文献条目列表
 
     # 从渲染载荷读取步骤主链，供 4.2.2 小节展开输入处理输出关系。
     list_steps = dict_render_payload["list_steps"]  # 方法章节步骤主链
@@ -1587,21 +1620,6 @@ def render_markdown(
 
     # 提取技术效果条目列表，供技术效果小节生成编号说明。
     list_effects = dict_render_payload["list_effects"]  # 4.3 小节的效果原始条目列表
-
-    # 在存在最接近现有技术摘要时优先使用首条摘要，否则回退到受控默认说明。
-    if list_prior_summaries:
-
-        # 取首条已核验摘要作为 3.2 小节的主描述文本。
-        str_prior_summary = list_prior_summaries[0]  # 最接近现有技术主摘要文本
-
-    # 在缺少现有技术摘要时切换到受控兜底说明。
-    else:
-
-        # 在缺少已核验摘要时回退到受控说明，避免 3.2 小节完全空白。
-        str_prior_summary = "当前工作区仅形成查新规划，正式提交前仍需补齐已核验的最接近现有技术。"  # 缺少现有技术时的兜底说明
-
-    # 串接前几项技术术语，供背景技术小节形成更贴近主案的领域描述。
-    str_terms = "、".join(list_terms[:8]) or "状态参数、处理规则和输出结果"  # 背景技术小节使用的术语串接文本
 
     # 生成 4.2.2 小节的步骤说明行列表，供正文渲染阶段直接插入。
     list_step_lines = build_step_markdown_lines(list_steps)  # 4.2.2 小节步骤说明行列表
@@ -1629,9 +1647,10 @@ def render_markdown(
     # 再拼接现有技术章节，建立背景、最接近现有技术与问题条目。
     list_markdown_lines.extend(
         build_prior_art_section(
-            str_terms,
-            str_prior_summary,
+            list_background_lines,
+            list_prior_summaries,
             dict_render_payload["list_problem_lines"],
+            list_reference_entries,
         )
     )
 
@@ -1653,6 +1672,78 @@ def render_markdown(
     return "\n".join(list_markdown_lines)
 
 # 把已核验查新记录规整成正文可直接使用的现有技术摘要句列表。
+def build_background_lines(
+    list_prior_records: list[dict[str, Any]],
+    module_runtime_support: Any,
+) -> list[str]:
+    """构建来源支持的技术背景段落。
+
+    参数：
+    - `list_prior_records`：已核验查新记录列表。
+    - `module_runtime_support`：共享文本清洗与引用支持模块对象。
+
+    返回：
+    - `list[str]`：说明技术对象、机制和应用约束的背景段落列表。
+
+    异常：
+    - 无。
+    """
+
+    # 准备背景段落结果，按查新记录顺序保持引用编号稳定。
+    list_background_lines: list[str] = []  # 3.1 小节背景技术段落
+
+    # 逐条提取已公开技术机制和应用限制，禁止从术语列表推测背景事实。
+    for int_citation_index, dict_record in enumerate(list_prior_records, start=1):
+
+        # 准备当前来源的机制文本列表，只收录清洗后的非空特征。
+        list_mechanism_parts: list[str] = []  # 当前来源公开的技术机制片段
+
+        # 逐项清洗相同特征，防止空白值进入背景段落。
+        for obj_feature in dict_record.get("same_features", []):
+
+            # 将当前相同特征规整为可直接写入正文的单行文本。
+            str_same_feature = module_runtime_support.clean_text(obj_feature)  # 当前机制特征文本
+
+            # 只有可读的机制特征才进入最终串接结果。
+            if str_same_feature:
+
+                # 收录当前机制片段，保持原始查新记录中的排列顺序。
+                list_mechanism_parts.append(str_same_feature)
+
+        # 串接当前来源公开的相同特征，作为技术运行机制描述。
+        str_mechanism = "、".join(list_mechanism_parts)  # 当前来源支持的技术机制
+
+        # 准备当前来源的约束文本列表，只收录清洗后的非空差异。
+        list_constraint_parts: list[str] = []  # 当前来源揭示的应用限制片段
+
+        # 逐项清洗区别特征，保留其与原始记录一致的排列顺序。
+        for obj_feature in dict_record.get("different_features", []):
+
+            # 将当前区别特征规整为可直接写入背景段落的单行文本。
+            str_different_feature = module_runtime_support.clean_text(obj_feature)  # 当前约束特征文本
+
+            # 只有可读的约束特征才参与现有方案边界说明。
+            if str_different_feature:
+
+                # 收录当前约束片段，避免空内容破坏中文标点结构。
+                list_constraint_parts.append(str_different_feature)
+
+        # 串接当前来源的区别特征，作为现有方案的应用约束说明。
+        str_constraint = "、".join(list_constraint_parts)  # 当前来源揭示的应用限制
+
+        # 读取来源标识，帮助读者理解当前背景事实对应的技术对象。
+        str_title = module_runtime_support.clean_text(dict_record.get("publication_no_or_title"))  # 当前来源标识
+
+        # 形成包含技术对象、运行机制、约束和引用编号的完整背景段落。
+        list_background_lines.append(
+            f"{str_title} 所代表的现有方案以 {str_mechanism} 为主要技术机制；"
+            f"其应用约束在于 {str_constraint}。[{int_citation_index}]"
+        )
+
+    # 返回按来源顺序组织的背景段落，供 3.1 小节直接渲染。
+    return list_background_lines
+
+# 生成最接近现有技术摘要，维持其与背景段落相同的来源编号。
 def build_prior_summaries(
     list_prior_records: list[dict[str, Any]],
     module_runtime_support: Any,
@@ -1674,13 +1765,39 @@ def build_prior_summaries(
     list_prior_summaries: list[str] = []  # 最接近现有技术摘要结果列表
 
     # 逐项把查新记录规整成正文可直接使用的背景技术摘要句。
-    for dict_record in list_prior_records:
+    for int_citation_index, dict_record in enumerate(list_prior_records, start=1):
 
         # 把当前查新记录压缩成单句摘要，便于 3.2 小节直接复用。
-        list_prior_summaries.append(module_runtime_support.summarize_prior_art(dict_record))
+        list_prior_summaries.append(
+            module_runtime_support.summarize_prior_art(dict_record, int_citation_index)
+        )
 
     # 返回现有技术摘要列表，供正文与证据映射阶段共同复用。
     return list_prior_summaries
+
+# 根据已核验查新记录生成与正文引用顺序一致的参考文献列表。
+def build_prior_references(
+    list_prior_records: list[dict[str, Any]],
+    module_runtime_support: Any,
+) -> list[str]:
+    """构建先技术参考文献列表。
+
+    参数：
+    - `list_prior_records`：已核验查新记录列表。
+    - `module_runtime_support`：共享引用格式支持模块对象。
+
+    返回：
+    - `list[str]`：带稳定方括号序号的参考文献条目列表。
+
+    异常：
+    - 非专利记录绕过筛选且缺少著录文本时由支持模块抛出异常。
+    """
+
+    # 按正文使用顺序格式化参考文献，确保每个序号只对应一个来源。
+    return [
+        module_runtime_support.format_prior_art_reference(dict_record, int_citation_index)
+        for int_citation_index, dict_record in enumerate(list_prior_records, start=1)
+    ]
 
 # 统一写入正文、内部审查和合同工件，缩小命令行入口职责。
 def write_generated_documents(
@@ -1954,6 +2071,12 @@ def main() -> int:
     # 把查新记录规整成正文可直接使用的最接近现有技术摘要列表。
     list_prior_summaries = build_prior_summaries(list_prior_records, module_runtime_support)  # 3.2 小节现有技术摘要列表
 
+    # 从核验记录提取技术对象、机制和约束，供 3.1 小节形成可追溯背景。
+    list_background_lines = build_background_lines(list_prior_records, module_runtime_support)  # 3.1 小节背景段落列表
+
+    # 生成与正文引用编号对应的参考文献条目，供背景章节末尾统一列示。
+    list_reference_entries = build_prior_references(list_prior_records, module_runtime_support)  # 背景章节参考文献列表
+
     # 复制待确认事项列表，避免正文渲染阶段直接共享上游可变对象。
     list_missing_information = list(dict_selected_bundle.get("missing_information", []))  # 待人工补齐的事项列表
 
@@ -1979,7 +2102,9 @@ def main() -> int:
     dict_render_payload.update(
         {
             "list_terms": list_terms,  # 背景与术语说明词表
+            "list_background_lines": list_background_lines,  # 3.1 小节来源支持的背景段落
             "list_prior_summaries": list_prior_summaries,  # 3.2 小节现有技术摘要
+            "list_reference_entries": list_reference_entries,  # 背景章节参考文献条目
             "list_missing_information": list_missing_information,  # 内部审查待确认事项列表
         }
     )

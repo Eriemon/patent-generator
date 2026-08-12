@@ -5,7 +5,9 @@ from __future__ import annotations
 
 # 标准库负责复制 XML 属性、路径表达和回调类型约束。
 from copy import deepcopy
+import json
 from pathlib import Path
+import re
 from typing import Any, Callable
 
 # 图片引用关系属性由 OOXML 标准命名空间和本地名共同组成。
@@ -13,6 +15,161 @@ RELATIONSHIP_EMBED_ATTRIBUTE = "{" + "http://schemas.openxmlformats.org/officeDo
 
 # 关系类型只比较协议末段，兼容标准前缀的不同序列化形式。
 IMAGE_RELATIONSHIP_SUFFIX = "/" + "image"  # 图片关系类型末段
+
+# 正式样式合同与 retained template 同属 skill 资产，渲染时禁止依赖调用目录。
+PATH_DOCX_STYLE_CONTRACT = Path(__file__).resolve().parents[3] / "assets" / "docx_style_contract.json"  # DOCX 样式合同路径
+
+# 编号步骤同时接受普通序号和专利方法步骤编号，其他正文保持两字首行缩进。
+PATTERN_NUMBERED_STEP = re.compile(r"^(?:\d+[.、]|S\d+[，,:：.、])")  # 编号步骤识别表达式
+
+# 参考文献条目必须以方括号编号开头，避免把正文中的尾部引用误判为著录项。
+PATTERN_REFERENCE_ENTRY = re.compile(r"^\[\d+\]\s*")  # 参考文献条目识别表达式
+
+# 把合同对齐名称映射到 python-docx 枚举，拒绝依赖 Word 默认对齐方式。
+DICT_ALIGNMENT_NAMES = {
+    "left": 0,  # 左对齐枚举值
+    "center": 1,  # 居中枚举值
+}  # 合同对齐名称映射
+
+# 读取一次正式样式合同，并在渲染上下文中复用稳定字典。
+def load_docx_style_contract(path_contract: Path = PATH_DOCX_STYLE_CONTRACT) -> dict[str, Any]:
+    """读取中文专利交底书 DOCX 样式合同。
+
+    参数：
+    - `path_contract`：正式 JSON 样式合同路径。
+
+    返回：
+    - `dict[str, Any]`：角色样式、槽位间距和标题顺序合同。
+
+    异常：
+    - 合同缺失、JSON 无效或角色结构不完整时继续抛出底层异常。
+    """
+
+    # 使用 UTF-8 读取中文字体和标题，不接受平台默认编码。
+    dict_contract = json.loads(path_contract.read_text(encoding="utf-8"))  # DOCX 样式合同
+
+    # 渲染器至少需要角色和槽位间距两组合同。
+    if not isinstance(dict_contract.get("roles"), dict) or not isinstance(dict_contract.get("slot_spacing"), dict):
+
+        # 合同结构不完整时立即停止，禁止回退到不可审计的 Word 默认样式。
+        raise ValueError("> ERR: [Python] DOCX 样式合同缺少 roles 或 slot_spacing")
+
+    # 返回已验证的合同供全部槽位共享。
+    return dict_contract
+
+# 根据内容和块类型选择唯一段落角色。
+def classify_paragraph_role(str_text: str, str_block_kind: str) -> str:
+    """返回生成段落对应的样式角色。
+
+    参数：
+    - `str_text`：段落可见文本。
+    - `str_block_kind`：结构化正文块类型。
+
+    返回：
+    - `str`：样式合同中的角色名称。
+    """
+
+    # 行间公式由结构化块类型确定，不依赖公式文本外观。
+    if str_block_kind == "formula":
+
+        # 返回公式例外角色，确保无正文缩进且独立居中。
+        return "display_formula"
+
+    # 参考文献标题采用独立强调角色。
+    if str_text.strip() == "参考文献":
+
+        # 标题不使用正文首行缩进。
+        return "reference_heading"
+
+    # 方括号编号开头的段落按参考文献条目处理。
+    if PATTERN_REFERENCE_ENTRY.match(str_text.strip()):
+
+        # 著录项使用两字符悬挂缩进。
+        return "reference_entry"
+
+    # 普通序号和方法步骤号均按编号步骤处理。
+    if PATTERN_NUMBERED_STEP.match(str_text.strip()):
+
+        # 编号段落使用两字符悬挂缩进。
+        return "numbered_step"
+
+    # 其余结构化 paragraph 均为普通中文正文。
+    return "body"
+
+# 把合同角色显式写入段落和可见文字片段。
+def apply_paragraph_role_style(obj_paragraph: Any, str_role: str, dict_contract: dict[str, Any]) -> None:
+    """把指定样式角色应用到一个生成段落。
+
+    参数：
+    - `obj_paragraph`：待格式化的 python-docx 段落对象。
+    - `str_role`：合同中的角色名称。
+    - `dict_contract`：已加载的正式样式合同。
+
+    返回：
+    - `None`：段落和可见文字片段已原位更新。
+
+    异常：
+    - 角色缺失时由字典访问异常阻止不完整输出。
+    """
+
+    # 延迟导入点数和东亚字体 helper，保持模块发现阶段轻量。
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    # 提取当前角色的全部显式样式 token。
+    dict_role = dict_contract["roles"][str_role]  # 当前段落角色合同
+
+    # 字号既控制文字大小，也定义中文字符缩进的物理点数。
+    float_font_size = float(dict_role.get("font_size_pt", 14))  # 当前角色字号点数
+
+    # 合同对齐方式显式覆盖模板示例段落遗留值。
+    obj_paragraph.alignment = DICT_ALIGNMENT_NAMES[str(dict_role.get("alignment", "left"))]  # 段落水平对齐方式
+
+    # 首行缩进按当前字号换算字符数，负数表示悬挂缩进。
+    obj_paragraph.paragraph_format.first_line_indent = Pt(  # 合同换算后的首行缩进
+        float(dict_role.get("first_line_indent_chars", 0)) * float_font_size  # 字符数与字号乘积
+    )  # 段落首行缩进点数
+
+    # 左缩进与悬挂缩进共同形成编号和参考文献的对齐边界。
+    obj_paragraph.paragraph_format.left_indent = Pt(  # 合同换算后的左缩进
+        float(dict_role.get("left_indent_chars", 0)) * float_font_size  # 左缩进字符数与字号乘积
+    )  # 段落左缩进点数
+
+    # 仅文字角色声明倍数行距，公式和附图保留其独立布局高度。
+    if "line_spacing" in dict_role:
+
+        # python-docx 使用浮点数表示倍数行距。
+        obj_paragraph.paragraph_format.line_spacing = float(dict_role["line_spacing"])  # 段落倍数行距
+
+    # 公式、附图和空段没有需要设置字体的可见文字片段。
+    if "font_family" not in dict_role:
+
+        # 当前角色的段落级样式已经完整应用。
+        return
+
+    # 为每个可见文字片段显式写入西文和东亚字体，避免主题字体替换中文宋体。
+    for obj_run in obj_paragraph.runs:
+
+        # 空 run 可能只承载书签或数学节点，不写入无关字体属性。
+        if not obj_run.text:
+
+            # 跳过没有可见文字的结构 run。
+            continue
+
+        # 同步设置通用字体名称。
+        obj_run.font.name = str(dict_role["font_family"])  # 当前文字片段字体名称
+
+        # 显式设置 East Asia 字体，保证中文显示为宋体。
+        obj_run._element.get_or_add_rPr().get_or_add_rFonts().set(
+            qn("w:eastAsia"),
+            str(dict_role["font_family"]),
+        )
+
+        # 写入小四字号或当前角色声明的字号。
+        obj_run.font.size = Pt(float_font_size)  # 当前文字片段字号
+
+        # 标题角色加粗，普通正文和条目显式保持非粗体。
+        obj_run.bold = bool(dict_role.get("bold", False))  # 当前文字片段粗体状态
 
 # 规整标题中的空白差异，使模板节点匹配不受软换行影响。
 def normalize_slot_text(str_text: str) -> str:
@@ -436,6 +593,9 @@ def append_slot_blocks(
     # 首个正文块紧随原始标题节点插入。
     obj_anchor_element = obj_heading._p  # 当前正文插入锚点
 
+    # 正文块或实际附图写入后，槽位才需要唯一尾空段。
+    bool_slot_populated = bool(list_blocks)  # 当前槽位是否已有结构化正文
+
     # 按代理起草结果中的稳定顺序写入正文或公式块。
     for dict_block in list_blocks:
 
@@ -457,6 +617,19 @@ def append_slot_blocks(
 
             # 写入正文文字并把其中的公式转换为原位 m:oMath 节点。
             append_inline_content(obj_paragraph, str(dict_block["text"]), dict_render_context)
+
+            # 根据可见文本应用正文、编号步骤或参考文献角色。
+            str_paragraph_role = classify_paragraph_role(  # 当前普通段落角色
+                str(dict_block["text"]),  # 当前结构化正文文本
+                str(dict_block["kind"]),  # 当前结构化块类型
+            )
+
+            # 显式覆盖模板示例段落遗留的字体、行距和缩进。
+            apply_paragraph_role_style(
+                obj_paragraph,  # 接受内容样式的普通文字段落
+                str_paragraph_role,  # 文本内容对应的合同角色
+                dict_render_context["style_contract"],  # MathType 路径共享的排版合同
+            )
 
             # 当前 block 已完成，继续处理下一个正文块。
             continue
@@ -501,6 +674,13 @@ def append_slot_blocks(
             # 把书签终点放在行间公式占位文本之后。
             obj_paragraph._p.append(obj_bookmark_end)
 
+            # MathType 占位段落必须与最终 OLE 对象共同保持居中且无缩进。
+            apply_paragraph_role_style(
+                obj_paragraph,  # 当前 MathType 公式占位段落
+                "display_formula",  # 行间公式合同角色
+                dict_render_context["style_contract"],  # 正式 DOCX 样式合同
+            )
+
             # 保存行间公式源文本、布局和精确定位标记。
             dict_render_context["formula_records"].append(
                 {
@@ -526,6 +706,13 @@ def append_slot_blocks(
 
         # 将原生数学节点直接追加到段落 XML，Office 可双击进入公式编辑器。
         obj_paragraph._p.append(obj_formula)
+
+        # Office 公式段落显式使用居中且无缩进角色。
+        apply_paragraph_role_style(
+            obj_paragraph,  # 当前 Office 公式段落
+            "display_formula",  # Office 数学节点使用的公式角色
+            dict_render_context["style_contract"],  # Office 公式路径读取的排版合同
+        )
 
         # 记录行间公式源文本，供原生 MathType OLE 写入器生成 MTEF 内容。
         dict_render_context["formula_records"].append(
@@ -560,11 +747,41 @@ def append_slot_blocks(
             # 下一附图应排在当前图片之后。
             obj_anchor_element = tuple_obj_anchor_element  # 推进后的附图插入锚点
 
+            # 至少一张正式附图写入后，本槽位需要唯一尾空段。
+            bool_slot_populated = True  # 当前槽位已写入正式附图
+
             # 附图在页面可用宽度内居中显示。
             obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 附图段落水平对齐方式
 
             # 嵌入正式 PNG，独立附图包仍保留原文件。
             obj_paragraph.add_run().add_picture(str(path_figure), width=Inches(6.0))
+
+            # 附图段落显式使用居中且无缩进角色。
+            apply_paragraph_role_style(
+                obj_paragraph,  # 接受图片布局的独立媒体段落
+                "figure",  # 附图合同角色
+                dict_render_context["style_contract"],  # 图片段落读取的排版合同
+            )
+
+    # 有内容槽位结束后添加唯一空段，建立清晰且可验证的章节边界。
+    if bool_slot_populated:
+
+        # 使用当前槽位的模板属性创建尾空段，不影响下一标题原节点。
+        tuple_blank_paragraph, tuple_blank_anchor = insert_paragraph_after(  # 尾空段及结束锚点
+            dict_render_context["document"],  # 承载章节边界的模板文档
+            obj_anchor_element,  # 当前槽位最后一个内容节点
+            dict_render_context["template_properties"],  # 当前槽位原始段落版式
+        )
+
+        # 空段不携带正文缩进或可见文字样式。
+        apply_paragraph_role_style(
+            tuple_blank_paragraph,  # 当前槽位唯一尾空段
+            "section_blank",  # 章节边界空段角色
+            dict_render_context["style_contract"],  # 尾空段边界读取的排版合同
+        )
+
+        # 显式消费结束锚点，表明空段已经成为本槽位最后节点。
+        obj_anchor_element = tuple_blank_anchor  # 当前槽位最终插入锚点
 
     # 返回推进后的公式编号供下一槽位继续使用。
     return int_formula_index
@@ -715,6 +932,9 @@ def replace_template_slots(
     # 保存公式源文本及布局类型，供 MathType 模式完成 OLE 二次写入。
     list_formula_records: list[dict[str, Any]] = []  # 文档顺序公式记录
 
+    # 样式合同只读取一次，全部槽位共享同一受管配置。
+    dict_style_contract = load_docx_style_contract()  # 本轮渲染缓存的样式合同
+
     # 按模板槽位顺序插入经过确认的正式正文。
     for str_slot_heading in list_slot_order:
 
@@ -728,6 +948,7 @@ def replace_template_slots(
             "equation_mode": str_equation_mode,  # 当前公式兼容模式
             "formula_records": list_formula_records,  # 原生 MathType 写入清单
             "figure_paths": list_figure_paths,  # 当前案件正式附图路径
+            "style_contract": dict_style_contract,  # 中文排版角色与槽位边界合同
         }
 
         # 装配本章节正文，并延续跨章节递增的公式媒体编号。

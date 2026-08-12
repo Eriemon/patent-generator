@@ -419,6 +419,12 @@ def read_verified_prior_art_records(path_case_dir: Path) -> list[dict[str, Any]]
         # 读取来源字段，确保记录具备可追溯的数据库或 URL 来源。
         str_source = clean_text(obj_record.get("source_url_or_database"))  # 查新来源文本
 
+        # 旧版记录未声明来源类型时按专利处理，保持历史案件向后兼容。
+        str_source_type = clean_text(obj_record.get("source_type", "patent")).lower()  # 规范化来源类型
+
+        # 非专利来源必须携带人工核验的完整著录文本，禁止生成器猜测书目信息。
+        str_reference_text = clean_text(obj_record.get("reference_text"))  # 人工核验的参考文献文本
+
         # 读取相同特征列表，确保记录能支撑“已公开特征”对比说明。
         list_same_features = list(obj_record.get("same_features", []))  # 相同特征列表
 
@@ -429,6 +435,18 @@ def read_verified_prior_art_records(path_case_dir: Path) -> list[dict[str, Any]]
         if not (str_publication and str_publication_date and str_source):
 
             # 继续处理下一条记录，保持输出只包含可追溯的完整条目。
+            continue
+
+        # 只接受合同声明的来源类型，避免未知类型误入正式引用链。
+        if str_source_type not in {"patent", "paper", "standard", "other"}:
+
+            # 跳过未受支持的来源类型，由案件补录阶段修正原始记录。
+            continue
+
+        # 论文、标准及其他来源没有稳定的自动著录规则，必须提供人工著录文本。
+        if str_source_type != "patent" and not str_reference_text:
+
+            # 缺少人工著录文本的非专利记录不能视为可核验引用来源。
             continue
 
         # 在相同特征或区别特征缺失时直接跳过，避免正文形成失衡对比。
@@ -495,11 +513,12 @@ def find_disclosure_draft(path_case_dir: Path, path_input: Path | None = None) -
     return None
 
 # 把单条查新记录规整成可直接写入正文的摘要句，减少正文入口的格式拼接负担。
-def summarize_prior_art(dict_record: dict[str, Any]) -> str:
+def summarize_prior_art(dict_record: dict[str, Any], int_citation_index: int) -> str:
     """生成单条查新记录摘要句。
 
     参数：
     - `dict_record`：单条查新记录字典。
+    - `int_citation_index`：正文与参考文献共享的一基序号。
 
     返回：
     - `str`：适合直接写入正文背景技术段落的摘要句。
@@ -553,5 +572,50 @@ def summarize_prior_art(dict_record: dict[str, Any]) -> str:
     # 返回可直接插入正文背景技术段落的查新记录摘要句。
     return (
         f"{str_title}（公开日：{str_date}）公开了 {str_same_features}；"
-        f"与本案相比，主要区别在于 {str_different_features}。"
+        f"与本案相比，主要区别在于 {str_different_features}。[{int_citation_index}]"
     )
+
+# 根据受控来源类型生成文末著录项，保证正文序号与参考文献列表一致。
+def format_prior_art_reference(dict_record: dict[str, Any], int_citation_index: int) -> str:
+    """生成单条先技术参考文献。
+
+    参数：
+    - `dict_record`：已经通过核验的单条查新记录。
+    - `int_citation_index`：正文与参考文献共享的一基序号。
+
+    返回：
+    - `str`：带方括号序号的参考文献条目。
+
+    异常：
+    - 非专利记录缺少 `reference_text` 时抛出 `ValueError`。
+    """
+
+    # 旧版记录未声明类型时按专利格式处理，避免破坏现有案件数据。
+    str_source_type = clean_text(dict_record.get("source_type", "patent")).lower()  # 当前著录规则选择键
+
+    # 非专利来源直接复用人工核验著录文本，禁止补写未知作者、期刊或页码。
+    if str_source_type != "patent":
+
+        # 读取人工核验的完整著录文本，作为非专利条目的唯一正文来源。
+        str_reference_text = clean_text(dict_record.get("reference_text"))  # 非专利参考文献文本
+
+        # 调用方绕过记录筛选时仍要阻止生成不完整的非专利参考文献。
+        if not str_reference_text:
+
+            # 明确指出合同缺口，便于调用方定位并补录人工著录文本。
+            raise ValueError("> ERR: [Python] 非专利先技术记录缺少 reference_text")
+
+        # 只附加稳定序号，其余著录内容保持人工核验原文。
+        return f"[{int_citation_index}] {str_reference_text}"
+
+    # 专利条目使用旧合同中已核验的公开号、日期和来源字段安全组装。
+    str_publication = clean_text(dict_record.get("publication_no_or_title"))  # 专利公开号或标题
+
+    # 读取公开日期，避免引用条目丢失时间维度。
+    str_publication_date = clean_text(dict_record.get("publication_date"))  # 专利公开日期
+
+    # 读取核验数据库或 URL，保留来源可追溯性。
+    str_source = clean_text(dict_record.get("source_url_or_database"))  # 专利核验来源
+
+    # 返回不猜测申请人或发明人的最小专利著录项。
+    return f"[{int_citation_index}] {str_publication}. 公开日：{str_publication_date}. 来源：{str_source}."

@@ -436,13 +436,13 @@ def validate_prior_art(
         # 已有核验记录时直接返回，避免误报。
         return
 
-    # 记录缺少已核验查新记录的 major finding。
+    # 缺少可回查来源时阻断正式完成态，防止无证据背景进入交付包。
     add_finding(
         list_findings,
-        "major",
+        "blocker",
         "missing_verified_prior_art",
         "未发现已核验的 prior_art_records.json 记录。",
-        "补齐最接近现有技术的公开号/标题、公开日、来源、相同特征和区别特征。",
+        "补齐来源类型、公开号或标题、公开日、来源、相同特征和区别特征；非专利来源还需 reference_text。",
     )
 
 # 校验附图清单和附图文件，确保清单与落盘文件一一对应。
