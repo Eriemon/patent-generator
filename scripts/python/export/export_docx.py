@@ -37,6 +37,9 @@ from xml.sax.saxutils import escape
 # 固定共享运行时支持模块位置，避免通过改写 sys.path 查找公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
 
+# 固定模板槽位渲染器路径，避免脚本直执行与测试按路径导入时依赖 sys.path 副作用。
+PATH_TEMPLATE_RENDERER = Path(__file__).resolve().with_name("template_docx_renderer.py")  # 模板槽位渲染器路径
+
 # 固定默认模板路径，供 python-docx 增强路径按需读取页面版式。
 DEFAULT_TEMPLATE = Path(__file__).resolve().parents[3] / "assets" / "cn_technical_disclosure_template.docx"  # 默认模板 DOCX 路径
 
@@ -584,6 +587,41 @@ def load_runtime_support_module() -> Any:
 
     # 把已完成加载的共享模块对象交回导出流程继续复用。
     return obj_runtime_module
+
+# 按文件路径加载模板槽位渲染器，保证 CLI 与单元测试使用同一份正式实现。
+def load_template_renderer_module() -> Any:
+    """加载模板槽位渲染器模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行的模板槽位渲染器模块对象。
+
+    异常：
+    - 渲染器文件缺失或无法加载时抛出 `RuntimeError`。
+    """
+
+    # 从受管导出目录定位模板渲染器，避免依赖调用方的模块搜索路径。
+    obj_renderer_spec = importlib.util.spec_from_file_location(  # 模板渲染器加载规格
+        "readable_patent_template_renderer",  # 模板渲染器的内部模块名
+        PATH_TEMPLATE_RENDERER,  # 模板渲染器源码路径
+    )
+
+    # 加载规格或加载器缺失时无法安全执行独立渲染模块。
+    if obj_renderer_spec is None or obj_renderer_spec.loader is None:
+
+        # 用稳定错误信息阻断不完整的模板渲染链。
+        raise RuntimeError("> ERR: [Python] 无法加载模板槽位渲染器。")
+
+    # 根据已验证的加载规格创建模块对象，等待下一步执行源码。
+    obj_renderer_module = importlib.util.module_from_spec(obj_renderer_spec)  # 已创建但尚未执行的模板渲染器模块
+
+    # 执行模块定义以暴露正式模板渲染入口。
+    obj_renderer_spec.loader.exec_module(obj_renderer_module)
+
+    # 返回完成初始化的渲染器模块供导出协调层调用。
+    return obj_renderer_module
 
 # 构造导出入口的参数解析器，统一声明案件目录、输入、输出和模板参数。
 def build_parser() -> argparse.ArgumentParser:
@@ -2406,20 +2444,8 @@ def export_with_template_docx(
     # 打开模板文档对象，后续在保留信息表和版式的前提下重建正文主体。
     obj_document = Document(str(path_template))  # 基于模板打开的 Word 文档对象
 
-    # 清空模板旧正文并保留首个信息表与 section，形成正式交付重建壳。
-    clear_template_body_keep_first_table(obj_document)
-
-    # 为模板主循环固定文档对象短别名，减少后续单行调用的参数长度。
-    obj_doc = obj_document  # 当前导出的 DOCX 文档对象
-
-    # 为模板主循环固定附图路径短别名，减少章节写入调用长度。
-    list_figs = list_figure_paths  # 当前案件可嵌入的 PNG 附图路径
-
-    # 为模板主循环固定运行时模块短别名，减少章节写入调用长度。
-    obj_rt = obj_runtime_module  # 共享运行时支持模块
-
-    # 为模板主循环固定章节写入函数短别名，减少章节写入调用长度。
-    func_append = append_template_section_blocks_to_document  # 章节块写入函数
+    # 加载独立槽位渲染器，保留模板标题节点、分节和正文段落样式而非重建 Heading。
+    obj_template_renderer = load_template_renderer_module()  # 模板槽位渲染器模块对象
 
     # 在独立临时目录中渲染公式图片，避免把中间 PNG 暴露到正式交付目录。
     with tempfile.TemporaryDirectory() as str_temp_dir:
@@ -2427,31 +2453,33 @@ def export_with_template_docx(
         # 固定本轮导出的临时渲染目录路径，供公式 PNG 稳定落盘。
         path_temp_dir = Path(str_temp_dir)  # 本轮导出的临时渲染目录路径
 
-        # 给临时渲染目录准备短别名，减少章节写入调用的参数长度。
-        path_tmp = path_temp_dir  # 公式图片临时渲染目录
-
-        # 从 1 开始给公式图片顺序编号，保证多公式场景下的临时文件命名稳定。
-        int_formula_index = 1  # 公式图片编号起点
-
-        # 按模板顺序逐章节写入标题、段落、公式图片和正式附图。
-        for str_heading in TEMPLATE_SECTION_ORDER:
-
-            # 读取当前模板章节的结构化块列表；缺失时回退为空列表保持标题仍可写出。
-            list_blocks = dict_template_payload["sections"].get(str_heading, [])  # 当前模板章节结构化块列表
-
-            # 固定进入当前章节前的公式编号，供章节写入函数按顺序继续编号。
-            int_idx = int_formula_index  # 当前章节的公式编号起点
-
-            # 把当前章节写入 DOCX，并拿到推进后的公式图片编号。
-            int_formula_index = func_append(obj_doc, str_heading, list_blocks, list_figs, path_tmp, obj_rt, int_idx)  # 新公式编号
+        # 按原模板标题节点替换正文、公式和附图，保留其两个 section 与 Normal 段落样式。
+        obj_template_renderer.replace_template_slots(
+            obj_document,
+            TEMPLATE_SECTION_ORDER,
+            dict_template_payload["sections"],
+            list_figure_paths,
+            path_temp_dir,
+            render_formula_image,
+        )
 
         # 把当前模板文档保存到目标输出路径，形成正式交付 DOCX。
         obj_document.save(str(dict_paths["path_output"]))
 
+    # 同内容附图会被 python-docx 合并为一个媒体部件，因此按真实字节内容去重估算媒体下限。
+    set_unique_figure_contents = {
+        path_figure.read_bytes()  # 以真实媒体字节作为去重键
+        for path_figure in list_figure_paths  # 遍历本次准备嵌入的正式附图
+        if path_figure.exists()  # 忽略已被上游移除的失效路径
+    }  # 当前正式附图的去重字节内容集合
+
+    # 公式各自独立渲染，附图按唯一内容计数，避免把关系引用数误当作 ZIP 媒体部件数。
+    int_expected_media_count = int_formula_count + len(set_unique_figure_contents)  # 严格模板校验的最小媒体部件数量
+
     # 对最终 DOCX 执行严格模板校验，并要求媒体数量满足公式和附图嵌入预期。
     validate_template_docx_output(
         dict_paths["path_output"],
-        int_expected_media_count=int_formula_count + len(list_figure_paths),
+        int_expected_media_count=int_expected_media_count,
     )
 
     # 返回导出结果，供上游登记导出模式和可选内部说明。
@@ -2897,8 +2925,8 @@ def resolve_paths(
 
         # 基于输入草稿名和当前时间戳自动构造 DOCX 文件名。
         str_output_name = (  # 自动生成的 DOCX 文件名
-            f"{obj_runtime_module.sanitize_name(path_input.stem)}_"
-            f"{obj_runtime_module.now_timestamp()}.docx"
+            f"{obj_runtime_module.sanitize_name(path_input.stem)}_"  # 清理后的草稿名称前缀
+            f"{obj_runtime_module.now_timestamp()}.docx"  # 避免覆盖历史导出的时间戳后缀
         )
 
         # 拼出最终 DOCX 输出路径，保持正式导出目录结构一致。

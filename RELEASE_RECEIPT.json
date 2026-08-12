@@ -1,8 +1,8 @@
 {
   "skill_name": "readable-patent-generator",
-  "version": "v1.0.5",
+  "version": "v1.0.6",
   "source_path": "skills/readable-patent-generator",
-  "generated_at": "2026-07-09T20:56:44",
+  "generated_at": "2026-07-10T19:35:20",
   "current_branch": "master",
   "local_branches": [
     "master",
@@ -59,7 +59,7 @@
       ".pyc",
       ".pyo"
     ],
-    "included_file_count": 58,
+    "included_file_count": 61,
     "included_top_level_entries": [
       "SKILL.md",
       "VERSION",
@@ -106,6 +106,10 @@
     {
       "path": "assets/schemas/validation_report.schema.json",
       "sha256": "b9e776efe401e38476f5c5a153fc40cce23d395e49e3b0cc1ca073d911ecd450"
+    },
+    {
+      "path": "assets/template_slot_contract.json",
+      "sha256": "1e14097413e02afaecc2613ac34b4eff60a038d0edb829770a06c8723a51cfc2"
     },
     {
       "path": "evals/.gitkeep",
@@ -181,11 +185,15 @@
     },
     {
       "path": "scripts/python/draft/generate_disclosure_draft.py",
-      "sha256": "86687f2d302953c9ff241133b36df8aa3f61b2024c9b815af1dcc8f035b9d545"
+      "sha256": "d7a6b01e4823b845d6320334bdc3e5943fbaa0066be9b211059e7e9dd25fa5e7"
     },
     {
       "path": "scripts/python/export/export_docx.py",
-      "sha256": "8efca69ca9b57067a17dda7f53539dd12fbbe40e81c7aa07fad597f7e47ed570"
+      "sha256": "5abaf641c5e1e65da48569332c8c4c23bbe806b8a3562757f07d8870ce072d21"
+    },
+    {
+      "path": "scripts/python/export/template_docx_renderer.py",
+      "sha256": "7fb590568105a300ec9688e04c6d6f57967f5a3e53dbce18f6fd136b0f149b72"
     },
     {
       "path": "scripts/python/facts/extract_research_facts.py",
@@ -197,7 +205,7 @@
     },
     {
       "path": "scripts/python/figures/generate_figures.py",
-      "sha256": "05f9af9bc35265f2e89d5bb36b968eb429862d1b41ff79b6ddacbe993923c7a8"
+      "sha256": "9fef0c94c794610acb3a958a1d47d0c12396c2f7d9163bf0d5ac22d4e103f15e"
     },
     {
       "path": "scripts/python/intake/convert_research_office.py",
@@ -257,7 +265,7 @@
     },
     {
       "path": "scripts/python/pipeline/run_pipeline.py",
-      "sha256": "92d703363efb5a288373bffa1c41a651901b3cde198fc4d3f52b00fdead53d2d"
+      "sha256": "02af234f0a9e7ae44874d021b9b7294335492a68253fdb10229626dd1a69c274"
     },
     {
       "path": "scripts/python/preview/generate_preview.py",
@@ -269,7 +277,7 @@
     },
     {
       "path": "scripts/python/review/validate_disclosure.py",
-      "sha256": "db42168283e947dc520253a6fe7ea4659baec6545785913610524875f442c942"
+      "sha256": "0615f2688a8bd11e41ca010de323f95710f0222b128c146ddabefa64c1fac792"
     },
     {
       "path": "scripts/python/search/cnipa_epub_crawler.py",
@@ -286,6 +294,10 @@
     {
       "path": "scripts/python/support/check_dependencies.py",
       "sha256": "16286c292818b729e88d4b51a1cd1db07be3530196096fc5d5d14f9efaaf8968"
+    },
+    {
+      "path": "scripts/python/support/disclosure_quality_contract.py",
+      "sha256": "959b9b3f80e6d3b327d21ee5954c819fb23626d57efbc6d0599d0932738b8f52"
     },
     {
       "path": "scripts/python/support/runtime_support.py",
@@ -305,7 +317,7 @@
     },
     {
       "path": "VERSION",
-      "sha256": "688de25e1482a1543834e8e389c20aac2fa34fd6abdb28138a00847c8d49f1a0"
+      "sha256": "1d876c066e18158d7236c15c0406cf8ce6aa99e028706538f6b13abbc725f24e"
     }
   ],
   "other_version_artifacts": [
@@ -1504,6 +1516,246 @@
     {
       "path": "dist/readable-patent-generator-v1.0.4.zip",
       "sha256": "d3c506b3f5523d4c09593f2fa6040d553d8e62a31151106e0c4b167c909e12aa"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/agents/openai.yaml",
+      "sha256": "e43cf429a09712ec045ff5515c5c19e318f4d322b6304587305bb7d6802c2366"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/cn_technical_disclosure_template.docx",
+      "sha256": "8836362d46fcb0a1927bc7e81a7e092666865e239d668256400bba3cbfd86ab5"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/draft_plan_schema.json",
+      "sha256": "b1d46175890a44f22d1f9d93bf9ba74efa11f340d6160e487d0110e15e657f79"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/research_summary_schema.json",
+      "sha256": "d0bce7a7f6c9daab5304b9896ed4d065381aab7ab114366b79cc6101a060232c"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/schemas/case_state.schema.json",
+      "sha256": "c5c5d5acd08bfb91c7b892e7bbb7e31d35b645891155e640b47f00dec8beb2c2"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/schemas/research_facts.schema.json",
+      "sha256": "20dfbd59f07ec4dfba9564311af9f00d53c0d8946cb653e1c93f2dcff86762c3"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/assets/schemas/validation_report.schema.json",
+      "sha256": "b9e776efe401e38476f5c5a153fc40cce23d395e49e3b0cc1ca073d911ecd450"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/evals/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/evals/evals.json",
+      "sha256": "8d40e3df1465dc8ed1a58622ebc4e45da130896d768fc73c0933776dd23cffc6"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/01_end_to_end_pipeline.md",
+      "sha256": "a36c45b7967ffc6cb318e140d70e699766ff0b980a7ce9d80ec1bb3ca3c78645"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/02_intake_and_project_scan_protocol.md",
+      "sha256": "253e5111e932c31806039e156c2a67524e8f7d5323b168044bfc6aa70dfd36f7"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/04_prior_art_search_protocol.md",
+      "sha256": "5c457f68f76a5dc246aec0d72efac6dd8407a82d775fb148b1e15f496c0a0ea9"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/05_disclosure_drafting_protocol.md",
+      "sha256": "d748e616807d796d8c03a333b4e4c42cfc9459209716703bbc1fc43b4e0ab1e7"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/07_self_check_protocol.md",
+      "sha256": "21a8d5bac03b7859c2262c49e9327e472ef5ad5f22c1c92c08b35a18f99b54f5"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/08_iteration_and_correction_protocol.md",
+      "sha256": "35189fe244792ec403627298e9ba0b2a86d5abd6098bd679ebf75fab5d4e38a5"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/10_confidentiality_and_desensitization.md",
+      "sha256": "748187ff3235ed3cbc3e8b994f5bd097137dfc40bdd8542a5dc9158c9114a991"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/canonical/11_claims_and_protection_strategy.md",
+      "sha256": "49a7f44f1a4836ef50e7e4fd7dd5dcb33d56dbd1d1a07111e10d79e9ffbe948e"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/references/README.md",
+      "sha256": "9bed9bb61d2619740bad2780f22db60e19bbe6f6feb15582979cdbfd65bce0a4"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/RELEASE_RECEIPT.json",
+      "sha256": "921c92e85c4960f91dc156f0c37b178aa295c7a0c4d9e837b447cd914dc796c6"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/requirements.txt",
+      "sha256": "0899b000fb1ba45a81b6123eefaaf35a6241bba875dee96b74bb4846a0e95f02"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/bat/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/powershell/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/case/case_support.py",
+      "sha256": "b46111e5abd5fdd5bd9c2b39597dc4b62bdc0fff0886d69c6426f4798e4f1a5b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/case/create_case.py",
+      "sha256": "bfe4264ee6cb298cc4a5c146558354edc068a509aecff3479874ced3ff199b3d"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/claims/generate_claims.py",
+      "sha256": "3636d687733faf93dff826752008bfa7cdd61266ccd9169655f6ed95d47fc73d"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/draft/generate_disclosure_draft.py",
+      "sha256": "86687f2d302953c9ff241133b36df8aa3f61b2024c9b815af1dcc8f035b9d545"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/export/export_docx.py",
+      "sha256": "8efca69ca9b57067a17dda7f53539dd12fbbe40e81c7aa07fad597f7e47ed570"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/facts/extract_research_facts.py",
+      "sha256": "214ac898ef92a277f28be9a39070c81648b46b1e0d0de447269eae5f610b402d"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/facts/facts_report_support.py",
+      "sha256": "1c9ad0e083fd9ef9ae40acf5a0f68b250ef23991e0596b34022e5bc650665fdf"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/figures/generate_figures.py",
+      "sha256": "05f9af9bc35265f2e89d5bb36b968eb429862d1b41ff79b6ddacbe993923c7a8"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/convert_research_office.py",
+      "sha256": "837011d7c25991e56d371c209fc491c0441e5ca2aa5ef2be680631274b8ef6b6"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/extract_notebook.py",
+      "sha256": "f29228c80fcb3dfad3767d1b20af6a191df223c199407e46c7390316637dc840"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/extract_office.py",
+      "sha256": "9b2a8252d72b17dbf7927d4be5187ec7741d128c89b9a32a57ec8089316284cd"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/extract_pdf.py",
+      "sha256": "197de6c35bdce67cb60a56de754ca470bbd80c2f19d1ebfb700b4cca0894746f"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/extract_plain.py",
+      "sha256": "ecc79b17b2bd33001bd422de930b31dbaa6da2f42f3f4a7f7971937768f1f7d9"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/extract_support.py",
+      "sha256": "37ebaf057a75911ee7339e6158e75a512d6aed74e1a9e76d84ca7ba52cfe4ae4"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/intake_case_io.py",
+      "sha256": "6beffa053d2e715d1188ebc0a7d65d6e64d86c2d23803fb8cd4104c59e306d8a"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/material_classify.py",
+      "sha256": "55ba87c6355d7266740c930211d50b664dacfa34179b1a30cf8da55e93f28ee8"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/material_extract.py",
+      "sha256": "0a02830564fc07dd4c29083a62de088548cf8fae9ca2f15bc5add18c9a4a7002"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/material_scan.py",
+      "sha256": "0871e96af25c2ba047aacfaf80d334c2849296b08fa0cbf7bb8bbbfe00b9a0b4"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/material_text.py",
+      "sha256": "49d2596caa30282c9ed449fd46d01731bb30fda8b677c420a7ff1b85f78374cc"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/intake/research_inventory.py",
+      "sha256": "7d326886796997db351683a218d7c537e53346d3013b67f6a17b7598dd97dd2e"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/invention/select_invention_point.py",
+      "sha256": "d2f06c9634cdd19bbb008debf76fc3cbefb1110bbc54c48677689405d4bb9de2"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/iteration/iterate_disclosure.py",
+      "sha256": "063c76d3140f23670a99e444fee5747657387bec2c0b0f3b2c84973d8c0764ab"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/pipeline/run_pipeline.py",
+      "sha256": "92d703363efb5a288373bffa1c41a651901b3cde198fc4d3f52b00fdead53d2d"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/preview/generate_preview.py",
+      "sha256": "872ed8cb99fc18fbba33e70fc97db9de4cb77d1c266f36c0ae7c948d3aaa4c2d"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/prior_art/plan_prior_art_queries.py",
+      "sha256": "cd0885826334a6bbe5c6a17b97c8acf7ad4b55790d37e6966e582b7126233126"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/review/validate_disclosure.py",
+      "sha256": "db42168283e947dc520253a6fe7ea4659baec6545785913610524875f442c942"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/search/cnipa_epub_crawler.py",
+      "sha256": "1e8751bcc72e9e7a703dcb6fba0f71b0115273c0b14c6eee4d1d6b4f115be5c9"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/search/cnipa_epub_parse.py",
+      "sha256": "28ed54feabc7c392590dd4937a263ddd2b4850ef9e9677b59298480e2b660500"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/search/cnipa_epub_search.py",
+      "sha256": "bc8e2b920b95eaa7140d9c00a0e38f648e9cc30d822e495250afb889d9f7af5f"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/support/check_dependencies.py",
+      "sha256": "16286c292818b729e88d4b51a1cd1db07be3530196096fc5d5d14f9efaaf8968"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/python/support/runtime_support.py",
+      "sha256": "f504091184e2f5714a66891e93bf9ee04fb38b3eca724f45620dc989d3007253"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/shell/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/scripts/tcl/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/SKILL.md",
+      "sha256": "f787126f3c168cbb332f53e35e5b0765440b0f4fe1d7aed7e30f1ea70432c722"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5/VERSION",
+      "sha256": "688de25e1482a1543834e8e389c20aac2fa34fd6abdb28138a00847c8d49f1a0"
+    },
+    {
+      "path": "dist/readable-patent-generator-v1.0.5.zip",
+      "sha256": "703e014f9cee37b10d9df58a1991361d84f6718ae077b21eb92f33fc983ee8f6"
     }
   ]
 }

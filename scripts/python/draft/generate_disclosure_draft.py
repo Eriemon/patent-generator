@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # 引入参数解析、按路径加载模块、文件复制、标准输出和路径能力，供正式草稿入口稳定运行。
 import argparse
+import hashlib
 import importlib.util
 import re
 import shutil
@@ -15,6 +16,12 @@ from typing import Any
 
 # 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
+
+# 固定正文质量合同路径，确保起草、证据映射和后续自检共用同一受控推断边界。
+PATH_QUALITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "disclosure_quality_contract.py"  # 正文质量合同模块路径
+
+# 固定最终 DOCX 模板路径，供预览状态记录可追溯的模板哈希。
+PATH_TEMPLATE_DOCX = Path(__file__).resolve().parents[3] / "assets" / "cn_technical_disclosure_template.docx"  # 最终 DOCX 模板路径
 
 # 预编译 display-math 公式块匹配规则，供从本地研究材料中抽取可追溯公式复用。
 RE_DISPLAY_FORMULA_BLOCK = re.compile(r"\$\$(.*?)\$\$", flags=re.DOTALL)  # display-math 公式块匹配规则
@@ -50,6 +57,41 @@ def load_runtime_support_module() -> Any:
 
     # 返回已完成加载的共享支持模块，供正式草稿入口复用。
     return module_runtime_support
+
+# 加载正文质量合同模块，统一术语、证据和推断边界。
+def load_quality_contract_module() -> Any:
+    """按路径加载正文质量合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行源码的正文质量合同模块对象。
+
+    异常：
+    - 合同模块缺失或无法加载时抛出 `ImportError`。
+    """
+
+    # 根据质量合同文件路径创建独立加载规格，避免依赖包安装状态。
+    obj_specification = importlib.util.spec_from_file_location(  # 正文质量合同模块加载规格
+        "readable_patent_disclosure_quality_contract",  # 临时质量合同模块名称
+        PATH_QUALITY_CONTRACT,  # 质量合同源码真实路径
+    )
+
+    # 加载规格或加载器缺失时立即失败，避免后续以空模块继续起草。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出带真实目标路径的导入错误，便于定位技能文件损坏。
+        raise ImportError("> ERR: [Python] 无法加载 support/disclosure_quality_contract.py。")
+
+    # 从加载规格创建临时模块对象，承接质量合同中的纯函数接口。
+    module_quality_contract = importlib.util.module_from_spec(obj_specification)  # 正文质量合同模块对象
+
+    # 执行质量合同源码，把术语、证据和推断规则装入临时模块。
+    obj_specification.loader.exec_module(module_quality_contract)
+
+    # 返回已完成加载的质量合同模块，供起草全链路复用同一规则集。
+    return module_quality_contract
 
 # 构造命令行参数解析器，统一声明案件目录和内部预览放行开关。
 def build_parser() -> argparse.ArgumentParser:
@@ -317,6 +359,7 @@ def collect_solution_texts(
     参数：
     - `dict_selected`：当前主案选择结果字典。
     - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
 
     返回：
     - `list[str]`：优先来自技术方案证据的步骤短句列表。
@@ -444,18 +487,62 @@ def resolve_step_io_fields(str_summary: str) -> tuple[str, str]:
     # 在没有命中任何语义规则时回退到通用输入输出说明。
     return "待处理输入", "阶段结果"
 
+# 提取步骤证据映射需要的受控关键词，避免噪声扩散到全部步骤。
+def collect_evidence_keywords(str_text: str, module_quality_contract: Any) -> list[str]:
+    """从文本中提取可用于精确步骤映射的受控关键词。
+
+    参数：
+    - `str_text`：步骤或证据的原始文本。
+    - `module_quality_contract`：正文质量合同模块对象。
+
+    返回：
+    - `list[str]`：只保留在文本中实际出现的业务关键词。
+
+    异常：
+    - 无。
+    """
+
+    # 固定允许参与步骤映射的业务关键词，排除公式 token 和通用英文噪声。
+    tuple_candidate_keywords = (  # 证据映射允许使用的候选关键词元组
+        "状态",  # 状态类步骤关键词
+        "采集",  # 采集类步骤关键词
+        "获取",  # 获取类步骤关键词
+        "任务",  # 任务类步骤关键词
+        "计算",  # 计算类步骤关键词
+        "评分",  # 评分类步骤关键词
+        "筛选",  # 筛选类步骤关键词
+        "分配",  # 分配类步骤关键词
+        "选择",  # 选择类步骤关键词
+        "反馈",  # 反馈类步骤关键词
+        "更新",  # 更新类步骤关键词
+        "异常",  # 异常类步骤关键词
+        "执行",  # 执行类步骤关键词
+    )
+
+    # 仅保留在当前文本中真实命中的关键词，避免把全部证据泛挂到每一步。
+    list_keywords = [  # 当前文本实际命中的业务关键词
+        str_keyword  # 当前命中的单个业务关键词
+        for str_keyword in tuple_candidate_keywords  # 遍历受控候选关键词
+        if str_keyword in str_text  # 只保留当前文本真实包含的关键词
+    ]
+    
+    # 输出过滤后的业务关键词，作为当前步骤的最小证据匹配集合。
+    return module_quality_contract.filter_technical_terms(list_keywords)
+
 # 把单个步骤摘要整理成正文、附图和权利要求共用的结构化步骤记录。
 def build_step_record(
     int_index: int,
     str_summary: str,
     module_runtime_support: Any,
-) -> dict[str, str]:
+    module_quality_contract: Any,
+) -> dict[str, Any]:
     """构建单个方法步骤结构化记录。
 
     参数：
     - `int_index`：当前步骤编号中的数值部分。
     - `str_summary`：当前步骤摘要文本。
     - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
 
     返回：
     - `dict[str, str]`：单个方法步骤结构化记录。
@@ -479,14 +566,18 @@ def build_step_record(
     # 再补齐步骤末端产出字段，方便后链直接读取结果名称。
     str_output = tuple_io_fields[1]  # 最终输出字段文案
 
+    # 把摘要中实际出现的业务关键词登记到步骤中，供证据映射按步骤精确匹配。
+    list_keywords = collect_evidence_keywords(str_clean_summary, module_quality_contract)  # 当前步骤关键词
+
     # 返回当前步骤的结构化记录，供后续正文、附图与 claims 阶段共同复用。
     return {
         "id": str_step_id,
         "summary": str_clean_summary,
-        "condition": "在当前案件已经完成前序步骤后执行。",
+        "condition": f"当接收到{str_input}时执行。",
         "input": str_input,
         "action": str_clean_summary,
         "output": str_output,
+        "keywords": list_keywords,
     }
 
 # 基于主案内容与术语列表整理出稳定的方法步骤骨架。
@@ -494,13 +585,15 @@ def build_method_steps(
     dict_selected: dict[str, Any],
     list_terms: list[str],
     module_runtime_support: Any,
-) -> list[dict[str, str]]:
+    module_quality_contract: Any,
+) -> list[dict[str, Any]]:
     """构建方法步骤列表。
 
     参数：
     - `dict_selected`：当前主案选择结果字典。
     - `list_terms`：聚合后的技术术语列表。
     - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
 
     返回：
     - `list[dict[str, str]]`：方法步骤结构化记录列表。
@@ -519,13 +612,20 @@ def build_method_steps(
     overlay_solution_summaries(list_step_summaries, list_solution_texts)
 
     # 先准备结构化步骤结果列表，后续按顺序登记步骤编号与输入输出说明。
-    list_steps: list[dict[str, str]] = []  # 结构化方法步骤结果列表
+    list_steps: list[dict[str, Any]] = []  # 结构化方法步骤结果列表
 
     # 逐条整理步骤摘要，补齐固定编号、输入、动作和输出字段。
     for int_index, str_summary in enumerate(list_step_summaries, start=101):
 
         # 把当前步骤摘要转换成结构化记录，并保持顺序写入结果列表。
-        list_steps.append(build_step_record(int_index, str_summary, module_runtime_support))
+        list_steps.append(
+            build_step_record(
+                int_index,
+                str_summary,
+                module_runtime_support,
+                module_quality_contract,
+            )
+        )
 
     # 返回结构化方法步骤列表，供正文、附图和权利要求后链共同复用。
     return list_steps
@@ -609,12 +709,14 @@ def build_modules(list_steps: list[dict[str, str]]) -> list[dict[str, str]]:
 def build_effect_lines(
     dict_selected: dict[str, Any],
     module_runtime_support: Any,
+    module_quality_contract: Any,
 ) -> list[str]:
     """构建技术效果条目列表。
 
     参数：
     - `dict_selected`：当前主案选择结果字典。
     - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
 
     返回：
     - `list[str]`：适合直接写入 4.3 小节的技术效果条目列表。
@@ -633,7 +735,7 @@ def build_effect_lines(
         str_effect_line = module_runtime_support.clean_text(str_item)  # 当前技术效果条目文本
 
         # 在当前技术效果文本确实存在有效内容时再加入结果列表。
-        if str_effect_line:
+        if module_quality_contract.is_effect_evidence(str_effect_line):
 
             # 把当前可用技术效果条目加入结果列表，优先作为 4.3 小节来源。
             list_effect_lines.append(str_effect_line)
@@ -648,7 +750,12 @@ def build_effect_lines(
     list_effect_evidence_lines: list[str] = []  # 技术效果证据条目列表
 
     # 逐条清洗技术效果证据文本，只保留真正可写入正文的条目。
-    for dict_item in dict_selected.get("technical_effect_evidence", []):
+    list_filtered_effect_evidence = module_quality_contract.filter_effect_evidence(  # 已通过效果分类的证据列表
+        dict_selected.get("technical_effect_evidence", [])  # 主案提供的效果证据候选
+    )
+
+    # 逐条读取已通过分类的效果证据，避免方案或问题陈述误入效果章节。
+    for dict_item in list_filtered_effect_evidence:
 
         # 读取并清洗当前效果证据文本，便于统一判断可用性。
         str_effect_evidence = module_runtime_support.clean_text(dict_item.get("text", ""))  # 当前效果证据条目文本
@@ -665,16 +772,17 @@ def build_effect_lines(
         # 返回效果证据条目列表，保持 4.3 小节尽量贴近真实主案材料。
         return list_effect_evidence_lines
 
-    # 在主案和证据都没有给出明确效果时回退到最小正式表述。
-    return ["当前材料说明该方案能够改善处理过程中的稳定性和资源利用效率。"]
+    # 证据不足时保留空列表，让质量门生成待修订项，禁止用无依据的效果句掩盖缺口。
+    return []
 
 # 生成 review 与 claims 可复用的轻量来源映射，避免正文关键特征脱离真实材料。
 def build_evidence_map(
     path_case_dir: Path,
-    list_steps: list[dict[str, str]],
+    list_steps: list[dict[str, Any]],
     dict_selected: dict[str, Any],
     list_prior_summaries: list[str],
     module_runtime_support: Any,
+    module_quality_contract: Any,
 ) -> dict[str, Any]:
     """生成来源证据映射。
 
@@ -684,6 +792,7 @@ def build_evidence_map(
     - `dict_selected`：当前主案选择结果字典。
     - `list_prior_summaries`：最接近现有技术摘要列表。
     - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
 
     返回：
     - `dict[str, Any]`：已经写回 `latest_evidence_map.json` 的结构化映射字典。
@@ -693,7 +802,7 @@ def build_evidence_map(
     """
 
     # 先准备证据索引列表，后续逐批登记问题、方案、效果和现有技术来源。
-    list_evidence_index: list[dict[str, str]] = []  # 证据索引列表
+    list_evidence_index: list[dict[str, Any]] = []  # 证据索引列表
 
     # 逐项登记技术问题证据，供正文与自检回溯主问题来源。
     for int_index, dict_item in enumerate(dict_selected.get("technical_problem_evidence", []), start=1):
@@ -705,7 +814,14 @@ def build_evidence_map(
         if str_problem_text:
 
             # 把当前问题证据写入来源索引，供正文与 review 阶段回溯。
-            list_evidence_index.append({"id": f"E-PROB-{int_index}", "kind": "problem", "text": str_problem_text})
+            list_evidence_index.append(
+                {
+                    "id": f"E-PROB-{int_index}",
+                    "kind": "problem",
+                    "text": str_problem_text,
+                    "keywords": collect_evidence_keywords(str_problem_text, module_quality_contract),
+                }
+            )
 
     # 逐项登记技术方案证据，供方法步骤和权利要求回溯主方案来源。
     for int_index, dict_item in enumerate(dict_selected.get("technical_solution_evidence", []), start=1):
@@ -717,7 +833,14 @@ def build_evidence_map(
         if str_solution_text:
 
             # 把当前方案证据写入来源索引，供方法步骤与权利要求回溯。
-            list_evidence_index.append({"id": f"E-SOL-{int_index}", "kind": "solution", "text": str_solution_text})
+            list_evidence_index.append(
+                {
+                    "id": f"E-SOL-{int_index}",
+                    "kind": "solution",
+                    "text": str_solution_text,
+                    "keywords": collect_evidence_keywords(str_solution_text, module_quality_contract),
+                }
+            )
 
     # 逐项登记技术效果证据，供正文技术效果和 review 回溯来源。
     for int_index, dict_item in enumerate(dict_selected.get("technical_effect_evidence", []), start=1):
@@ -729,7 +852,14 @@ def build_evidence_map(
         if str_effect_text:
 
             # 把当前效果证据写入来源索引，供 review 与导出阶段回溯。
-            list_evidence_index.append({"id": f"E-EFF-{int_index}", "kind": "effect", "text": str_effect_text})
+            list_evidence_index.append(
+                {
+                    "id": f"E-EFF-{int_index}",
+                    "kind": "effect",
+                    "text": str_effect_text,
+                    "keywords": collect_evidence_keywords(str_effect_text, module_quality_contract),
+                }
+            )
 
     # 逐项登记最接近现有技术摘要，补齐背景技术对比来源索引。
     for int_index, str_summary in enumerate(list_prior_summaries, start=1):
@@ -740,49 +870,12 @@ def build_evidence_map(
                 "id": f"E-PRIOR-{int_index}",
                 "kind": "prior_art",
                 "text": module_runtime_support.clean_text(str_summary),
+                "keywords": collect_evidence_keywords(str_summary, module_quality_contract),
             }
         )
 
-    # 汇总技术方案证据编号，供后续方法步骤默认支撑集合复用。
-    list_solution_ids = [dict_item["id"] for dict_item in list_evidence_index if dict_item["kind"] == "solution"]  # 技术方案证据编号列表
-
-    # 汇总技术效果证据编号，供最后一步附带效果支撑时复用。
-    list_effect_ids = [dict_item["id"] for dict_item in list_evidence_index if dict_item["kind"] == "effect"]  # 技术效果证据编号列表
-
-    # 汇总技术问题证据编号，供第一步附带问题支撑时复用。
-    list_problem_ids = [dict_item["id"] for dict_item in list_evidence_index if dict_item["kind"] == "problem"]  # 技术问题证据编号列表
-
-    # 先准备特征映射列表，后续按步骤顺序登记步骤摘要与支持证据编号。
-    list_features: list[dict[str, Any]] = []  # 正文特征映射列表
-
-    # 逐项遍历方法步骤，补齐每一步的特征文本和支持证据编号列表。
-    for int_index, dict_step in enumerate(list_steps):
-
-        # 先复制一份方案证据编号列表，作为当前步骤的默认支撑集合。
-        list_support_ids = list_solution_ids[:]  # 当前步骤默认支持证据编号列表
-
-        # 在当前步骤是第一步且存在问题证据时，把问题证据并入支撑集合。
-        if int_index == 0 and list_problem_ids:
-
-            # 为第一步补入问题证据编号，说明方案起点针对的处理缺口。
-            list_support_ids = list_problem_ids + list_support_ids  # 第一条步骤补入问题证据编号
-
-        # 在当前步骤是最后一步且存在效果证据时，把效果证据并入支撑集合。
-        if int_index == len(list_steps) - 1 and list_effect_ids:
-
-            # 为最后一步补入效果证据编号，说明方案终点对应的技术收益。
-            list_support_ids = list_support_ids + list_effect_ids  # 最后一条步骤补入效果证据编号
-
-        # 组装当前步骤的特征映射记录，保持步骤摘要与支撑证据一一对应。
-        dict_feature_record = {  # 单个步骤特征映射记录
-            "type": "method_step",  # 特征类型
-            "step": dict_step["id"],  # 步骤编号
-            "feature": dict_step["summary"],  # 步骤特征文本
-            "support_ids": list(dict.fromkeys(list_support_ids)),  # 去重后的支持证据编号列表
-        }
-
-        # 把当前步骤映射记录追加到特征列表，保持步骤顺序稳定。
-        list_features.append(dict_feature_record)
+    # 由质量合同按关键词构建步骤到证据的最小映射，禁止把全部证据泛挂到每一步。
+    list_features = module_quality_contract.build_step_support_map(list_steps, list_evidence_index)  # 精确步骤证据映射
 
     # 组装最终来源证据映射字典，供 review 和 claims 阶段共同复用。
     dict_evidence_map = {  # 最终来源证据映射字典
@@ -797,6 +890,104 @@ def build_evidence_map(
 
     # 返回已经落盘的来源证据映射字典，便于当前正文阶段继续复用。
     return dict_evidence_map
+
+# 写入起草计划、槽位正文和哈希状态，锁定预览确认边界。
+def write_draft_contract_artifacts(
+    path_output_dir: Path,
+    str_markdown: str,
+    dict_artifact_context: dict[str, Any],
+    module_runtime_support: Any,
+    module_quality_contract: Any,
+) -> None:
+    """写入起草计划、槽位正文和预览哈希，锁定确认后的生成边界。
+
+    参数：
+    - `path_output_dir`：草稿输出目录。
+    - `str_markdown`：已生成的主交底书 Markdown。
+    - `dict_artifact_context`：标题、步骤、模块和效果组成的合同上下文。
+    - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 状态文件或 JSON 写入失败时由底层异常上抛。
+    """
+
+    # 从合同上下文解出各槽位数据，保持函数参数数量和写入边界清晰。
+    str_title = str(dict_artifact_context["title"])  # 正式发明标题
+
+    # 复制步骤列表，避免写入阶段修改主流程持有的原始对象。
+    list_steps = list(dict_artifact_context["steps"])  # 结构化方法步骤列表
+
+    # 复制模块列表，保持装置槽位数据在写入期间稳定。
+    list_modules = list(dict_artifact_context["modules"])  # 结构化模块列表
+
+    # 复制技术效果列表，保持质量分类结果不被合同装配修改。
+    list_effects = list(dict_artifact_context["effects"])  # 已分类技术效果列表
+
+    # 仅登记不引入新事实的结构性连接补写，供预览阶段显式确认。
+    list_inference_candidates = ["将前一处理步骤的输出作为下一处理步骤的输入。"]  # 受控推断候选列表
+
+    # 根据标题、步骤和推断候选生成可追踪的代理起草计划。
+    dict_draft_plan = module_quality_contract.build_draft_plan(  # 代理起草计划与推断清单
+        str_title,  # 起草计划使用的发明名称
+        list_steps,  # 起草计划覆盖的方法步骤
+        list_inference_candidates,  # 待确认的结构性推断候选
+    )
+
+    # 将正文结构整理为与模板槽位一一对应的机器可读合同。
+    dict_draft_content = {  # 与最终模板槽位对应的正文内容
+        "title": str_title,  # 发明名称槽位内容
+        "template_slots": {"一、发明名称": str_title},  # 模板标题槽位映射
+        "method_steps": list_steps,  # 方法方案槽位内容
+        "modules": list_modules,  # 装置模块槽位内容
+        "effects": list_effects,  # 技术效果槽位内容
+    }
+
+    # 分别计算正文和模板哈希，用于阻止确认后的内容或模板静默漂移。
+    str_draft_hash = hashlib.sha256(str_markdown.encode("utf-8")).hexdigest()  # 主正文内容哈希
+
+    # 单独计算模板哈希，使模板变更也会触发重新确认。
+    str_template_hash = hashlib.sha256(PATH_TEMPLATE_DOCX.read_bytes()).hexdigest()  # 模板内容哈希
+
+    # 读取现有预览状态，保留人工确认标记并更新当前生成资格。
+    path_preview_status = path_output_dir / "preview_status.json"  # 预览确认状态路径
+
+    # 从稳定路径加载当前预览状态，随后仅更新本轮生成字段。
+    dict_preview_status = module_runtime_support.read_json_file(path_preview_status)  # 当前预览确认状态
+
+    # 只收集质量合同允许的推断编号，禁止被拒绝项进入确认范围。
+    list_inference_ids = [  # 已登记推断编号列表
+        str(dict_item["id"])  # 当前允许推断项的稳定编号
+        for dict_item in dict_draft_plan["inferences"]  # 扫描计划登记的推断对象
+        if dict_item["allowed"]  # 只暴露允许进入确认边界的推断
+    ]
+
+    # 把本轮哈希、推断边界和起草状态原子更新到预览状态对象。
+    dict_preview_status.update(
+        {
+            "draft_hash": str_draft_hash,
+            "template_hash": str_template_hash,
+            "inference_ids": list_inference_ids,
+            "inferences_confirmed": bool(dict_preview_status.get("confirmed")),
+            "authoring_status": (
+                "authoring_required"
+                if not dict_preview_status.get("confirmed")
+                else "ready_for_export"
+            ),
+        }
+    )
+
+    # 分别写出起草计划、槽位正文和预览状态，供后续验证与导出消费。
+    module_runtime_support.write_json_file(path_output_dir / "draft_plan.json", dict_draft_plan)
+
+    # 写出与模板槽位对应的正文合同，供 DOCX 装配器直接消费。
+    module_runtime_support.write_json_file(path_output_dir / "draft_content.json", dict_draft_content)
+
+    # 最后写出预览状态，使哈希和推断确认结果保持一致。
+    module_runtime_support.write_json_file(path_preview_status, dict_preview_status)
 
 # 把方法步骤整理成正文 4.2.2 小节可直接拼接的行列表。
 def build_step_markdown_lines(list_steps: list[dict[str, str]]) -> list[str]:
@@ -1350,8 +1541,8 @@ def render_markdown(
     # 读取技术术语列表，供背景技术小节复用。
     list_terms = dict_render_payload["list_terms"]  # 聚合后的技术术语列表
 
-    # 读取方法步骤列表，供 4.2.2 小节生成结构化流程说明。
-    list_steps = dict_render_payload["list_steps"]  # 结构化方法步骤列表
+    # 从渲染载荷读取步骤主链，供 4.2.2 小节展开输入处理输出关系。
+    list_steps = dict_render_payload["list_steps"]  # 方法章节步骤主链
 
     # 读取系统模块列表，供 4.2.1 小节生成模块化方案说明。
     list_modules = dict_render_payload["list_modules"]  # 结构化系统模块列表
@@ -1453,6 +1644,75 @@ def build_prior_summaries(
     # 返回现有技术摘要列表，供正文与证据映射阶段共同复用。
     return list_prior_summaries
 
+# 统一写入正文、内部审查和合同工件，缩小命令行入口职责。
+def write_generated_documents(
+    path_case_dir: Path,
+    dict_document_context: dict[str, Any],
+    module_runtime_support: Any,
+    module_quality_contract: Any,
+) -> Path:
+    """写入正式草稿、内部审查、快照和起草合同工件。
+
+    参数：
+    - `path_case_dir`：当前案件根目录路径。
+    - `dict_document_context`：正文、标题、步骤和审查内容组成的写入上下文。
+    - `module_runtime_support`：共享运行时支持模块对象。
+    - `module_quality_contract`：正文质量合同模块对象。
+
+    返回：
+    - `Path`：稳定主草稿路径。
+
+    异常：
+    - 目录创建或文件写入失败时由底层异常上抛。
+    """
+
+    # 确保草稿输出目录存在，供稳定草稿、审查 sidecar 和快照共同落盘。
+    path_output_dir = module_runtime_support.ensure_dir(path_case_dir / "03_drafts")  # 草稿输出目录路径
+
+    # 固定稳定主草稿与内部审查路径，供后续链路按约定名称读取。
+    path_stable_draft = path_output_dir / "disclosure_draft.md"  # 稳定主草稿路径
+
+    # 内部审查材料采用独立 sidecar，避免进入代理人提交正文。
+    path_internal_review = path_output_dir / "disclosure_internal_review.md"  # 内部审查 sidecar 路径
+
+    # 由案件名和当前时间生成安全快照路径，保留本轮生成历史。
+    str_snapshot_name = module_runtime_support.sanitize_name(dict_document_context["case_name"])  # 快照文件名前缀
+
+    # 生成不含路径非法字符的紧凑时间片段。
+    str_snapshot_timestamp = module_runtime_support.iso_now().replace(":", "").replace("-", "")  # 快照时间片段
+
+    # 使用案件名前缀和时间片段生成唯一正文快照路径。
+    path_snapshot_draft = path_output_dir / f"{str_snapshot_name}_{str_snapshot_timestamp}.md"  # 正文快照路径
+
+    # 写入代理人正文、内部审查 sidecar 和时间快照，保持内部材料不进入主文档。
+    module_runtime_support.write_text_file(path_stable_draft, dict_document_context["markdown"])
+
+    # 单独写入内部审查材料，供人工复核证据和待确认项。
+    module_runtime_support.write_text_file(path_internal_review, dict_document_context["internal_review"])
+
+    # 保存本轮正文快照，便于后续核对确认前后的内容哈希。
+    module_runtime_support.write_text_file(path_snapshot_draft, dict_document_context["markdown"])
+
+    # 将正文相关字段收敛为起草合同上下文，避免写入函数暴露过多独立参数。
+    dict_artifact_context = {  # 起草合同写入上下文
+        "title": dict_document_context["title"],  # 合同中的发明名称
+        "steps": dict_document_context["steps"],  # 合同中的方法步骤
+        "modules": dict_document_context["modules"],  # 合同中的装置模块
+        "effects": dict_document_context["effects"],  # 合同中的技术效果
+    }
+
+    # 写入起草计划、模板槽位正文和预览哈希，锁定确认后的生成边界。
+    write_draft_contract_artifacts(
+        path_output_dir,
+        dict_document_context["markdown"],
+        dict_artifact_context,
+        module_runtime_support,
+        module_quality_contract,
+    )
+
+    # 返回稳定主草稿路径，供命令行入口输出给上游流水线。
+    return path_stable_draft
+
 # 执行正式草稿生成入口，读取主案结果并输出交底书草稿与证据映射。
 def main() -> int:
     """执行正式草稿生成入口。
@@ -1469,6 +1729,9 @@ def main() -> int:
 
     # 加载共享运行时支持模块，复用文本清洗、时间戳和 JSON 读写工具。
     module_runtime_support = load_runtime_support_module()  # 共享运行时支持模块
+
+    # 加载正文质量合同，统一约束术语、效果、证据映射与受控推断边界。
+    module_quality_contract = load_quality_contract_module()  # 正文质量合同模块
 
     # 解析命令行参数，读取案件目录和内部预览放行开关。
     namespace_arguments = build_parser().parse_args()  # 正式草稿入口参数对象
@@ -1510,16 +1773,28 @@ def main() -> int:
     list_problem_lines = build_problem_lines(str_problem, module_runtime_support)  # 3.3 小节问题编号条目
 
     # 聚合主案与 facts 中的关键术语，供背景、术语说明和步骤骨架复用。
-    list_terms = module_runtime_support.collect_terms(dict_selected, dict_facts)  # 背景与术语说明聚合结果
+    list_raw_terms = module_runtime_support.collect_terms(dict_selected, dict_facts)  # 背景与术语说明候选结果
+
+    # 过滤公式 token、通用英文标记和完整句子，避免它们误作为正式技术术语。
+    list_terms = module_quality_contract.filter_technical_terms(list_raw_terms)  # 去噪后的技术术语列表
 
     # 基于主案方案和术语列表生成方法步骤骨架，作为正文主链的核心结构。
-    list_steps = build_method_steps(dict_selected, list_terms, module_runtime_support)  # 4.2.2 方法流程结构化步骤
+    list_steps = build_method_steps(  # 4.2.2 方法流程结构化步骤
+        dict_selected,  # 当前主案选择结果
+        list_terms,  # 步骤构造使用的去噪术语
+        module_runtime_support,  # 步骤文本清洗与默认值工具
+        module_quality_contract,  # 步骤证据与术语约束规则
+    )
 
     # 把方法步骤归并成系统模块骨架，供装置方案与附图说明复用同一术语。
     list_modules = build_modules(list_steps)  # 4.2.1 装置方案模块清单
 
     # 生成 4.3 小节的技术效果条目列表，保持效果表述与真实材料一致。
-    list_effects = build_effect_lines(dict_selected, module_runtime_support)  # 4.3 小节效果编号条目
+    list_effects = build_effect_lines(  # 4.3 小节效果编号条目
+        dict_selected,  # 效果分类所依据的主案数据
+        module_runtime_support,  # 共享文本清洗工具
+        module_quality_contract,  # 技术效果证据分类规则
+    )
 
     # 从本地研究材料中提取可追溯公式块，供正式交付源稿保留公式表达。
     list_formula_blocks = collect_formula_blocks_from_research_root(path_case_dir, module_runtime_support)  # 本地研究材料公式块列表
@@ -1570,6 +1845,7 @@ def main() -> int:
         dict_selected,
         list_prior_summaries,
         module_runtime_support,
+        module_quality_contract,
     )
 
     # 渲染完整正式中文交底书 Markdown 文本。
@@ -1585,32 +1861,24 @@ def main() -> int:
         list_missing_lines,  # 已整理成 Markdown 条目的待确认事项
     )
 
-    # 确保草稿输出目录存在，供稳定草稿和快照草稿共同落盘。
-    path_output_dir = module_runtime_support.ensure_dir(path_case_dir / "03_drafts")  # 草稿输出目录路径
+    # 汇总文件写入所需字段，避免主入口继续承担路径与快照装配细节。
+    dict_document_context = {  # 正式草稿文件写入上下文
+        "case_name": str_case_name,  # 当前案件名称
+        "title": str_title,  # 合同工件使用的正式标题
+        "markdown": str_markdown,  # 代理人审阅正文 Markdown
+        "internal_review": str_internal_review_markdown,  # 内部审查 sidecar 内容
+        "steps": list_steps,  # 方法步骤合同内容
+        "modules": list_modules,  # 装置模块合同内容
+        "effects": list_effects,  # 技术效果合同内容
+    }
 
-    # 固定稳定主草稿路径，供后链默认读取当前最新正文。
-    path_stable_draft = path_output_dir / "disclosure_draft.md"  # 稳定主草稿路径
-
-    # 固定内部审查 sidecar 路径，供人工复核但不作为代理提交正文。
-    path_internal_review = path_output_dir / "disclosure_internal_review.md"  # 内部审查 sidecar 路径
-
-    # 先把案件名规整成安全快照前缀，避免快照文件名包含非法字符。
-    str_snapshot_name = module_runtime_support.sanitize_name(str_case_name)  # 草稿快照安全文件名前缀
-
-    # 把当前时间规整成紧凑时间片段，供快照文件名保持时间顺序。
-    str_snapshot_timestamp = module_runtime_support.iso_now().replace(":", "").replace("-", "")  # 草稿快照时间片段
-
-    # 拼出本轮正文快照路径，便于后续人工回看生成历史。
-    path_snapshot_draft = path_output_dir / f"{str_snapshot_name}_{str_snapshot_timestamp}.md"  # 正文快照路径
-
-    # 把稳定主草稿写入案件目录，供后链默认按约定路径读取。
-    module_runtime_support.write_text_file(path_stable_draft, str_markdown)
-
-    # 把内部审查材料写入 sidecar，避免术语、证据摘要和待确认事项进入主交底书。
-    module_runtime_support.write_text_file(path_internal_review, str_internal_review_markdown)
-
-    # 把时间快照草稿也写入案件目录，保留本轮生成历史供人工回看。
-    module_runtime_support.write_text_file(path_snapshot_draft, str_markdown)
+    # 此边界负责落盘四种草稿工件；入口只保留其返回的 Markdown 路径。
+    path_stable_draft = write_generated_documents(  # 上游流水线读取的 Markdown 入口
+        path_case_dir,  # 当前案件根目录
+        dict_document_context,  # 正文与合同文件写入上下文
+        module_runtime_support,  # 文件系统与 JSON 写入工具
+        module_quality_contract,  # 起草合同与推断边界规则
+    )
 
     # 把稳定主草稿绝对路径写回标准输出，供上游流水线与测试稳定解析。
     sys.stdout.write(str(path_stable_draft.resolve()) + "\n")

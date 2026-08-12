@@ -86,6 +86,54 @@ FLOW_CANVAS_WIDTH = 8.0  # 方法流程图画布宽度（英寸）
 # 固定 PNG 绘图 DPI，保证 DOCX 嵌图时文字仍可阅读。
 FIGURE_PLOT_DPI = 180  # 绘图输出 DPI
 
+# 固定 Pillow 回退画布宽度，保证中文摘要拥有足够横向空间。
+PILLOW_CANVAS_WIDTH = 1400  # Pillow 回退画布宽度（像素）
+
+# 固定 Pillow 回退图的左右留白，避免框线贴边。
+PILLOW_HORIZONTAL_MARGIN = 90  # Pillow 回退图水平留白（像素）
+
+# 固定图题区域和首框之间的垂直空间。
+PILLOW_TITLE_HEIGHT = 110  # Pillow 图题区域高度（像素）
+
+# 固定回退图内容框高度，容纳多行中文摘要。
+PILLOW_BOX_HEIGHT = 150  # Pillow 内容框高度（像素）
+
+# 固定相邻内容框之间的连接区域高度。
+PILLOW_BOX_GAP = 70  # Pillow 内容框间距（像素）
+
+# 固定回退图底部留白，防止末框贴边。
+PILLOW_BOTTOM_MARGIN = 70  # Pillow 底部留白（像素）
+
+# 固定 Pillow 图题和正文的字体层级。
+PILLOW_TITLE_FONT_SIZE = 34  # Pillow 图题字号
+
+# 固定 Pillow 正文框字体大小。
+PILLOW_BODY_FONT_SIZE = 28  # Pillow 正文字号
+
+# 固定图题中心的纵坐标。
+PILLOW_TITLE_CENTER_Y = 45  # Pillow 图题中心纵坐标（像素）
+
+# 固定圆角框半径和黑白线条宽度。
+PILLOW_BOX_RADIUS = 18  # Pillow 圆角框半径（像素）
+
+# 固定回退图框线和箭头的笔画宽度。
+PILLOW_LINE_WIDTH = 3  # Pillow 线条宽度（像素）
+
+# 固定多行正文的行间距。
+PILLOW_TEXT_SPACING = 6  # Pillow 多行正文间距（像素）
+
+# 固定箭头主干与上下框体之间的安全留白。
+PILLOW_ARROW_MARGIN = 12  # Pillow 箭头端点留白（像素）
+
+# 固定箭头尖端伸出主干的长度。
+PILLOW_ARROW_TIP_LENGTH = 10  # Pillow 箭头尖端长度（像素）
+
+# 固定箭头三角形的半宽。
+PILLOW_ARROW_HALF_WIDTH = 8  # Pillow 箭头尖端半宽（像素）
+
+# 固定箭头三角形底边相对主干终点的偏移。
+PILLOW_ARROW_BASE_OFFSET = 4  # Pillow 箭头底边偏移（像素）
+
 # 固定方法流程图横向坐标范围，供步骤框和箭头共享一套坐标语义。
 FLOW_X_AXIS_LIMIT = 10.0  # 方法流程图横向坐标上限
 
@@ -1396,6 +1444,207 @@ def render_module_svg(list_modules: list[dict[str, str]]) -> str:
     # 返回完整模块图 SVG 文本，供后续写盘和 DOCX 嵌图流程复用。
     return "\n".join(list_parts)
 
+# 运行时加载可选 matplotlib 后端，使轻量环境能安全进入 Pillow 回退路径。
+def load_matplotlib_backend() -> tuple[Any, Any] | None:
+    """加载 PNG 矢量绘图后端；轻量运行时缺失时返回空值。
+
+    参数：
+    - 无。
+
+    返回：
+    - `tuple[Any, Any] | None`：可用时返回 pyplot 与圆角框类型，否则返回 `None`。
+
+    异常：
+    - 无；缺失可选绘图库时由 Pillow 回退路径继续生成。
+    """
+
+    # 尝试导入绘图后端，避免在模块加载阶段强制依赖 matplotlib。
+    try:
+
+        # pyplot 负责画布，圆角框类型负责流程框和模块框。
+        from matplotlib import pyplot as plt
+        from matplotlib.patches import FancyBboxPatch as class_fancy_bbox_patch
+
+    # 轻量运行时缺少 matplotlib 时由 Pillow 继续生成 PNG。
+    except ModuleNotFoundError:
+
+        # 空值明确表示调用方必须选择无 matplotlib 的回退实现。
+        return None
+
+    # 返回两个后端对象，保持流程图和模块图使用同一加载结果。
+    return plt, class_fancy_bbox_patch
+
+# 为 Pillow 回退图选择能够显示中文的字体。
+def build_pillow_cjk_font(class_image_font: Any, int_font_size: int) -> Any:
+    """构造 Pillow 回退路径使用的中文字体对象。
+
+    参数：
+    - `class_image_font`：Pillow 字体模块对象。
+    - `int_font_size`：目标字号。
+
+    返回：
+    - `Any`：优先为可用中文字体，极端环境回退为 Pillow 默认字体。
+
+    异常：
+    - 无；字体文件不可用时保留可生成 PNG 的默认字体回退。
+    """
+
+    # 查询当前平台优先中文字体，避免图中文字变成空方框。
+    path_font = find_preferred_cjk_font_path()  # Pillow 回退图使用的中文字体路径
+
+    # 找到字体文件时优先按目标字号加载。
+    if path_font is not None:
+
+        # 字体文件可能存在但 Pillow 无法解析，因此保留安全回退。
+        try:
+
+            # 返回指定字号的中文字体对象。
+            return class_image_font.truetype(str(path_font), int_font_size)
+
+        # 字体解析失败不阻断整份交底书的附图生成。
+        except OSError:
+
+            # 交由下方默认字体路径继续处理。
+            pass
+
+    # 极端环境没有可用中文字体时仍生成结构完整的 PNG。
+    return class_image_font.load_default()
+
+# 使用 Pillow 生成纵向黑白框图，作为 matplotlib 缺失时的确定性回退。
+def write_pillow_diagram(
+    path_output_png: Path,
+    str_title: str,
+    list_text_blocks: list[str],
+) -> None:
+    """在缺少 matplotlib 时使用 Pillow 写出可交付的黑白结构图。
+
+    参数：
+    - `path_output_png`：PNG 输出路径。
+    - `str_title`：图标题。
+    - `list_text_blocks`：按阅读顺序排列的图框正文列表。
+
+    返回：
+    - `None`。
+
+    异常：
+    - Pillow 不可用或图片写入失败时由底层异常上抛。
+    """
+
+    # 延迟导入 Pillow，正常 matplotlib 环境不需要加载该依赖。
+    from PIL import Image, ImageDraw, ImageFont
+
+    # 回退画布保持足够宽度，使中文摘要无需缩小字号。
+    int_canvas_width = PILLOW_CANVAS_WIDTH  # Pillow 回退图画布宽度（像素）
+
+    # 左右留白避免圆角框贴近图片边缘。
+    int_horizontal_margin = PILLOW_HORIZONTAL_MARGIN  # 回退图水平页边距（像素）
+
+    # 读取图题区高度，后续所有框体都从该纵坐标以下开始排列。
+    int_title_height = PILLOW_TITLE_HEIGHT  # 当前画布的图题占用高度
+
+    # 读取统一框高，使方法步骤和系统模块拥有相同的垂直节奏。
+    int_box_height = PILLOW_BOX_HEIGHT  # 当前回退图采用的内容框高度
+
+    # 框间距容纳竖向连线和箭头尖端。
+    int_box_gap = PILLOW_BOX_GAP  # 相邻内容框间距（像素）
+
+    # 底部留白与框间距一致，避免末框压住画布边界。
+    int_bottom_margin = PILLOW_BOTTOM_MARGIN  # 回退图底部留白（像素）
+
+    # 按正文块数量计算画布高度，避免固定高度裁切后续步骤。
+    int_canvas_height = (  # Pillow 回退图画布高度（像素）
+        int_title_height  # 图题区域高度
+        + len(list_text_blocks) * (int_box_height + int_box_gap)  # 全部框体及框间连接区域
+        + int_bottom_margin  # 末框后的底部留白
+    )
+
+    # 创建白底 RGB 图像，确保 Word 和 PDF 渲染结果一致。
+    obj_image = Image.new("RGB", (int_canvas_width, int_canvas_height), "white")  # 白底回退图对象
+
+    # 为图像创建绘图上下文，后续文字、框线和箭头共享该对象。
+    obj_draw = ImageDraw.Draw(obj_image)  # Pillow 绘图上下文
+
+    # 图题使用较大中文字体，和正文框形成视觉层级。
+    obj_title_font = build_pillow_cjk_font(ImageFont, PILLOW_TITLE_FONT_SIZE)  # 回退图标题字体
+
+    # 正文使用稍小字号，兼顾多行内容与可读性。
+    obj_body_font = build_pillow_cjk_font(ImageFont, PILLOW_BODY_FONT_SIZE)  # 回退图正文框字体
+
+    # 内容框左边界由统一水平留白确定。
+    int_box_left = int_horizontal_margin  # 内容框左边界（像素）
+
+    # 内容框右边界与左边界保持对称。
+    int_box_right = int_canvas_width - int_horizontal_margin  # 内容框右边界（像素）
+
+    # 所有框体和箭头共用画布中心线。
+    int_center_x = int_canvas_width // 2  # 内容框中心横坐标（像素）
+
+    # 在首个框体上方写入图号和图名。
+    obj_draw.text((int_center_x, PILLOW_TITLE_CENTER_Y), str_title, fill="black", font=obj_title_font, anchor="mm")
+
+    # 按阅读顺序逐个绘制正文框及其下方连接箭头。
+    for int_index, str_text_block in enumerate(list_text_blocks):
+
+        # 根据序号计算当前框体顶部位置。
+        int_box_top = int_title_height + int_index * (int_box_height + int_box_gap)  # 当前框体上边界（像素）
+
+        # 框体底部由固定高度推导，保证所有步骤视觉一致。
+        int_box_bottom = int_box_top + int_box_height  # 当前框体下边界（像素）
+
+        # 正文锚点位于框体几何中心。
+        int_center_y = (int_box_top + int_box_bottom) // 2  # 当前框体中心纵坐标（像素）
+
+        # 绘制黑白圆角框，避免使用填充色影响专利附图打印。
+        obj_draw.rounded_rectangle(
+            (int_box_left, int_box_top, int_box_right, int_box_bottom),
+            radius=PILLOW_BOX_RADIUS,
+            outline="black",
+            width=PILLOW_LINE_WIDTH,
+        )
+
+        # 把已经换行的技术摘要写入框体中心。
+        obj_draw.multiline_text(
+            (int_center_x, int_center_y),
+            str_text_block,
+            fill="black",
+            font=obj_body_font,
+            anchor="mm",
+            align="center",
+            spacing=PILLOW_TEXT_SPACING,
+        )
+
+        # 最后一个框体不需要向下连接箭头。
+        if int_index < len(list_text_blocks) - 1:
+
+            # 箭头从框体下方留白处开始，避免线段贴住边框。
+            int_arrow_top = int_box_bottom + PILLOW_ARROW_MARGIN  # 当前箭头起点纵坐标（像素）
+
+            # 箭头终点位于下一框体之前，给尖端保留空间。
+            int_arrow_bottom = int_box_bottom + int_box_gap - PILLOW_ARROW_MARGIN  # 当前箭头终点纵坐标（像素）
+
+            # 绘制箭头主干，沿框体中心线连接上下步骤。
+            obj_draw.line(
+                (int_center_x, int_arrow_top, int_center_x, int_arrow_bottom),
+                fill="black",
+                width=PILLOW_LINE_WIDTH,
+            )
+
+            # 使用实心三角形表示流程方向。
+            obj_draw.polygon(
+                [
+                    (int_center_x, int_arrow_bottom + PILLOW_ARROW_TIP_LENGTH),
+                    (int_center_x - PILLOW_ARROW_HALF_WIDTH, int_arrow_bottom - PILLOW_ARROW_BASE_OFFSET),
+                    (int_center_x + PILLOW_ARROW_HALF_WIDTH, int_arrow_bottom - PILLOW_ARROW_BASE_OFFSET),
+                ],
+                fill="black",
+            )
+
+    # 确保目标目录存在，允许独立调用该回退渲染函数。
+    path_output_png.parent.mkdir(parents=True, exist_ok=True)
+
+    # 以显式 PNG 格式写盘，供 DOCX 嵌图和独立附图包复用。
+    obj_image.save(path_output_png, format="PNG")
+
 # 把方法步骤写成 PNG 交付图，供 DOCX 导出阶段直接嵌入正文。
 def write_flow_png(path_output_png: Path, list_steps: list[dict[str, str]]) -> None:
     """把方法流程图写成 PNG 文件。
@@ -1411,15 +1660,38 @@ def write_flow_png(path_output_png: Path, list_steps: list[dict[str, str]]) -> N
     - 图片写入失败时由底层异常上抛。
     """
 
-    # 只在函数内部导入 matplotlib，避免模块导入期强依赖绘图库。
-    from matplotlib import pyplot as plt
-    from matplotlib.patches import FancyBboxPatch
+    # 优先加载 matplotlib 绘图后端；缺失时使用既有 Pillow 能力生成可交付 PNG。
+    tuple_matplotlib_backend = load_matplotlib_backend()  # matplotlib 后端或空值
+
+    # 可选后端不可用时改用确定性的纵向 Pillow 框图。
+    if tuple_matplotlib_backend is None:
+
+        # 把每个方法步骤整理成已经换行的单框正文。
+        list_text_blocks = [  # Pillow 回退流程图图框正文列表
+            "\n".join(  # 当前步骤框内的多行中文摘要
+                wrap_figure_text(  # 当前步骤编号和摘要的换行结果
+                    f"{dict_step['id']}：{dict_step['summary']}",  # 当前方法步骤的编号和摘要
+                    FLOW_TEXT_WRAP_WIDTH,  # 方法步骤框的换行宽度
+                    FLOW_TEXT_MAX_LINES,  # 方法步骤框允许的最大文本行数
+                )
+            )
+            for dict_step in list_steps  # 保持正式方法步骤的原始顺序
+        ]
+
+        # 写出可供 Word 直接嵌入的流程图 PNG。
+        write_pillow_diagram(path_output_png, "图 1 方法流程图", list_text_blocks)
+
+        # Pillow 已完成当前输出，避免继续进入 matplotlib 分支。
+        return
+
+    # 解包可用后端，类型名称使用 snake_case 别名满足当前项目命名约束。
+    obj_pyplot, class_fancy_bbox_patch = tuple_matplotlib_backend  # matplotlib 流程图绘图对象
 
     # 根据步骤数量确定画布高度，给三行中文摘要和箭头都留出更稳定的空间。
     float_height = FLOW_CANVAS_BASE_HEIGHT + len(list_steps) * 1.7  # 方法流程图画布高度（英寸）
 
     # 创建白底画布，供方法步骤框和箭头稳定排版。
-    obj_figure, obj_axes = plt.subplots(figsize=(FLOW_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 方法流程图画布和坐标轴
+    obj_figure, obj_axes = obj_pyplot.subplots(figsize=(FLOW_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 方法流程图画布和坐标轴
 
     # 解析当前 PNG 绘图要复用的中文字体属性，避免默认字体把步骤正文渲染成缺字方块。
     obj_font_properties = build_png_cjk_font_properties()  # 方法流程图文本字体属性
@@ -1461,7 +1733,7 @@ def write_flow_png(path_output_png: Path, list_steps: list[dict[str, str]]) -> N
         tuple_box_origin = (FLOW_BOX_LEFT, float_center_y - FLOW_BOX_HALF_HEIGHT)  # 当前步骤框左下角坐标
 
         # 准备当前步骤框对象，沿用统一的圆角框样式保持专利附图风格一致。
-        obj_box = build_rounded_box_patch(FancyBboxPatch, tuple_box_origin, FLOW_BOX_WIDTH, FLOW_BOX_HEIGHT)  # 当前步骤框图形对象
+        obj_box = build_rounded_box_patch(class_fancy_bbox_patch, tuple_box_origin, FLOW_BOX_WIDTH, FLOW_BOX_HEIGHT)  # 当前步骤框图形对象
 
         # 把当前步骤框追加到画布，形成正式 PNG 图形主体。
         obj_axes.add_patch(obj_box)
@@ -1505,7 +1777,7 @@ def write_flow_png(path_output_png: Path, list_steps: list[dict[str, str]]) -> N
     obj_figure.savefig(path_output_png, bbox_inches="tight", facecolor="white")
 
     # 释放流程图画布对象，避免批量案件连续生成时积累绘图库句柄。
-    plt.close(obj_figure)
+    obj_pyplot.close(obj_figure)
 
 # 把系统模块写成 PNG 交付图，供 DOCX 导出阶段直接嵌入正文。
 def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) -> None:
@@ -1522,9 +1794,39 @@ def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) 
     - 图片写入失败时由底层异常上抛。
     """
 
-    # 只在函数内部导入 matplotlib，避免模块导入期强依赖绘图库。
-    from matplotlib import pyplot as plt
-    from matplotlib.patches import FancyBboxPatch
+    # 为模块图探测可选绘图库，探测失败不会阻断 PNG 输出。
+    tuple_matplotlib_backend = load_matplotlib_backend()  # 模块图可选绘图后端
+
+    # 可选后端不可用时改用纵向 Pillow 框图表达模块关系。
+    if tuple_matplotlib_backend is None:
+
+        # 合并模块名称和功能说明，形成单个模块框的多行正文。
+        list_text_blocks = [  # Pillow 回退模块图图框正文列表
+            "\n".join(  # 当前模块框内的名称与功能摘要
+                [
+                    *wrap_figure_text(  # 模块名称换行结果
+                        str(dict_module["name"]),  # 当前模块正式名称
+                        MODULE_NAME_WRAP_WIDTH,  # 模块名称允许的换行宽度
+                        MODULE_NAME_MAX_LINES,  # 模块名称允许的最大文本行数
+                    ),
+                    *wrap_figure_text(  # 模块功能换行结果
+                        str(dict_module["function"]),  # 当前模块功能说明
+                        MODULE_FUNCTION_WRAP_WIDTH,  # 模块功能说明允许的换行宽度
+                        MODULE_FUNCTION_MAX_LINES,  # 模块功能说明允许的最大文本行数
+                    ),
+                ]
+            )
+            for dict_module in list_modules  # 保持正式模块清单顺序
+        ]
+
+        # 写出可供 Word 直接嵌入的系统模块图 PNG。
+        write_pillow_diagram(path_output_png, "图 2 系统模块图", list_text_blocks)
+
+        # 模块框图已经写盘，当前函数无需创建第二份 matplotlib 画布。
+        return
+
+    # 解包可用后端，显式区分 pyplot 对象与圆角框类型。
+    obj_pyplot, class_fancy_bbox_patch = tuple_matplotlib_backend  # matplotlib 模块图绘图对象
 
     # 依据模块数量确定列数，少量模块单列，多于两个模块时使用双列布局。
     int_columns = MODULE_DOUBLE_COLUMN if len(list_modules) > MODULE_DOUBLE_COLUMN_THRESHOLD else MODULE_SINGLE_COLUMN  # 当前模块图列数
@@ -1536,7 +1838,7 @@ def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) 
     float_height = MODULE_PLOT_BASE_HEIGHT + int_rows * MODULE_PLOT_ROW_HEIGHT  # 系统模块图画布高度（英寸）
 
     # 创建白底画布，供模块框和连接箭头排版。
-    obj_figure, obj_axes = plt.subplots(figsize=(MODULE_PLOT_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 系统模块图画布和坐标轴
+    obj_figure, obj_axes = obj_pyplot.subplots(figsize=(MODULE_PLOT_CANVAS_WIDTH, float_height), dpi=FIGURE_PLOT_DPI)  # 系统模块图画布和坐标轴
 
     # 解析当前 PNG 绘图要复用的中文字体属性，避免模块名和功能摘要退化成缺字方块。
     obj_font = build_png_cjk_font_properties()  # 系统模块图文本字体属性
@@ -1545,7 +1847,7 @@ def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) 
     dict_arrowprops = build_arrowprops()  # 模块图箭头样式参数
 
     # 固定圆角框类对象引用，避免附图绘制 helper 调用行过长。
-    class_box_patch = FancyBboxPatch  # 模块图圆角框类对象
+    class_box_patch = class_fancy_bbox_patch  # 模块图圆角框类对象
 
     # 关闭坐标轴显示，保证模块图只保留结构框、标题和箭头。
     obj_axes.axis("off")
@@ -1581,7 +1883,7 @@ def write_module_png(path_output_png: Path, list_modules: list[dict[str, str]]) 
     obj_figure.savefig(path_output_png, bbox_inches="tight", facecolor="white")
 
     # 释放模块图画布对象，避免多案件连续生成时持续占用绘图库资源。
-    plt.close(obj_figure)
+    obj_pyplot.close(obj_figure)
 
 # 生成 Mermaid 源文件，便于后续外部渲染或人工细化。
 def write_mermaid_files(

@@ -14,6 +14,9 @@ from typing import Any
 # 固定共享运行时支持模块路径，避免通过修改 sys.path 导入公共工具。
 PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtime_support.py"  # 共享运行时支持模块路径
 
+# 固定正文质量合同路径，确保验证评分与起草阶段使用同一受控质量规则。
+PATH_QUALITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "disclosure_quality_contract.py"  # 正文质量合同模块路径
+
 # 固定正文主骨架必须覆盖的章节标题，供自检时统一校验。
 REQUIRED_HEADINGS = [  # 正文主骨架必需章节标题列表
     "## 一、发明名称",  # 发明名称章节
@@ -74,6 +77,41 @@ def load_runtime_support_module() -> Any:
 
     # 返回已完成加载的共享支持模块，供自检入口复用。
     return module_runtime_support
+
+# 按受管路径加载正文质量合同，避免通过 sys.path 注入模块。
+def load_quality_contract_module() -> Any:
+    """按路径加载正文质量合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行的正文质量合同模块对象。
+
+    异常：
+    - 合同模块缺失或无法加载时抛出 `ImportError`。
+    """
+
+    # 从正式 support 目录构造模块加载规格。
+    obj_specification = importlib.util.spec_from_file_location(  # 正文质量合同模块加载规格
+        "readable_patent_disclosure_quality_contract",  # 质量合同内部模块名
+        PATH_QUALITY_CONTRACT,  # 正文质量合同源码路径
+    )
+
+    # 加载规格不完整时阻断自检，避免跳过语义评分卡。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 报告正式质量合同缺失，便于调用方修复技能结构。
+        raise ImportError("> ERR: [Python] 无法加载 support/disclosure_quality_contract.py。")
+
+    # 根据已验证规格创建模块对象，等待执行质量规则定义。
+    module_quality_contract = importlib.util.module_from_spec(obj_specification)  # 正文质量合同模块对象
+
+    # 执行质量合同模块，暴露评分卡与阻断规则。
+    obj_specification.loader.exec_module(module_quality_contract)
+
+    # 返回完成初始化的质量合同模块供自检主流程调用。
+    return module_quality_contract
 
 # 构造命令行参数解析器，统一声明案件目录和可选输入草稿参数。
 def build_parser() -> argparse.ArgumentParser:
@@ -510,18 +548,98 @@ def validate_placeholder_risk(
             "将占位收敛到“待确认事项”小节，不要进入主方案描述。",
         )
 
-# 汇总结构化自检结果，统一产出 blocked、needs_revision 或 pass 三种状态。
+# 将质量评分卡中的语义缺陷追加到统一 finding 列表。
+def append_quality_scorecard_findings(
+    list_findings: list[dict[str, str]],
+    dict_scorecard: dict[str, Any],
+) -> None:
+    """把正文评分卡的缺陷合并到统一 validation findings。
+
+    参数：
+    - `list_findings`：现有结构化 finding 列表。
+    - `dict_scorecard`：正文质量合同生成的评分卡。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 无。
+    """
+
+    # 逐条转换评分卡 finding，保持原始等级、代码和信息。
+    for dict_scorecard_finding in dict_scorecard.get("findings", []):
+
+        # 通过统一入口追加 finding，避免报告计数字段和正文列表漂移。
+        add_finding(
+            list_findings,
+            str(dict_scorecard_finding["level"]),
+            str(dict_scorecard_finding["code"]),
+            str(dict_scorecard_finding["message"]),
+            str(dict_scorecard_finding["suggestion"]),
+        )
+
+# 校验视觉验收回执与当前正文、模板哈希一致，防止旧回执放行新内容。
+def is_visual_review_complete(path_case_dir: Path, module_runtime_support: Any) -> bool:
+    """判断当前案件是否具有与预览哈希一致的视觉验收回执。
+
+    参数：
+    - `path_case_dir`：当前案件根目录路径。
+    - `module_runtime_support`：共享运行时支持模块对象。
+
+    返回：
+    - `bool`：回执状态为 passed 且正文、模板哈希均匹配时为真。
+
+    异常：
+    - JSON 读取失败时由底层异常上抛。
+    """
+
+    # 固定视觉验收回执和预览状态路径，二者共同决定最终完成资格。
+    path_visual_review = path_case_dir / "04_reviews" / "visual_review.json"  # 视觉验收回执路径
+
+    # 预览状态提供本轮正文与模板的权威哈希，供回执逐项匹配。
+    path_preview_status = path_case_dir / "03_drafts" / "preview_status.json"  # 当前预览状态路径
+
+    # 任一合同文件缺失都表示视觉验收尚未形成可追踪证据。
+    if not path_visual_review.exists() or not path_preview_status.exists():
+
+        # 缺少回执或哈希事实源时保持视觉验收未完成。
+        return False
+
+    # 读取人工视觉验收回执，获取通过状态和所审文档哈希。
+    dict_visual_review = module_runtime_support.read_json_file(path_visual_review)  # 视觉验收回执数据
+
+    # 读取当前预览状态，作为正文和模板哈希的权威事实源。
+    dict_preview_status = module_runtime_support.read_json_file(path_preview_status)  # 当前预览哈希数据
+
+    # 回执必须明确标记 passed，其他状态均不得进入最终完成态。
+    if dict_visual_review.get("status") != "passed":
+
+        # 待复核或失败回执不具备完成资格。
+        return False
+
+    # 正文哈希必须与当前确认版本一致，阻止审阅后正文漂移。
+    bool_draft_matches = dict_visual_review.get("draft_hash") == dict_preview_status.get("draft_hash")  # 正文哈希是否匹配
+
+    # 模板哈希必须与当前确认模板一致，阻止审阅后版式基准漂移。
+    bool_template_matches = dict_visual_review.get("template_hash") == dict_preview_status.get("template_hash")  # 模板哈希是否匹配
+
+    # 仅在两个哈希同时匹配时确认视觉验收已覆盖当前交付边界。
+    return bool_draft_matches and bool_template_matches
+
+# 汇总结构化自检结果，统一产出 blocked、needs_revision 或 visual_review_required 状态。
 def build_report(
     path_draft: Path,
     list_findings: list[dict[str, str]],
+    dict_scorecard: dict[str, Any],
     module_runtime_support: Any,
 ) -> dict[str, Any]:
     """汇总结构化自检报告。
 
     参数：
-    - `path_draft`：正文草稿路径。
-    - `list_findings`：结构化 finding 列表。
-    - `module_runtime_support`：共享运行时支持模块对象。
+    - path_draft：正文草稿路径。
+    - list_findings：结构化 finding 列表。
+    - dict_scorecard：正文质量合同生成的语义评分卡。
+    - module_runtime_support：共享运行时支持模块对象。
 
     返回：
     - `dict[str, Any]`：完整自检报告结构化数据。
@@ -563,11 +681,11 @@ def build_report(
         # 记录需要先修订再复检的状态值，提醒当前案件暂不能直接交付。
         str_status = "needs_revision"  # 需要先修订后再复检的报告状态
 
-    # 在既没有 blocker 也没有 major finding 时标记为通过。
+    # 在没有语义缺陷时保留视觉验收待完成状态，禁止仅凭文件存在进入 completed。
     else:
 
-        # 记录当前案件通过本地自检的状态值，说明这轮检查没有阻断项。
-        str_status = "pass"  # 本轮本地自检通过时使用的报告状态
+        # 评分卡只会在无缺陷时返回 visual_review_required，作为最终 DOCX 的视觉复核门。
+        str_status = str(dict_scorecard["status"])  # 语义通过后的统一流程状态
 
     # 返回完整结构化报告，供 JSON 落盘与 Markdown 渲染共同复用。
     return {
@@ -576,6 +694,11 @@ def build_report(
         "status": str_status,
         "finding_count": len(list_findings),
         "findings": list_findings,
+        "scorecard": dict_scorecard,
+        "visual_review": {
+            "status": "passed" if str_status == "completed" else "pending",
+            "required": str_status != "completed",
+        },
     }
 
 # 渲染 Markdown 自检报告，供人工快速审阅问题级别、问题说明和修复建议。
@@ -604,6 +727,7 @@ def render_report_markdown(
         "",  # 标题后的空行
         f"Status: **{module_runtime_support.clean_text(dict_report['status'])}**",  # 报告状态
         f"Draft: `{path_draft.name}`",  # 草稿文件名
+        f"Score: **{dict_report['scorecard']['score']}/100**",  # 正文语义评分
         "",  # 草稿名后的空行
         "## Findings",  # Findings 小节标题
         "",  # Findings 小节标题后的空行
@@ -629,7 +753,7 @@ def render_report_markdown(
     else:
 
         # 追加无阻断性问题说明，标记当前报告为干净状态。
-        list_markdown_lines.append("- 未发现阻断性问题。")
+        list_markdown_lines.append("- 未发现语义阻断项；最终 DOCX 仍需完成视觉审阅。")
 
     # 返回完整 Markdown 报告文本，供案件目录落盘。
     return "\n".join(list_markdown_lines)
@@ -651,6 +775,9 @@ def main() -> int:
 
     # 加载共享运行时支持模块，复用正文后链的一致文件、时间和文本工具。
     module_runtime_support = load_runtime_support_module()  # 共享运行时支持模块
+
+    # 加载正文质量合同，生成可追踪的章节评分与视觉验收前状态。
+    module_quality_contract = load_quality_contract_module()  # 正文质量合同模块
 
     # 解析命令行参数，读取案件目录和可选输入草稿路径。
     namespace_arguments = build_parser().parse_args()  # 自检入口参数对象
@@ -700,8 +827,25 @@ def main() -> int:
     # 校验高风险占位是否仍进入主骨架标题，避免不成熟内容误入正式主线。
     validate_placeholder_risk(str_markdown, list_findings)
 
+    # 读取与当前正文、模板哈希绑定的视觉验收回执，旧回执不得放行新内容。
+    bool_visual_review_complete = is_visual_review_complete(path_case_dir, module_runtime_support)  # 视觉验收是否覆盖当前版本
+
+    # 生成背景、方案、效果和实施方式评分卡，并把视觉验收结果纳入最终状态。
+    dict_scorecard = module_quality_contract.build_quality_scorecard(  # 正文质量评分卡
+        str_markdown,  # 当前正式交底书 Markdown
+        bool_visual_review_complete=bool_visual_review_complete,  # 当前版本视觉验收状态
+    )
+
+    # 将评分卡发现的问题合并到统一 findings，确保语义缺陷会阻止错误进入交付态。
+    append_quality_scorecard_findings(list_findings, dict_scorecard)
+
     # 汇总结构化自检结果，生成统一的状态、计数和 finding 列表。
-    dict_report = build_report(path_draft, list_findings, module_runtime_support)  # 结构化自检报告
+    dict_report = build_report(  # 结构化自检报告
+        path_draft,  # 当前正式交底书草稿路径
+        list_findings,  # 确定性与语义质量缺陷列表
+        dict_scorecard,  # 当前正文语义评分卡
+        module_runtime_support,  # 共享时间与路径支持模块
+    )
 
     # 固定自检报告目录路径，JSON 与 Markdown 报告都会落在这里。
     path_review_dir = path_case_dir / "04_reviews"  # 自检报告目录路径

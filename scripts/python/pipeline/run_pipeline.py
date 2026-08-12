@@ -602,8 +602,14 @@ def run_post_preview_chain(
             f"stderr:\n{completed_process_review.stderr}"
         )
 
-    # 读取自检入口返回路径，只把它当作治理报告落盘校验信号而不暴露给默认结果。
-    _ = read_output_path(completed_process_review)  # 自检报告内部落盘校验路径
+    # 读取自检报告路径并解析统一状态，供 DOCX 导出后保留视觉验收门而不误标 completed。
+    path_validation_report = read_output_path(completed_process_review)  # 自检报告内部落盘校验路径
+
+    # 解析自检报告正文，后续状态传播只读取结构化字段。
+    dict_validation_report = json.loads(path_validation_report.read_text(encoding="utf-8"))  # 自检报告结构化数据
+
+    # 缺少状态字段时采用需修订状态，禁止宽松推断为完成。
+    str_validation_status = str(dict_validation_report.get("status", "needs_revision"))  # 自检报告统一状态
 
     # 先准备后链返回载荷字典，默认仅围绕正式交付包暴露机器可读字段。
     dict_payload: dict[str, Any] = {"case_dir": str(path_case_dir.resolve())}  # 正式后链返回载荷字典
@@ -641,14 +647,14 @@ def run_post_preview_chain(
     # 生成返回给调用方的附图文件序列，优先固定默认双格式资产。
     list_delivery_figure_files = collect_delivery_figure_files(path_case_dir)  # 正式附图文件绝对路径列表
 
-    # 在自检通过且正式交付件落盘后写回完整交付包字段。
+    # 在语义自检通过且正式交付件落盘后写回完整交付包字段；视觉验收状态不得提前完成。
     dict_payload.update(
         {
             "delivery_docx": str(path_delivery_docx),  # 主交付 DOCX 路径
             "delivery_markdown": str(path_draft.resolve()),  # 正式源稿 Markdown 路径
             "delivery_figures_dir": str(path_delivery_figures_dir),  # 返回给调用方的附图目录根路径
             "delivery_figure_files": list_delivery_figure_files,  # 返回给调用方的附图文件序列
-            "delivery_status": "completed",  # 已完成交付包状态文本
+            "delivery_status": str_validation_status,  # 已导出但仍可能待视觉审阅的交付包状态文本
         }
     )
 
