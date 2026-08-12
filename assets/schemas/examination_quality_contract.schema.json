@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/readable-patent-generator/examination_quality_contract.schema.json",
+  "title": "Examination Quality Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "effective_from", "sources", "profiles", "ai_scopes", "rules"],
+  "properties": {
+    "contract_version": {"type": "string", "minLength": 1},
+    "effective_from": {"type": "string", "format": "date"},
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "edition", "role", "effective_from"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "edition": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "effective_from": {"type": "string", "format": "date"},
+          "url": {"type": "string"},
+          "source_note": {"type": "string"}
+        }
+      }
+    },
+    "profiles": {"type": "array", "items": {"enum": ["general", "ai_algorithm"]}},
+    "ai_scopes": {"type": "array", "items": {"enum": ["model_training", "model_application", "both"]}},
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "topic", "profiles", "default_level", "evidence_required"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "topic": {"type": "string", "minLength": 1},
+          "profiles": {"type": "array", "items": {"enum": ["general", "ai_algorithm"]}},
+          "ai_scopes": {"type": "array", "items": {"enum": ["model_training", "model_application", "both"]}},
+          "default_level": {"enum": ["blocker", "major", "minor"]},
+          "evidence_required": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

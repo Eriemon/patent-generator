@@ -17,6 +17,9 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 # 固定正文质量合同路径，确保验证评分与起草阶段使用同一受控质量规则。
 PATH_QUALITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "disclosure_quality_contract.py"  # 正文质量合同模块路径
 
+# 固定统一审查合同路径，使最终验证覆盖创造性、权利要求支撑和AI专项规则。
+PATH_EXAMINATION_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "examination_quality_contract.py"  # 统一审查合同模块路径
+
 # 固定版本二结构化合同验证器路径，避免依赖调用方模块搜索路径。
 PATH_STRUCTURED_CONTRACT_VALIDATOR = Path(__file__).resolve().parent / "structured_contract_validator.py"  # 结构化合同验证器路径
 
@@ -115,6 +118,41 @@ def load_quality_contract_module() -> Any:
 
     # 返回完成初始化的质量合同模块供自检主流程调用。
     return module_quality_contract
+
+# 按受管路径加载统一审查合同，避免验证阶段复制规则。
+def load_examination_contract_module() -> Any:
+    """加载统一审查合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行的统一审查合同模块对象。
+
+    异常：
+    - 合同模块缺失或无法加载时抛出 `ImportError`。
+    """
+
+    # 根据正式合同路径创建隔离加载规格。
+    obj_specification = importlib.util.spec_from_file_location(  # 统一审查合同加载规格
+        "readable_patent_examination_contract",  # 合同内部模块名
+        PATH_EXAMINATION_CONTRACT,  # 正式合同源码路径
+    )
+
+    # 加载规格不完整时阻断验证，不能跳过新增审查规则。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 报告统一合同缺失，要求先修复正式技能资产。
+        raise ImportError("> ERR: [Python] 无法加载 support/examination_quality_contract.py。")
+
+    # 根据已验证规格创建独立模块对象。
+    module_examination_contract = importlib.util.module_from_spec(obj_specification)  # 统一审查合同模块
+
+    # 执行正式合同源码，暴露统一案件评估入口。
+    obj_specification.loader.exec_module(module_examination_contract)
+
+    # 交回包含创造性和专项规则入口的模块对象。
+    return module_examination_contract
 
 # 按受管路径加载版本二结构化合同验证器，禁止模型存在时跳过深层规则。
 def load_structured_contract_validator_module() -> Any:
@@ -252,6 +290,66 @@ def add_finding(
 
     # 把当前 finding 追加到结果列表，保持发现顺序可追溯。
     list_findings.append(dict_finding)
+
+# 执行统一审查评估并把结果合并到既有自检finding协议。
+def append_examination_findings(
+    path_case_dir: Path,
+    list_findings: list[dict[str, str]],
+    module_runtime_support: Any,
+    module_examination_contract: Any,
+) -> dict[str, Any]:
+    """追加创造性、权利要求支撑和AI专项问题。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `list_findings`：既有自检问题列表。
+    - `module_runtime_support`：共享JSON和查新记录支持模块。
+    - `module_examination_contract`：统一审查合同模块。
+
+    返回：
+    - `dict[str, Any]`：可独立落盘的统一审查评估结果。
+
+    异常：
+    - 必需案件JSON缺失或损坏时由底层异常上抛。
+    """
+
+    # 读取案件配置，确定通用或AI专项规则的适用范围。
+    dict_case_config = module_runtime_support.read_json_file(path_case_dir / "case_config.json")  # 当前案件配置
+
+    # 读取研究事实，供AI专项披露和类型信息检查使用。
+    dict_research_facts = module_runtime_support.read_json_file(path_case_dir / "02_facts" / "research_facts.json")  # 当前研究事实
+
+    # 读取已核验查新记录，避免未经核验内容进入创造性判断。
+    list_prior_art_records = module_runtime_support.read_verified_prior_art_records(path_case_dir)  # 已核验现有技术记录
+
+    # 固定权利要求映射路径，兼容缺失文件时由既有完整性规则单独报告。
+    path_claims_map = path_case_dir / "03_drafts" / "claims_map.json"  # 新版权利要求映射路径
+
+    # 文件存在时读取实际权利要求集合，否则使用空映射保持报告可生成。
+    dict_claims_map = module_runtime_support.read_json_file(path_claims_map) if path_claims_map.exists() else {}  # 当前权利要求支撑映射
+
+    # 执行同源统一评估，得到稳定状态和错误码。
+    dict_assessment = module_examination_contract.assess_examination_quality(  # 统一审查评估结果
+        dict_case_config,  # 案件技术类型及AI范围
+        dict_research_facts,  # 研发事实和专项披露
+        list_prior_art_records,  # 已核验最接近现有技术
+        dict_claims_map,  # 实际生成权利要求及省略候选
+    )
+
+    # 将统一合同finding转换为既有validation_report字段名称。
+    for dict_finding in dict_assessment["findings"]:
+
+        # 保留级别、编号和信息，仅把action映射为suggestion。
+        add_finding(
+            list_findings,
+            str(dict_finding["level"]),
+            str(dict_finding["code"]),
+            str(dict_finding["message"]),
+            str(dict_finding["action"]),
+        )
+
+    # 返回独立评估结果，供04_reviews固定落盘和后续追溯。
+    return dict_assessment
 
 # 校验预览确认状态，确保未确认预览的案件不会误入正式后链交付。
 def validate_preview_status(
@@ -890,6 +988,9 @@ def main() -> int:
     # 加载正文质量合同，生成可追踪的章节评分与视觉验收前状态。
     module_quality_contract = load_quality_contract_module()  # 正文质量合同模块
 
+    # 加载统一审查合同，启用创造性、支撑和AI专项条件规则。
+    module_examination_contract = load_examination_contract_module()  # 创造性及专项规则执行模块
+
     # 解析命令行参数，读取案件目录和可选输入草稿路径。
     namespace_arguments = build_parser().parse_args()  # 自检入口参数对象
 
@@ -938,6 +1039,14 @@ def main() -> int:
     # 校验证据映射文件，避免关键技术特征脱离真实研发材料。
     validate_evidence_map(path_case_dir, list_findings, module_runtime_support)
 
+    # 执行新增统一审查合同，并把finding合并到最终状态机。
+    dict_examination_assessment = append_examination_findings(  # 待独立落盘的审查结果
+        path_case_dir,  # 审查规则读取材料的案件空间
+        list_findings,  # 已收集的确定性问题
+        module_runtime_support,  # 共享案件读写支持
+        module_examination_contract,  # 同源统一审查规则
+    )
+
     # 案件存在版本二模型时执行章节、公式、证据和交叉引用闭包检查。
     append_structured_model_findings(path_case_dir, list_findings, module_runtime_support)
 
@@ -970,11 +1079,17 @@ def main() -> int:
     # 固定结构化 JSON 报告输出路径，供后链工具继续复用。
     path_report_json = path_review_dir / "validation_report.json"  # 结构化 JSON 报告输出路径
 
+    # 固定统一审查评估输出路径，便于单独追溯合同版本和profile。
+    path_examination_json = path_review_dir / "examination_assessment.json"  # 统一审查评估输出路径
+
     # 固定 Markdown 报告输出路径，供人工直接打开审阅。
     path_report_markdown = path_review_dir / "validation_report.md"  # Markdown 报告输出路径
 
     # 把结构化自检报告写入 JSON 文件，供后链工具读取状态和 finding 列表。
     module_runtime_support.write_json_file(path_report_json, dict_report)
+
+    # 把统一审查评估独立落盘，保留合同版本和专项适用信息。
+    module_runtime_support.write_json_file(path_examination_json, dict_examination_assessment)
 
     # 渲染面向人工的 Markdown 自检报告文本。
     str_report_markdown = render_report_markdown(path_draft, dict_report, module_runtime_support)  # Markdown 自检报告文本

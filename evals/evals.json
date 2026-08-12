@@ -159,6 +159,50 @@
           ]
         }
       ]
+    },
+    {
+      "id": "examination-contract-profile-gate",
+      "title": "Suspected AI materials require an explicit profile decision",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline generator may silently apply AI rules or omit the profile confirmation audit trail.",
+      "required_files": [
+        "assets/examination_quality_contract.json",
+        "scripts/python/support/examination_quality_contract.py",
+        "scripts/python/preview/generate_preview.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/support/examination_quality_contract.py",
+          "terms": ["confirmation_required", "keep_general", "switch_to_ai_algorithm"]
+        },
+        {
+          "file": "scripts/python/preview/generate_preview.py",
+          "terms": ["profile_check", "profile_confirmation"]
+        }
+      ]
+    },
+    {
+      "id": "supported-claims-only",
+      "title": "Claims are generated only from mapped technical support",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline generator may add fixed dependent, device, or medium claims without evidence mapping.",
+      "required_files": [
+        "assets/schemas/claims_map.schema.json",
+        "scripts/python/claims/generate_claims.py",
+        "scripts/python/review/validate_disclosure.py"
+      ],
+      "required_terms": [
+        {
+          "file": "scripts/python/claims/generate_claims.py",
+          "terms": ["claim_role", "omitted_candidates", "support_status"]
+        },
+        {
+          "file": "scripts/python/review/validate_disclosure.py",
+          "terms": ["examination_assessment.json", "append_examination_findings"]
+        }
+      ]
     }
   ]
 }

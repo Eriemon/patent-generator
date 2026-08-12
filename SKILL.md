@@ -24,6 +24,10 @@ Keep evidence notes, missing administrative fields, terms, and claim drafts in
 internal sidecars unless the user explicitly asks to include them in the main
 disclosure. Keep the hard preview gate: first return `preview_pending`, then
 only enter formal delivery generation after explicit preview confirmation.
+Apply `assets/examination_quality_contract.json` to every case. Keep the
+general profile active by default. If local facts suggest an AI case, expose a
+`profile_check` in the preview and require the user to explicitly keep
+`general` or select `ai_algorithm`; never switch profiles automatically.
 
 Keep this root thin:
 
@@ -52,6 +56,13 @@ Default workflow:
    sourced background statement with stable numeric references and include the
    corresponding bibliographic entries; unverifiable non-patent background
    text must block formal drafting.
+   For inventive-step review, record the closest prior art, distinguishing
+   features, their technical effects, the reformulated objective technical
+   problem, and whether the prior art supplies a technical motivation with
+   evidence.
+   Generate claims only from mapped support. Unsupported independent claims
+   block delivery; unsupported dependent, system, device, or medium candidates
+   are omitted and reported for optional material supplementation.
 4. When display formulas enter the formal draft, provide confirmed semantics
    in `<research-root>/formula_facts.json`, including purpose, sources,
    references, inputs/outputs, constraints, and every symbol's meaning, unit,

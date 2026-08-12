@@ -1,0 +1,107 @@
+{
+  "contract_version": "1.0",
+  "effective_from": "2026-01-01",
+  "sources": [
+    {
+      "id": "CNIPA-GUIDE-2023",
+      "title": "专利审查指南",
+      "edition": "2023",
+      "role": "base",
+      "effective_from": "2024-01-20",
+      "source_note": "用户提供的本地指南作为基础审查规则参考，不复制原始全文。"
+    },
+    {
+      "id": "CNIPA-ORDER-84",
+      "title": "国家知识产权局关于修改《专利审查指南》的决定（局令第八十四号）",
+      "edition": "2025-amendment",
+      "role": "amendment",
+      "effective_from": "2026-01-01",
+      "url": "https://www.cnipa.gov.cn/art/2025/11/13/art_526_202559.html"
+    },
+    {
+      "id": "CNIPA-INTERPRETATION-2025",
+      "title": "《专利审查指南》修改解读",
+      "edition": "2025-amendment",
+      "role": "interpretation",
+      "effective_from": "2026-01-01",
+      "url": "https://www.cnipa.gov.cn/art/2025/12/4/art_66_202935.html"
+    }
+  ],
+  "profiles": ["general", "ai_algorithm"],
+  "ai_scopes": ["model_training", "model_application", "both"],
+  "rules": [
+    {
+      "id": "DISC-ENABLE-001",
+      "topic": "sufficient_disclosure",
+      "profiles": ["general", "ai_algorithm"],
+      "default_level": "blocker",
+      "evidence_required": true
+    },
+    {
+      "id": "DISC-EFFECT-001",
+      "topic": "feature_mechanism_effect",
+      "profiles": ["general", "ai_algorithm"],
+      "default_level": "major",
+      "evidence_required": true
+    },
+    {
+      "id": "INVENT-CHAIN-001",
+      "topic": "inventiveness_reasoning_chain",
+      "profiles": ["general", "ai_algorithm"],
+      "default_level": "major",
+      "evidence_required": true
+    },
+    {
+      "id": "INVENT-CONTRIB-001",
+      "topic": "technical_contribution",
+      "profiles": ["general", "ai_algorithm"],
+      "default_level": "major",
+      "evidence_required": true
+    },
+    {
+      "id": "CLAIM-SUPPORT-001",
+      "topic": "independent_claim_support",
+      "profiles": ["general", "ai_algorithm"],
+      "default_level": "blocker",
+      "evidence_required": true
+    },
+    {
+      "id": "CLAIM-SECONDARY-001",
+      "topic": "unsupported_secondary_candidate",
+      "profiles": ["general", "ai_algorithm"],
+      "default_level": "minor",
+      "evidence_required": true
+    },
+    {
+      "id": "AI-DISC-001",
+      "topic": "ai_model_structure",
+      "profiles": ["ai_algorithm"],
+      "ai_scopes": ["model_training", "both"],
+      "default_level": "blocker",
+      "evidence_required": true
+    },
+    {
+      "id": "AI-TRAIN-001",
+      "topic": "ai_training_process",
+      "profiles": ["ai_algorithm"],
+      "ai_scopes": ["model_training", "both"],
+      "default_level": "blocker",
+      "evidence_required": true
+    },
+    {
+      "id": "AI-SCENE-001",
+      "topic": "ai_scenario_input_output",
+      "profiles": ["ai_algorithm"],
+      "ai_scopes": ["model_application", "both"],
+      "default_level": "blocker",
+      "evidence_required": true
+    },
+    {
+      "id": "AI-ETHICS-001",
+      "topic": "ai_ethics_public_interest_review",
+      "profiles": ["ai_algorithm"],
+      "default_level": "major",
+      "evidence_required": false
+    }
+  ]
+}

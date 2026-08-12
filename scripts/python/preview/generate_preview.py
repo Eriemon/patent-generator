@@ -4,10 +4,46 @@ from __future__ import annotations
 
 # 这里引入标准库参数、序列化和路径工具，供预览入口完成本地读写与状态整理。
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
 from typing import Any
+
+# 固定统一审查合同模块路径，使预览与最终验证读取同一profile规则。
+PATH_EXAMINATION_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "examination_quality_contract.py"  # 审查合同模块路径
+
+# 按真实文件路径加载统一审查合同，避免复制profile识别规则。
+def load_examination_contract_module() -> Any:
+    """加载统一审查合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行源码的合同模块对象。
+
+    异常：
+    - 模块缺失或加载规格无效时抛出 `ImportError`。
+    """
+
+    # 根据正式模块路径创建隔离加载规格。
+    obj_specification = importlib.util.spec_from_file_location("patent_examination_contract", PATH_EXAMINATION_CONTRACT)  # 合同模块加载规格
+
+    # 加载规格和加载器缺一不可，否则不能执行统一规则。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 报告稳定导入错误，避免预览在缺少合同情况下继续。
+        raise ImportError("> ERR: [Python] 无法加载统一审查合同模块。")
+
+    # 创建隔离模块对象，确保不修改解释器搜索路径。
+    module_contract = importlib.util.module_from_spec(obj_specification)  # 审查合同模块对象
+
+    # 执行真实落盘源码，使预览调用正式profile规则。
+    obj_specification.loader.exec_module(module_contract)
+
+    # 返回已初始化的统一合同模块。
+    return module_contract
 
 # 这里解析命令行参数，锁定本次预览生成要处理的案件目录。
 def parse_arguments() -> argparse.Namespace:
@@ -205,6 +241,15 @@ def render_markdown(dict_bundle: dict[str, Any], path_prior_art_markdown: Path, 
     # 这里按当前确认标记整理状态摘要，帮助人工判断是否已经完成确认。
     str_confirmation_status = "已确认" if dict_status["confirmed"] else "待确认"  # 人工确认状态摘要
 
+    # 读取技术类型检查结果，旧状态缺失时按无需额外确认展示。
+    dict_profile_check = dict(dict_status.get("profile_check", {}))  # 技术类型确认状态
+
+    # 将内部profile值转换为人工可读的预览说明。
+    str_profile_summary = str(dict_profile_check.get("effective_profile", "general"))  # 当前有效技术类型
+
+    # 标记疑似AI建议是否仍在等待用户明确决定。
+    str_profile_confirmation = "需确认" if dict_profile_check.get("confirmation_required") else "已确定"  # 类型确认摘要
+
     # 这里初始化 Markdown 行列表，先写主案摘要和当前确认状态。
     list_lines = [
         "# Pre-Draft Preview",  # 报告标题
@@ -213,6 +258,7 @@ def render_markdown(dict_bundle: dict[str, Any], path_prior_art_markdown: Path, 
         "",  # 主案摘要标题后留空一行
         f"- 预览状态：{str_confirmation_status}",  # 当前人工确认状态
         f"- 查新规划：{str_prior_art_status}",  # 当前查新准备状态
+        f"- 技术类型：{str_profile_summary}（{str_profile_confirmation}）",  # 面向审阅者的类型摘要
         "",  # 状态与主案摘要之间留空
         "## 主案摘要",  # 主案摘要章节标题
         "",  # 章节标题后留空
@@ -304,6 +350,25 @@ def main() -> int:
 
     # 这里读取已有预览状态或初始化默认状态，确保首次执行会停在人工确认门前。
     dict_status = load_preview_status(path_preview_status_json)  # 当前预览状态字典
+
+    # 读取案件配置，确定用户建案时明确保存的技术类型。
+    dict_case_config = read_json_file(path_case_dir / "case_config.json")  # 当前案件配置
+
+    # 读取研究事实，为疑似AI案件生成非强制类型建议。
+    dict_research_facts = read_json_file(path_case_dir / "02_facts" / "research_facts.json")  # 当前研究事实
+
+    # 加载统一合同模块，保证建议逻辑与最终审查规则同源。
+    module_contract = load_examination_contract_module()  # 统一审查合同模块
+
+    # 读取曾经明确保存的类型决定，避免相同案件每次预览都重复询问。
+    str_confirmed_profile = str(dict_case_config.get("profile_confirmation", ""))  # 已持久化的用户类型决定
+
+    # 把profile建议和确认门写入预览状态，确认前不修改案件配置。
+    dict_status["profile_check"] = module_contract.build_profile_check(  # 状态文件内的类型检查对象
+        dict_case_config,  # 建案阶段保存的技术类型
+        dict_research_facts,  # 用于非强制建议的材料事实
+        str_confirmed_profile=str_confirmed_profile,  # 用户此前明确确认的类型
+    )
 
     # 这里渲染预览 Markdown 文本，供人工在正文起草前确认主案方向。
     str_markdown = render_markdown(dict_bundle, path_prior_art_markdown, dict_status)  # 预览 Markdown 文本

@@ -51,8 +51,39 @@ def parse_arguments() -> argparse.Namespace:
         help="Root directory for generated patent cases.",
     )
 
+    # 要求调用方显式选择技术类型，默认保持通用规则以兼容既有命令。
+    parser.add_argument(  # 案件技术类型参数
+        "--technical-profile",
+        choices=("general", "ai_algorithm"),
+        default="general",
+        help="Examination profile selected by the user.",
+    )
+
+    # AI案件需要进一步选择模型训练、场景应用或两者兼有。
+    parser.add_argument(  # AI规则适用范围参数
+        "--ai-scope",
+        choices=("model_training", "model_application", "both"),
+        default="",
+        help="Required scope when --technical-profile is ai_algorithm.",
+    )
+
+    # 先解析参数，后续联合校验profile与scope的条件关系。
+    namespace_arguments = parser.parse_args()  # 初步解析的建案参数
+
+    # AI案件缺少适用范围时无法确定专项审查规则。
+    if namespace_arguments.technical_profile == "ai_algorithm" and not namespace_arguments.ai_scope:
+
+        # 通过argparse统一报告条件必填错误。
+        parser.error("--ai-scope 在 --technical-profile=ai_algorithm 时必填。")
+
+    # 通用案件不接受AI范围，避免保存互相矛盾的配置。
+    if namespace_arguments.technical_profile == "general" and namespace_arguments.ai_scope:
+
+        # 要求调用方删除无效scope或明确切换到AI profile。
+        parser.error("--ai-scope 仅适用于 --technical-profile=ai_algorithm。")
+
     # 这里返回解析结果，供建案逻辑继续使用。
-    return parser.parse_args()
+    return namespace_arguments
 
 # 这里根据案件目录标准结构创建所有阶段子目录。
 def create_stage_directories(case_dir: Path) -> None:
@@ -78,7 +109,14 @@ def create_stage_directories(case_dir: Path) -> None:
         ensure_dir(path_stage_dir)
 
 # 这里写入案件配置和简要说明，作为后续主链脚本的稳定输入。
-def write_case_bootstrap_files(case_dir: Path, case_name: str, case_slug: str, research_root: Path) -> None:
+def write_case_bootstrap_files(
+    case_dir: Path,
+    case_name: str,
+    case_slug: str,
+    research_root: Path,
+    technical_profile: str,
+    ai_scope: str,
+) -> None:
     """写入案件配置和说明文件。
 
     参数：
@@ -86,6 +124,8 @@ def write_case_bootstrap_files(case_dir: Path, case_name: str, case_slug: str, r
     - `case_name`：用户提供的案件名称。
     - `case_slug`：经过清洗后的案件目录名。
     - `research_root`：研究材料根目录。
+    - `technical_profile`：用户在建案阶段明确选择的审查类型。
+    - `ai_scope`：AI案件适用范围；通用案件为空字符串。
 
     返回：
     - `None`。
@@ -101,6 +141,8 @@ def write_case_bootstrap_files(case_dir: Path, case_name: str, case_slug: str, r
         "research_root": str(research_root.resolve()),  # 研究材料绝对路径
         "created_at": iso_now(),  # 建案时间
         "case_dir": str(case_dir.resolve()),  # 案件绝对路径
+        "technical_profile": technical_profile,  # 用户明确选择的审查类型
+        "ai_scope": ai_scope,  # AI专项规则适用范围
     }
 
     # 这里把案件配置写入根目录，作为全链路的统一配置入口。
@@ -151,7 +193,14 @@ def main() -> int:
     create_stage_directories(path_case_dir)
 
     # 这里写入案件基础配置和说明文件，供后续脚本统一读取。
-    write_case_bootstrap_files(path_case_dir, namespace_arguments.case_name, case_slug, path_research_root)
+    write_case_bootstrap_files(
+        path_case_dir,
+        namespace_arguments.case_name,
+        case_slug,
+        path_research_root,
+        namespace_arguments.technical_profile,
+        namespace_arguments.ai_scope,
+    )
 
     # 这里输出最终案件目录，供上游自动流程直接捕获使用。
     sys.stdout.write(str(path_case_dir.resolve()) + "\n")

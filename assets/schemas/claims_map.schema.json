@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["contract_version", "claims", "omitted_candidates"],
+  "properties": {
+    "contract_version": {"const": "2.0"},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_no", "claim_type", "support_ids", "support_status"],
+        "properties": {
+          "claim_no": {"type": "integer", "minimum": 1},
+          "claim_type": {"type": "string"},
+          "support_ids": {"type": "array", "items": {"type": "string"}},
+          "support_status": {"enum": ["supported", "unsupported"]},
+          "mapped_steps": {"type": "array", "items": {"type": "string"}},
+          "feature": {"type": "string"},
+          "unsupported_features": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "omitted_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_type", "reason"],
+        "properties": {
+          "claim_type": {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    }
+  }
+}

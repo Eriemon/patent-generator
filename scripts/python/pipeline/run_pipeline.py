@@ -139,6 +139,30 @@ def build_parser() -> argparse.ArgumentParser:
     # 注册新建案件输出根目录参数，供本地 runs 目录定向落盘复用。
     obj_parser.add_argument("--output-root", default="runs/patent_cases")
 
+    # 注册建案技术类型，默认保持通用规则以兼容既有流水线调用。
+    obj_parser.add_argument(  # 新案件技术类型参数
+        "--technical-profile",
+        choices=("general", "ai_algorithm"),
+        default="general",
+        help="Examination profile explicitly selected for a new case.",
+    )
+
+    # 注册AI专项适用范围，仅在显式选择AI类型时生效。
+    obj_parser.add_argument(  # AI专项规则范围参数
+        "--ai-scope",
+        choices=("model_training", "model_application", "both"),
+        default="",
+        help="Required for a new ai_algorithm case.",
+    )
+
+    # 注册疑似AI案件的用户确认决定，续跑时可明确保持通用或切换AI。
+    obj_parser.add_argument(  # 技术类型确认参数
+        "--confirm-technical-profile",
+        choices=("general", "ai_algorithm"),
+        default="",
+        help="Explicit decision for a profile suggestion shown in preview_status.json.",
+    )
+
     # 注册预览确认标记参数，允许调用方在本轮执行前显式确认当前预览。
     obj_parser.add_argument(
         "--confirmed-preview",
@@ -195,6 +219,18 @@ def parse_arguments() -> argparse.Namespace:
 
         # 通过 argparse 统一输出参数缺失错误并终止当前执行。
         argument_parser_for_validation.error("--research-root 和 --case-name 在新建案件时必填。")
+
+    # 新建AI案件必须明确专项规则适用范围。
+    if namespace_arguments.technical_profile == "ai_algorithm" and not namespace_arguments.ai_scope:
+
+        # 通过同一解析器报告条件必填错误。
+        argument_parser_for_validation.error("--ai-scope 在 --technical-profile=ai_algorithm 时必填。")
+
+    # 通用案件不接受AI范围，避免建案配置内部矛盾。
+    if namespace_arguments.technical_profile == "general" and namespace_arguments.ai_scope:
+
+        # 要求调用方删除scope或显式选择AI类型。
+        argument_parser_for_validation.error("--ai-scope 仅适用于 --technical-profile=ai_algorithm。")
 
     # 返回完成新建案件参数完整性校验后的参数对象。
     return namespace_arguments
@@ -363,7 +399,15 @@ def create_case_until_preview(namespace_arguments: argparse.Namespace) -> Previe
         str(path_research_root),  # 研究材料根目录文本
         "--output-root",  # 输出根目录参数名
         str(path_output_root),  # 输出根目录文本
+        "--technical-profile",  # 技术类型参数名
+        namespace_arguments.technical_profile,  # 用户显式选择的技术类型
     ]
+
+    # AI案件需要把专项适用范围继续透传给建案入口。
+    if namespace_arguments.ai_scope:
+
+        # 追加scope参数，通用案件保持空配置且不传无效值。
+        list_create_case_args.extend(["--ai-scope", namespace_arguments.ai_scope])
 
     # 执行建案入口，先创建当前案件目录与基础配置文件。
     completed_process_create_case = run_required_stage(PATH_CREATE_CASE_SCRIPT, list_create_case_args)  # 建案入口执行结果对象
@@ -447,6 +491,8 @@ def apply_preview_confirmation(
     path_case_dir: Path,
     confirmed_preview: bool,
     module_runtime_support: Any,
+    confirmed_profile: str = "",
+    ai_scope: str = "",
 ) -> dict[str, Any]:
     """按需要更新预览确认状态。
 
@@ -454,6 +500,8 @@ def apply_preview_confirmation(
     - `path_case_dir`：当前案件根目录路径。
     - `confirmed_preview`：是否在本轮执行前强制把预览标记为已确认。
     - `module_runtime_support`：共享运行时支持模块对象。
+    - `confirmed_profile`：用户对技术类型建议作出的明确决定。
+    - `ai_scope`：用户切换AI类型时明确选择的专项适用范围。
 
     返回：
     - `dict[str, Any]`：当前案件最新的预览状态字典。
@@ -474,6 +522,60 @@ def apply_preview_confirmation(
 
     # 读取当前案件的预览状态字典，供确认门判断和可选确认更新复用。
     dict_preview_status = module_runtime_support.read_json_file(path_preview_status)  # 当前案件预览状态字典
+
+    # 用户提供类型决定时同步更新案件配置和预览确认状态。
+    if confirmed_profile:
+
+        # 固定案件配置路径，保证用户决定可跨会话追溯。
+        path_case_config = path_case_dir / "case_config.json"  # 当前案件配置路径
+
+        # 读取建案配置并保留其他入口字段不变。
+        dict_case_config = module_runtime_support.read_json_file(path_case_config)  # 当前案件配置内容
+
+        # 切换到AI类型时必须同时提供或沿用合法scope。
+        str_effective_ai_scope = ai_scope or str(dict_case_config.get("ai_scope", ""))  # 本轮有效AI适用范围
+
+        # 缺少AI范围会导致专项规则无法确定，确认动作必须失败。
+        if confirmed_profile == "ai_algorithm" and not str_effective_ai_scope:
+
+            # 要求用户在确认切换AI时同步选择适用范围。
+            raise ValueError("> ERR: [Python] 确认 ai_algorithm 时必须提供 --ai-scope。")
+
+        # 保存用户最终选择，后续预览不得重新覆盖该决定。
+        dict_case_config["technical_profile"] = confirmed_profile  # 用户确认后的技术类型
+
+        # 单独记录确认值，区分建案默认值与用户后续明确决定。
+        dict_case_config["profile_confirmation"] = confirmed_profile  # 持久化的类型确认决定
+
+        # AI案件保存有效scope，保持通用时清空不适用字段。
+        dict_case_config["ai_scope"] = str_effective_ai_scope if confirmed_profile == "ai_algorithm" else ""  # 确认后的AI范围
+
+        # 把更新后的案件配置写回统一入口文件。
+        module_runtime_support.write_json_file(path_case_config, dict_case_config)
+
+        # 读取预览中的建议信息，保留系统提示与用户决定的审计关系。
+        dict_profile_check = dict(dict_preview_status.get("profile_check", {}))  # 预览技术类型检查结果
+
+        # 先保存用户决定后的有效类型，不删除系统原始建议。
+        dict_profile_check["effective_profile"] = confirmed_profile  # 用户决定后的有效类型
+
+        # 再解除独立类型确认门，允许后续确认整份预览。
+        dict_profile_check["confirmation_required"] = False  # 类型确认门已解除
+
+        # 记录保持通用或切换AI的稳定审计标签。
+        dict_profile_check["decision"] = "keep_general" if confirmed_profile == "general" else "switch_to_ai_algorithm"  # 用户决定标签
+
+        # 将更新后的检查对象放回预览状态根结构。
+        dict_preview_status["profile_check"] = dict_profile_check  # 更新后的技术类型检查结果
+
+        # 即使本轮尚未确认整份预览，也必须持久化独立的类型决定。
+        module_runtime_support.write_json_file(path_preview_status, dict_preview_status)
+
+    # 预览确认不能绕过尚未完成的技术类型确认门。
+    if confirmed_preview and dict_preview_status.get("profile_check", {}).get("confirmation_required"):
+
+        # 要求调用方先对疑似AI建议给出明确决定。
+        raise ValueError("> ERR: [Python] 请先使用 --confirm-technical-profile 明确案件技术类型。")
 
     # 在调用方显式要求确认预览时，把当前状态切换为已确认。
     if confirmed_preview:
@@ -766,6 +868,8 @@ def main() -> int:
         preview_checkpoint_state.path_case_dir,  # 需要刷新 preview_status.json 的案件目录
         bool_confirmed_preview,  # 调用方是否要求在本轮执行前确认预览
         module_runtime_support,  # 共享 JSON 读写支持模块对象
+        namespace_arguments.confirm_technical_profile,  # 用户对疑似AI建议的明确决定
+        namespace_arguments.ai_scope,  # 切换AI时提供的专项适用范围
     )
 
     # 在预览尚未确认时把当前案件停在 preview_pending，并返回受控退出码。

@@ -254,12 +254,66 @@ def build_method_claim(str_title: str, list_steps: list[dict[str, str]]) -> str:
     # 返回独立方法权利要求全文，供最终 Markdown 渲染逻辑写入草案。
     return "\n".join(list_claim_lines)
 
-# 生成固定的从属方法权利要求，用于补强多参数筛选与反馈更新两个保护方向。
-def build_dependent_claims(list_steps: list[dict[str, str]], start_no: int) -> list[str]:
-    """生成从属方法权利要求。
+# 从证据映射中筛选能够安全进入从属项的收窄特征。
+def collect_supported_dependent_features(dict_support_map: dict[str, Any]) -> list[dict[str, Any]]:
+    """收集已有材料支撑的从属项候选。
 
     参数：
-    - `list_steps`：结构化方法步骤列表。
+    - `dict_support_map`：正文阶段产出的证据映射字典。
+
+    返回：
+    - `list[dict[str, Any]]`：包含特征文本和证据编号的候选列表。
+
+    异常：
+    - 无。
+    """
+
+    # 初始化已支撑候选列表，只接受显式标注为从属方向的特征。
+    list_supported_features: list[dict[str, Any]] = []  # 可生成从属项的特征记录
+
+    # 遍历正文证据特征，逐项核对角色、文本和来源编号。
+    for dict_feature in dict_support_map.get("features", []):
+
+        # 非从属保护方向不参与本函数的候选筛选。
+        if dict_feature.get("claim_role") != "dependent":
+
+            # 跳过用于主权项或仅供说明书展开的特征。
+            continue
+
+        # 依次读取受管映射允许的三个候选文本字段。
+        str_feature_text = str(  # 从属特征文本
+            dict_feature.get("feature")  # 首选完整技术特征
+            or dict_feature.get("summary")  # 兼容特征摘要字段
+            or dict_feature.get("text")  # 兼容通用文本字段
+            or ""  # 全部缺失时返回空文本
+        )
+
+        # 读取真实来源编号，空列表表示研发材料尚不足以形成权利要求。
+        list_support_ids = list(dict_feature.get("support_ids", []))  # 当前特征支持证据
+
+        # 文本或来源任一缺失时安全省略该候选。
+        if not str_feature_text or not list_support_ids:
+
+            # 保持省略而不生成通用兜底语句。
+            continue
+
+        # 保存完整候选，供草案文本与claims_map共同使用。
+        list_supported_features.append(  # 已通过支撑检查的从属候选
+            {
+                "feature": str_feature_text,  # 可直接写入从属项的收窄特征
+                "support_ids": list_support_ids,  # 支撑该特征的来源编号
+            }
+        )
+
+    # 返回通过全部支撑条件的候选，顺序与证据映射一致。
+    return list_supported_features
+
+# 将已通过支撑检查的候选渲染为从属方法权利要求。
+def build_dependent_claims(list_supported_features: list[dict[str, Any]], start_no: int) -> list[str]:
+    """生成受材料支撑的从属方法权利要求。
+
+    参数：
+    - `list_supported_features`：已核验文本和来源的从属候选。
     - `start_no`：首条从属项的编号。
 
     返回：
@@ -269,28 +323,28 @@ def build_dependent_claims(list_steps: list[dict[str, str]], start_no: int) -> l
     - 无。
     """
 
-    # 在正文还没有可用步骤时不生成固定从属项，避免形成明显失配内容。
-    if not list_steps:
+    # 没有支撑候选时返回空列表，不生成预设保护方向。
+    if not list_supported_features:
 
-        # 返回空列表，让后续系统项仍可继续按既定编号落位。
+        # 空结果允许主权项单独进入后续支撑审查。
         return []
 
-    # 先准备从属方法权利要求列表，后续按固定方向写入两条补强项。
+    # 初始化从属项文本列表，按候选顺序连续编号。
     list_claims: list[str] = []  # 从属方法权利要求列表
 
-    # 追加第一条从属项，补强多参数筛选方向的保护表述。
-    list_claims.append(
-        f"{start_no}. 根据权利要求1所述的方法，其特征在于，"
-        "所述步骤至少基于多个状态参数的组合结果进行候选对象筛选。"
-    )
+    # 逐项渲染真实收窄特征，确保每条文本都能回查到来源编号。
+    for int_offset, dict_feature in enumerate(list_supported_features):
 
-    # 追加第二条从属项，补强异常反馈与下一轮处理更新方向。
-    list_claims.append(
-        f"{start_no + 1}. 根据权利要求1所述的方法，其特征在于，"
-        "当执行结果出现异常或失败时，记录反馈信息并更新下一轮处理依据。"
-    )
+        # 根据候选偏移计算连续权利要求编号。
+        int_claim_no = start_no + int_offset  # 当前从属项编号
 
-    # 返回固定从属项列表，供最终 Markdown 渲染逻辑复用。
+        # 使用证据映射中的原始技术特征形成从属限定。
+        str_claim_text = f"{int_claim_no}. 根据权利要求1所述的方法，其特征在于，{dict_feature['feature']}。"  # 当前从属项文本
+
+        # 把当前已支撑文本加入草案集合。
+        list_claims.append(str_claim_text)
+
+    # 返回完全由证据候选驱动的从属项列表。
     return list_claims
 
 # 基于系统模块描述构造系统独立权利要求，保持与正文模块化方案的映射关系。
@@ -377,8 +431,20 @@ def build_claim_support_map(
         # 读取当前特征对应的支持证据编号列表，缺失时回退为空列表。
         list_support_ids = dict_feature.get("support_ids", [])  # 当前特征对应的支持证据编号列表
 
-        # 把当前步骤对应的证据编号列表登记到映射字典中。
-        dict_step_support[str_step_id] = list_support_ids  # 当前步骤对应的支持证据编号列表
+        # 读取当前步骤已登记的证据，避免后续特征覆盖先前来源。
+        list_existing_support_ids = dict_step_support.setdefault(str_step_id, [])  # 当前步骤已聚合证据
+
+        # 按材料出现顺序合并证据编号，并保持每个编号只登记一次。
+        for str_support_id in list_support_ids:
+
+            # 跳过当前步骤已经记录的来源编号，避免重复污染映射。
+            if str_support_id in list_existing_support_ids:
+
+                # 已登记来源无需再次追加。
+                continue
+
+            # 新来源并入当前步骤的稳定证据序列。
+            list_existing_support_ids.append(str_support_id)
 
     # 提取正文步骤编号列表，供独立项映射说明和证据聚合共同复用。
     list_step_ids = [dict_step["id"] for dict_step in list_steps]  # 正文方法步骤编号列表
@@ -398,16 +464,57 @@ def build_claim_support_map(
     # 利用字典去重特性保留首次出现顺序，得到独立项支持证据编号列表。
     list_unique_support_ids = list(dict.fromkeys(list_all_support_ids))  # 去重后的支持证据编号列表
 
-    # 返回最小 claim-support 结构化映射，供 review 和 export 阶段继续复用。
-    return {
-        "claim_support": [
+    # 找出没有任何来源编号的必要步骤，防止其他步骤的证据掩盖局部缺口。
+    list_unsupported_step_ids = [  # 缺少支撑的主权项步骤
+        str_step_id  # 保留步骤编号供补料或删减
+        for str_step_id in list_step_ids  # 遍历主权项覆盖的全部步骤
+        if not dict_step_support.get(str_step_id)  # 当前步骤没有来源编号
+    ]
+
+    # 主权项必须至少包含一个步骤，且每个映射步骤都有来源，才可标记为已支撑。
+    bool_independent_claim_supported = bool(list_step_ids) and not list_unsupported_step_ids  # 主权项是否完整受支撑
+
+    # 筛选能够进入草案的从属候选，使映射与实际文本使用同一集合。
+    list_dependent_features = collect_supported_dependent_features(dict_support_map)  # 已支撑从属候选
+
+    # 初始化实际生成权利要求列表，先登记唯一方法主权项。
+    list_claim_records = [  # 实际生成权利要求映射
+        {
+            "claim_no": 1,  # 方法主权项编号
+            "claim_type": "independent_method",  # 方法独立项类型
+            "mapped_steps": list_step_ids,  # 主权项覆盖的正文步骤
+            "support_ids": list_unique_support_ids,  # 主权项聚合来源编号
+            "support_status": "supported" if bool_independent_claim_supported else "unsupported",  # 主权项支撑状态
+            "unsupported_features": list_unsupported_step_ids,  # 缺少来源的必要步骤
+        }
+    ]
+
+    # 为每条已支撑从属候选登记与草案一致的编号和来源。
+    for int_offset, dict_feature in enumerate(list_dependent_features, start=2):
+
+        # 追加当前从属项映射，保留具体收窄特征文本。
+        list_claim_records.append(  # 当前从属项支撑映射
             {
-                "claim_no": 1,
-                "type": "independent_method",
-                "mapped_steps": list_step_ids,
-                "support_ids": list_unique_support_ids,
+                "claim_no": int_offset,  # 与草案一致的从属项编号
+                "claim_type": "dependent_method",  # 方法从属项类型
+                "feature": dict_feature["feature"],  # 当前收窄技术特征
+                "support_ids": dict_feature["support_ids"],  # 当前特征来源编号
+                "support_status": "supported",  # 已通过生成前支撑检查
             }
-        ]
+        )
+
+    # 记录当前不会自动生成的次级客体，提示补料但不阻断主交底书。
+    list_omitted_candidates = [  # 安全省略的次级权利要求候选
+        {"claim_type": "independent_system", "reason": "缺少逐模块来源映射"},  # 系统项省略原因
+        {"claim_type": "independent_device", "reason": "缺少设备结构来源映射"},  # 设备项省略原因
+        {"claim_type": "independent_medium", "reason": "缺少介质客体来源映射"},  # 介质项省略原因
+    ]
+
+    # 返回新版映射，明确区分实际权利要求与安全省略候选。
+    return {
+        "contract_version": "2.0",  # 新版权利要求支撑合同
+        "claims": list_claim_records,  # 实际进入草案的权利要求
+        "omitted_candidates": list_omitted_candidates,  # 未生成但可补料恢复的方向
     }
 
 # 组装权利要求草案 Markdown 文本，统一输出权利要求书和说明书映射说明。
@@ -415,6 +522,7 @@ def render_claims_markdown(
     str_title: str,
     list_steps: list[dict[str, str]],
     list_modules: list[dict[str, str]],
+    dict_support_map: dict[str, Any],
 ) -> str:
     """渲染权利要求草案 Markdown 文本。
 
@@ -422,6 +530,7 @@ def render_claims_markdown(
     - `str_title`：发明名称。
     - `list_steps`：结构化方法步骤列表。
     - `list_modules`：结构化系统模块列表。
+    - `dict_support_map`：用于筛选从属候选和其他客体的证据映射。
 
     返回：
     - `str`：完整权利要求草案 Markdown 文本。
@@ -433,11 +542,11 @@ def render_claims_markdown(
     # 生成独立方法权利要求文本，作为权利要求书的核心主权项。
     str_method_claim = build_method_claim(str_title, list_steps)  # 独立方法权利要求文本
 
-    # 生成两条固定补强项，供当前最小草案覆盖筛选与反馈两个保护方向。
-    list_dependent_claims = build_dependent_claims(list_steps, start_no=2)  # 固定从属项文本列表
+    # 从证据映射筛选已有材料支撑的从属候选。
+    list_supported_features = collect_supported_dependent_features(dict_support_map)  # 已支撑从属特征
 
-    # 生成系统独立权利要求文本，保持与正文模块化方案的映射。
-    str_system_claim = build_system_claim(str_title, list_modules, claim_no=4)  # 系统独立权利要求文本
+    # 只渲染通过支撑检查的从属项，不再写入固定模板内容。
+    list_dependent_claims = build_dependent_claims(list_supported_features, start_no=2)  # 安全从属项文本
 
     # 先准备 Markdown 文本行列表，按固定章节顺序组装权利要求草案。
     list_markdown_lines = [  # 权利要求草案 Markdown 文本行列表
@@ -455,22 +564,15 @@ def render_claims_markdown(
         # 把当前从属项正文追加到 Markdown 文本行列表中。
         list_markdown_lines.append(str_claim_text)
 
-    # 在从属项之后追加系统项、设备项、介质项和映射说明章节。
+    # 在从属项之后只追加映射说明，其他客体保留在省略候选中。
     list_markdown_lines.extend(
         [
-            "",
-            str_system_claim,
-            "",
-            "5. 一种电子设备，包括处理器和存储器，所述存储器中存储有程序指令，"
-            "所述程序指令被所述处理器执行时实现权利要求1至3任一项所述的方法。",
-            "",
-            "6. 一种计算机可读存储介质，其上存储有计算机程序，所述计算机程序被处理器执行时实现权利要求1至3任一项所述的方法。",
             "",
             "## 二、说明书映射说明",
             "",
             "- 权利要求1对应正文 4.2.1 方法流程中的全部步骤。",
-            "- 从属方法权利要求用于补强多参数筛选和反馈更新两个保护方向。",
-            "- 系统权利要求对应正文 4.2.2 模块化方案。",
+            "- 从属方法权利要求仅来自已登记来源编号的收窄特征。",
+            "- 系统、设备和介质候选在缺少独立来源映射时不自动生成。",
             "",
         ]
     )
@@ -530,7 +632,7 @@ def main() -> int:
     dict_support_map = load_support_map(path_case_dir, module_runtime_support)  # 正文证据映射字典
 
     # 渲染完整权利要求草案 Markdown 文本，供案件目录落盘。
-    str_claims_markdown = render_claims_markdown(str_title, list_steps, list_modules)  # 完整权利要求草案 Markdown 文本
+    str_claims_markdown = render_claims_markdown(str_title, list_steps, list_modules, dict_support_map)  # 完整权利要求草案 Markdown 文本
 
     # 生成 claim-support 结构化映射，供 review 和 export 阶段复用。
     dict_claim_support_map = build_claim_support_map(list_steps, dict_support_map)  # claim-support 结构化映射字典

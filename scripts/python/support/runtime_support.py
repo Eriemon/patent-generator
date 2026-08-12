@@ -425,6 +425,12 @@ def read_verified_prior_art_records(path_case_dir: Path) -> list[dict[str, Any]]
         # 非专利来源必须携带人工核验的完整著录文本，禁止生成器猜测书目信息。
         str_reference_text = clean_text(obj_record.get("reference_text"))  # 人工核验的参考文献文本
 
+        # 读取原始核验状态，后续同时约束类型和值。
+        obj_verified_state = obj_record.get("verified")  # 原始人工核验状态
+
+        # 只有布尔真值表示记录已经核验，字符串和数值均不接受。
+        bool_is_verified = isinstance(obj_verified_state, bool) and obj_verified_state  # 是否通过人工核验
+
         # 读取相同特征列表，确保记录能支撑“已公开特征”对比说明。
         list_same_features = list(obj_record.get("same_features", []))  # 相同特征列表
 
@@ -435,6 +441,12 @@ def read_verified_prior_art_records(path_case_dir: Path) -> list[dict[str, Any]]
         if not (str_publication and str_publication_date and str_source):
 
             # 继续处理下一条记录，保持输出只包含可追溯的完整条目。
+            continue
+
+        # 未经人工明确核验的记录只能保留为查新工作底稿，不能进入正式引用链。
+        if not bool_is_verified:
+
+            # 跳过尚未确认的记录，保持运行时语义与 verified=true schema 一致。
             continue
 
         # 只接受合同声明的来源类型，避免未知类型误入正式引用链。

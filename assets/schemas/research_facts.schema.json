@@ -112,6 +112,39 @@
         "type": "string"
       }
     },
+    "ai_disclosure": {
+      "type": "object",
+      "properties": {
+        "model_structure": {"type": "object"},
+        "training_process": {"type": "object"},
+        "scenario_integration": {"type": "object"},
+        "ethics_review": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["reviewed_no_issue", "reviewed_issue_identified"]
+            },
+            "summary": {"type": "string", "minLength": 1},
+            "evidence": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "minLength": 1}
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {"status": {"const": "reviewed_issue_identified"}},
+                "required": ["status"]
+              },
+              "then": {"required": ["summary", "evidence"]}
+            }
+          ]
+        }
+      }
+    },
     "missing_information": {
       "type": "array",
       "items": {
