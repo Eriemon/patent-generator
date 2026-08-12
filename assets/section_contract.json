@@ -1,0 +1,16 @@
+{
+  "contract_version": "2.0",
+  "sections": [
+    {"id": "1", "title": "发明名称", "purpose": "用技术对象和核心用途限定发明主题", "required_content": ["技术对象", "核心用途"], "forbidden_content": ["宣传性词语", "效果承诺"], "evidence_required": true},
+    {"id": "2", "title": "技术领域", "purpose": "界定发明直接所属且最小充分的技术领域", "required_content": ["直接技术领域", "应用对象"], "forbidden_content": ["泛化行业罗列", "发明效果"], "evidence_required": true},
+    {"id": "3.1", "title": "现有技术方案", "purpose": "客观说明与本发明最接近的已知方案", "required_content": ["现有方案组成", "现有处理流程"], "forbidden_content": ["本发明方案", "无来源断言"], "evidence_required": true},
+    {"id": "3.2", "title": "现有技术存在的问题", "purpose": "建立现有方案机制与技术缺陷之间的因果关系", "required_content": ["问题触发条件", "问题表现", "原因机制"], "forbidden_content": ["仅形容词评价", "未被材料支持的指标"], "evidence_required": true},
+    {"id": "3.3", "title": "现有技术的缺点", "purpose": "归纳需要由本发明解决的可验证技术缺点", "required_content": ["技术缺点", "受影响对象"], "forbidden_content": ["商业缺点", "与3.2无关的新问题"], "evidence_required": true},
+    {"id": "4.1", "title": "要解决的技术问题", "purpose": "以单一主问题统领后续技术方案", "required_content": ["主技术问题", "约束场景"], "forbidden_content": ["方案步骤", "效果数字"], "evidence_required": true},
+    {"id": "4.2", "title": "技术方案", "purpose": "给出可实施、前后衔接且证据可追踪的完整方案", "required_content": ["步骤或模块链", "输入输出关系", "必要公式引用"], "forbidden_content": ["元叙述", "未定义参数", "孤立步骤"], "evidence_required": true},
+    {"id": "4.3", "title": "技术效果", "purpose": "说明技术特征经何种机制产生何种效果", "required_content": ["对应技术特征", "作用机制", "技术效果"], "forbidden_content": ["无机制的效果宣称", "无证据量化结果"], "evidence_required": true},
+    {"id": "5", "title": "附图说明", "purpose": "逐图说明图示对象并与正文引用一致", "required_content": ["图号", "图名", "图示对象"], "forbidden_content": ["正文未引用图", "不存在的附图"], "evidence_required": false},
+    {"id": "6", "title": "具体实施方式", "purpose": "按技术方案顺序给出足以复现的实施过程", "required_content": ["实施条件", "步骤展开", "参数来源", "异常或边界处理"], "forbidden_content": ["重复技术方案标题", "未解释的新符号", "错误章节引用"], "evidence_required": true},
+    {"id": "7", "title": "可替代实施方式", "purpose": "说明不偏离核心构思的等效替换和适用边界", "required_content": ["可替换对象", "替换方式", "不变技术作用"], "forbidden_content": ["脱离核心构思的扩展", "无依据参数范围"], "evidence_required": true}
+  ]
+}

@@ -291,12 +291,16 @@ WINDOWS_FONTS_DIR = build_windows_fonts_dir()  # PNG 绘图使用的字体目录
 
 # 固定 PNG 绘图优先尝试的中文字体文件名序列，优先选择常见无衬线中文字体。
 PREFERRED_CJK_FONT_FILENAMES = (  # PNG 绘图优先尝试的中文字体文件名
+    "NotoSansSC-VF.ttf",  # 跨平台开源思源黑体可变字体
     "msyh.ttc",  # 微软雅黑常规字体
     "msyhl.ttc",  # 微软雅黑 Light 字体
     "simhei.ttf",  # 黑体字体
     "simsun.ttc",  # 宋体字体
     "simsunb.ttf",  # 宋体粗体字体
 )  # PNG 绘图优先中文字体文件名序列
+
+# 允许隔离服务器显式提供字体目录，避免代码依赖某个操作系统的全局安装位置。
+PATENT_FONT_DIR_ENV = "PATENT_GENERATOR_FONT_DIR"  # 可选字体目录环境变量
 
 # 固定 SVG 文本要声明的字体族栈，保证独立附图源文件也优先命中中文字体。
 SVG_FONT_FAMILY_STACK = "Microsoft YaHei, SimHei, SimSun, Arial, sans-serif"  # SVG 文本字体族栈
@@ -401,17 +405,26 @@ def find_preferred_cjk_font_path() -> Path | None:
     - 无。
     """
 
-    # 按预设顺序逐项检查中文字体文件是否真实存在，保证 PNG 绘图优先命中稳定字体。
-    for str_filename in PREFERRED_CJK_FONT_FILENAMES:
+    # 显式字体目录优先于系统目录，便于远端隔离验证和无管理员权限部署。
+    list_font_dirs = [Path(os.environ[PATENT_FONT_DIR_ENV])] if os.environ.get(PATENT_FONT_DIR_ENV) else []  # 候选字体目录
 
-        # 拼出当前候选中文字体路径，供存在性检查复用。
-        path_candidate_font = WINDOWS_FONTS_DIR / str_filename  # 当前候选中文字体路径
+    # Windows 字体目录始终作为本地兼容回退候选。
+    list_font_dirs.append(WINDOWS_FONTS_DIR)
 
-        # 找到首个真实存在的中文字体后立即返回，减少后续重复扫描。
-        if path_candidate_font.exists():
+    # 按目录和文件优先级逐项检查，保证 PNG 绘图稳定命中可用中文字体。
+    for path_font_dir in list_font_dirs:
 
-            # 返回首个命中的中文字体路径，供 matplotlib FontProperties 构造复用。
-            return path_candidate_font
+        # 当前目录按既定字体优先级逐项检查。
+        for str_filename in PREFERRED_CJK_FONT_FILENAMES:
+
+            # 拼出当前候选中文字体路径，供存在性检查复用。
+            path_candidate_font = path_font_dir / str_filename  # 当前候选中文字体路径
+
+            # 找到首个真实存在的中文字体后立即返回，减少后续重复扫描。
+            if path_candidate_font.is_file():
+
+                # 返回首个命中的中文字体路径，供 matplotlib FontProperties 构造复用。
+                return path_candidate_font
 
     # 在当前环境没有命中任何预设中文字体时返回空值，让上层继续走默认字体回退。
     return None
@@ -1479,14 +1492,17 @@ def build_pillow_cjk_font(class_image_font: Any, int_font_size: int) -> Any:
     """构造 Pillow 回退路径使用的中文字体对象。
 
     参数：
-    - `class_image_font`：Pillow 字体模块对象。
-    - `int_font_size`：目标字号。
+    - `class_image_font`：Pillow 字体模块对象，不承载数组，shape、dtype 与 unit 均不适用。
+    - `int_font_size`：目标字号，标量整数，shape=()，dtype=int，unit=像素。
 
     返回：
-    - `Any`：优先为可用中文字体，极端环境回退为 Pillow 默认字体。
+    - `Any`：Pillow 字体对象，不承载数值数组，shape、dtype 与 unit 均不适用。
 
     异常：
     - 无；字体文件不可用时保留可生成 PNG 的默认字体回退。
+
+    数值风险：
+    - 字号会取整数像素值，不执行插值或数值计算；不同字体度量可能改变换行位置，但不改变图示语义。
     """
 
     # 查询当前平台优先中文字体，避免图中文字变成空方框。

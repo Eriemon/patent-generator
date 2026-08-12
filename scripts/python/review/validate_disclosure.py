@@ -17,6 +17,9 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 # 固定正文质量合同路径，确保验证评分与起草阶段使用同一受控质量规则。
 PATH_QUALITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "disclosure_quality_contract.py"  # 正文质量合同模块路径
 
+# 固定版本二结构化合同验证器路径，避免依赖调用方模块搜索路径。
+PATH_STRUCTURED_CONTRACT_VALIDATOR = Path(__file__).resolve().parent / "structured_contract_validator.py"  # 结构化合同验证器路径
+
 # 固定正文主骨架必须覆盖的章节标题，供自检时统一校验。
 REQUIRED_HEADINGS = [  # 正文主骨架必需章节标题列表
     "## 一、发明名称",  # 发明名称章节
@@ -112,6 +115,79 @@ def load_quality_contract_module() -> Any:
 
     # 返回完成初始化的质量合同模块供自检主流程调用。
     return module_quality_contract
+
+# 按受管路径加载版本二结构化合同验证器，禁止模型存在时跳过深层规则。
+def load_structured_contract_validator_module() -> Any:
+    """按路径加载结构化交底模型验证器。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行源码的结构化合同验证模块。
+
+    异常：
+    - `ImportError`：模块规格或加载器缺失时抛出。
+    """
+
+    # 使用稳定内部名称创建隔离加载规格，不修改解释器搜索路径。
+    str_module_name = "readable_patent_structured_contract_validator"  # 结构化验证模块内部名称
+
+    # 根据正式验证器文件构造模块加载规格。
+    obj_specification = importlib.util.spec_from_file_location(str_module_name, PATH_STRUCTURED_CONTRACT_VALIDATOR)  # 结构化验证加载规格
+
+    # 模块规格不完整时立即阻断，避免案件模型被静默忽略。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出符合当前项目日志合同的明确导入错误。
+        raise ImportError("> ERR: [Python] 无法加载 structured_contract_validator.py。")
+
+    # 根据已验证规格创建独立模块实例。
+    module_validator = importlib.util.module_from_spec(obj_specification)  # 结构化合同验证模块
+
+    # 执行正式源码，使调用方获得统一跨对象验证入口。
+    obj_specification.loader.exec_module(module_validator)
+
+    # 返回已初始化模块供案件模型注入函数调用。
+    return module_validator
+
+# 在案件提供版本二模型时追加章节、证据、公式和引用合同 findings。
+def append_structured_model_findings(
+    path_case_dir: Path,
+    list_findings: list[dict[str, str]],
+    module_runtime_support: Any,
+) -> None:
+    """读取可选结构化模型并追加跨对象校验发现。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `list_findings`：现有验证流程的统一 finding 列表。
+    - `module_runtime_support`：共享 JSON 文件读取模块。
+
+    返回：
+    - `None`：模型存在时原地追加 findings；旧案件缺失模型时保持不变。
+
+    异常：
+    - 模型 JSON 损坏或验证模块不可用时由底层异常上抛。
+    """
+
+    # 固定新版模型文件位置，避免验证器在案件目录内模糊搜索。
+    path_model = path_case_dir / "03_drafts" / "disclosure_model.json"  # 结构化交底模型路径
+
+    # 旧案件没有版本二模型时保持可读取兼容，不伪称已执行新合同。
+    if not path_model.exists():
+
+        # 缺失模型不在此兼容接入点追加 finding，由新版生成链负责强制产出。
+        return
+
+    # 读取真实案件模型，任何 JSON 损坏都不得被降级为空对象。
+    dict_model = module_runtime_support.read_json_file(path_model)  # 当前案件结构化交底模型
+
+    # 为当前案件模型取得跨对象规则入口，确保四类合同检查使用同一结果列表。
+    module_validator = load_structured_contract_validator_module()  # 当前案件跨对象规则实例
+
+    # 追加全部 blocker findings，使既有 build_report 自动切换到 blocked。
+    list_findings.extend(module_validator.validate_structured_model(dict_model))
 
 # 构造命令行参数解析器，统一声明案件目录和可选输入草稿参数。
 def build_parser() -> argparse.ArgumentParser:
@@ -823,6 +899,9 @@ def main() -> int:
 
     # 校验证据映射文件，避免关键技术特征脱离真实研发材料。
     validate_evidence_map(path_case_dir, list_findings, module_runtime_support)
+
+    # 案件存在版本二模型时执行章节、公式、证据和交叉引用闭包检查。
+    append_structured_model_findings(path_case_dir, list_findings, module_runtime_support)
 
     # 校验高风险占位是否仍进入主骨架标题，避免不成熟内容误入正式主线。
     validate_placeholder_risk(str_markdown, list_findings)

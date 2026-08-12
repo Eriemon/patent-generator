@@ -20,6 +20,9 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 # 固定正文质量合同路径，确保起草、证据映射和后续自检共用同一受控推断边界。
 PATH_QUALITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "disclosure_quality_contract.py"  # 正文质量合同模块路径
 
+# 固定版本二结构化模型构建器路径，确保正式生成链真实产出中间真相层。
+PATH_DISCLOSURE_MODEL = Path(__file__).resolve().parent / "disclosure_model.py"  # 结构化模型构建器路径
+
 # 固定最终 DOCX 模板路径，供预览状态记录可追溯的模板哈希。
 PATH_TEMPLATE_DOCX = Path(__file__).resolve().parents[3] / "assets" / "cn_technical_disclosure_template.docx"  # 最终 DOCX 模板路径
 
@@ -92,6 +95,41 @@ def load_quality_contract_module() -> Any:
 
     # 返回已完成加载的质量合同模块，供起草全链路复用同一规则集。
     return module_quality_contract
+
+# 按受管路径加载版本二结构化模型构建器。
+def load_disclosure_model_module() -> Any:
+    """加载结构化专利交底模型构建器。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行源码的结构化模型模块。
+
+    异常：
+    - `ImportError`：模块规格或加载器不可用时抛出。
+    """
+
+    # 使用稳定内部名称加载同目录模块，避免依赖调用方 sys.path。
+    obj_specification = importlib.util.spec_from_file_location(  # 结构化模型加载规格
+        "readable_patent_disclosure_model",  # 模块内部名称
+        PATH_DISCLOSURE_MODEL,  # 正式模型构建器路径
+    )
+
+    # 缺少加载规格意味着正式生成链无法产出版本二合同，必须立即阻断。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 明确报告正式模型构建器不可用，禁止继续生成只有 Markdown 的假版本二案件。
+        raise ImportError("> ERR: [Python] 无法加载 draft/disclosure_model.py。")
+
+    # 执行正式源码并返回模块对象，供主流程组装模型。
+    module_disclosure_model = importlib.util.module_from_spec(obj_specification)  # 结构化模型模块
+
+    # 执行模型构建器源码，使公共纯函数进入隔离模块对象。
+    obj_specification.loader.exec_module(module_disclosure_model)
+
+    # 返回已初始化模块供正式生成入口复用。
+    return module_disclosure_model
 
 # 构造命令行参数解析器，统一声明案件目录和内部预览放行开关。
 def build_parser() -> argparse.ArgumentParser:
@@ -1714,6 +1752,108 @@ def write_generated_documents(
     return path_stable_draft
 
 # 执行正式草稿生成入口，读取主案结果并输出交底书草稿与证据映射。
+# 汇总版本二模型所需的既有正文事实。
+def build_structured_model_payload(
+    dict_render_payload: dict[str, Any],
+    dict_selected: dict[str, Any],
+    list_formula_blocks: list[str],
+) -> dict[str, Any]:
+    """从正文渲染上下文构建结构化模型输入。
+
+    参数：
+    - `dict_render_payload`：当前正文渲染上下文。
+    - `dict_selected`：当前主案事实。
+    - `list_formula_blocks`：正文实际展示公式。
+
+    返回：
+    - `dict[str, Any]`：公式、主案和章节事实组成的模型输入。
+
+    异常：
+    - 无。
+    """
+
+    # 只重组已经进入正文生成链的事实，不在此边界新增技术内容。
+    return {
+        "formula_blocks": list_formula_blocks,  # 正文展示公式
+        "selected": dict_selected,  # 证据映射使用的主案事实
+        "context": {  # 章节与证据映射共享的起草事实
+            "title": dict_render_payload["str_title"],  # 已规范化发明名称
+            "problem": dict_render_payload["str_problem"],  # 已确认主技术问题
+            "steps": dict_render_payload["list_steps"],  # 结构化方法步骤
+            "modules": dict_render_payload["list_modules"],  # 结构化装置模块
+            "effects": dict_render_payload["list_effects"],  # 已分类技术效果
+            "prior_summaries": dict_render_payload["list_prior_summaries"],  # 已核验现有技术摘要
+        },
+    }
+
+# 构建并写出版本二结构化交底模型。
+def write_structured_disclosure_model(
+    path_case_dir: Path,
+    dict_model_payload: dict[str, Any],
+    module_runtime_support: Any,
+    module_disclosure_model: Any,
+    module_quality_contract: Any,
+) -> None:
+    """把正文上下文、公式事实和证据映射写成版本二模型。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `dict_model_payload`：公式块、证据映射和章节上下文。
+    - `module_runtime_support`：共享 JSON 写入模块。
+    - `module_disclosure_model`：版本二模型构建模块。
+    - `module_quality_contract`：证据映射使用的正文质量合同模块。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 公式事实或章节合同损坏时由模型模块异常上抛。
+    """
+
+    # 先写出最新证据映射，使旧版消费者和版本二模型共享同一来源编号。
+    dict_evidence_map = build_evidence_map(  # 正文与结构化模型共享的来源映射
+        path_case_dir,  # 当前案件根目录
+        dict_model_payload["context"]["steps"],  # 已生成的方法步骤
+        dict_model_payload["selected"],  # 当前主案事实
+        dict_model_payload["context"]["prior_summaries"],  # 背景章节使用的查新摘要
+        module_runtime_support,  # JSON 与文本支持模块
+        module_quality_contract,  # 精确步骤证据映射规则
+    )
+
+    # 从研究根目录读取人工确认公式事实；缺失语义不会在生成阶段被猜测。
+    list_confirmed_formula_facts = module_disclosure_model.load_confirmed_formula_facts(path_case_dir)  # 人工确认公式事实
+
+    # 逐条匹配正文展示公式，未匹配记录将在后续语义验证中形成 blocker。
+    list_formula_records = module_disclosure_model.match_formula_records(  # 与正文公式一一对应的登记表
+        dict_model_payload["formula_blocks"],  # 正文实际使用的展示公式
+        list_confirmed_formula_facts,  # 本地材料提供的确认语义
+    )
+
+    # 按正式章节合同生成十一项叶子章节。
+    list_section_records = module_disclosure_model.build_section_records(  # 十一项章节记录
+        dict_model_payload["context"],  # 标题、问题、步骤、模块和效果
+        dict_evidence_map,  # 当前案件真实来源映射
+    )
+
+    # 将旧版 evidence_index 映射为验证器消费的 records，同时保留兼容字段。
+    dict_normalized_evidence_map = module_disclosure_model.normalize_evidence_map(  # 版本二证据映射
+        dict_evidence_map  # 旧版 evidence_index 来源对象
+    )
+
+    # 组合章节、公式与证据三个事实域，并为公式添加稳定内容哈希。
+    dict_disclosure_model = module_disclosure_model.build_disclosure_model(  # 完整结构化交底模型
+        list_section_records,  # 十一项章节事实
+        list_formula_records,  # 与正文展示公式一致的语义登记
+        dict_normalized_evidence_map,  # 含版本二 records 的来源映射
+    )
+
+    # 固定写入验证器约定路径，使当前案件无法绕过版本二跨对象门禁。
+    module_runtime_support.write_json_file(
+        path_case_dir / "03_drafts" / "disclosure_model.json",
+        dict_disclosure_model,
+    )
+
+# 执行正式正文生成入口。
 def main() -> int:
     """执行正式草稿生成入口。
 
@@ -1732,6 +1872,9 @@ def main() -> int:
 
     # 加载正文质量合同，统一约束术语、效果、证据映射与受控推断边界。
     module_quality_contract = load_quality_contract_module()  # 正文质量合同模块
+
+    # 加载版本二模型构建器，使正式生成链同步产出章节、公式和证据真相层。
+    module_disclosure_model = load_disclosure_model_module()  # 结构化交底模型模块
 
     # 解析命令行参数，读取案件目录和内部预览放行开关。
     namespace_arguments = build_parser().parse_args()  # 正式草稿入口参数对象
@@ -1838,13 +1981,15 @@ def main() -> int:
         }
     )
 
-    # 先写出最新证据映射文件，供权利要求、自检和导出阶段统一回溯来源。
-    build_evidence_map(
-        path_case_dir,
-        list_steps,
-        dict_selected,
-        list_prior_summaries,
+    # 先把正文渲染字段转换为结构化模型写入上下文。
+    dict_model_payload = build_structured_model_payload(dict_render_payload, dict_selected, list_formula_blocks)  # 结构化模型输入
+
+    # 将已确认正文事实落为版本二模型，供当前验证链执行跨对象闭包。
+    write_structured_disclosure_model(
+        path_case_dir,  # 结构化模型所属案件根目录
+        dict_model_payload,  # 已汇总的正文、主案和公式事实
         module_runtime_support,
+        module_disclosure_model,
         module_quality_contract,
     )
 
@@ -1872,9 +2017,9 @@ def main() -> int:
         "effects": list_effects,  # 技术效果合同内容
     }
 
-    # 此边界负责落盘四种草稿工件；入口只保留其返回的 Markdown 路径。
+    # 将 Markdown、内部审查文本与合同数据交给统一文件写入边界。
     path_stable_draft = write_generated_documents(  # 上游流水线读取的 Markdown 入口
-        path_case_dir,  # 当前案件根目录
+        path_case_dir,  # 最终草稿所属案件目录
         dict_document_context,  # 正文与合同文件写入上下文
         module_runtime_support,  # 文件系统与 JSON 写入工具
         module_quality_contract,  # 起草合同与推断边界规则

@@ -44,13 +44,18 @@ Default workflow:
 2. Read only the local source material needed for the current patent task.
 3. Extract invention points, draft the required patent sections, and record
    reviewable intermediate artifacts under governed directories.
-4. Keep generated assets, references, evals, and fixtures in their governed
+4. When display formulas enter the formal draft, provide confirmed semantics
+   in `<research-root>/formula_facts.json`, including purpose, sources,
+   references, inputs/outputs, constraints, and every symbol's meaning, unit,
+   and domain. Missing formula semantics must block validation; never infer
+   them from variable names alone.
+5. Keep generated assets, references, evals, and fixtures in their governed
    locations.
-5. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
+6. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
    case as complete unless the final DOCX preserves the template information
    table, required section headings, non-empty technical sections, and no
    internal review placeholders.
-6. Verify structure, language gates, and delivery evidence before treating the
+7. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
 
 See [references/README.md](references/README.md) for current workflow

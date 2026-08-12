@@ -116,12 +116,16 @@ WINDOWS_FONTS_DIR = build_windows_fonts_dir()  # 公式回退使用的字体目�
 
 # 固定公式文本回退优先尝试的字体文件名，优先覆盖乘号与常见运算符字形。
 FORMULA_FALLBACK_FONT_FILENAMES = (  # 公式回退优先字体文件名
+    "NotoSansSC-VF.ttf",  # 跨平台开源字体同时覆盖中文和常见数学符号
     "cambria.ttc",  # Cambria Math 常见可用字体
     "calibri.ttf",  # Calibri 常见办公字体
     "arial.ttf",  # Arial 对常见数学运算符支持稳定
     "msyh.ttc",  # 微软雅黑兼容中文与基础数学符号
     "simhei.ttf",  # 黑体兼容中文与基础数学符号
 )  # 公式回退优先字体文件名序列
+
+# 允许隔离服务器显式提供字体目录，避免公式 fallback 依赖全局字体安装。
+PATENT_FONT_DIR_ENV = "PATENT_GENERATOR_FONT_DIR"  # 可选字体目录环境变量
 
 # 固定 Pillow 公式回退字体字号，避免默认位图字体过小且缺少符号字形。
 FORMULA_FALLBACK_FONT_SIZE = 28  # 公式回退 TrueType 字号
@@ -240,17 +244,26 @@ def find_formula_fallback_font_path() -> Path | None:
     - 无。
     """
 
-    # 按优先顺序逐项检查字体文件是否真实存在，保证符号字形尽量稳定。
-    for str_filename in FORMULA_FALLBACK_FONT_FILENAMES:
+    # 显式字体目录优先于系统目录，便于无管理员权限的远端验证和运行。
+    list_font_dirs = [Path(os.environ[PATENT_FONT_DIR_ENV])] if os.environ.get(PATENT_FONT_DIR_ENV) else []  # 候选字体目录
 
-        # 拼出当前候选字体路径，供存在性检查复用。
-        path_candidate_font = WINDOWS_FONTS_DIR / str_filename  # 当前候选字体路径
+    # Windows 字体目录始终作为本地办公环境的兼容回退候选。
+    list_font_dirs.append(WINDOWS_FONTS_DIR)
 
-        # 找到首个存在的候选字体后立即返回，减少重复扫描。
-        if path_candidate_font.exists():
+    # 按目录和文件优先级逐项检查，保证符号字形尽量稳定。
+    for path_font_dir in list_font_dirs:
 
-            # 返回首个真实存在的候选字体路径，供 Pillow TrueType 回退复用。
-            return path_candidate_font
+        # 当前目录按既定字体优先级逐项检查。
+        for str_filename in FORMULA_FALLBACK_FONT_FILENAMES:
+
+            # 拼出当前候选字体路径，供存在性检查复用。
+            path_candidate_font = path_font_dir / str_filename  # 当前候选字体路径
+
+            # 找到首个存在的候选字体后立即返回，减少重复扫描。
+            if path_candidate_font.is_file():
+
+                # 返回首个真实存在的候选字体路径，供 Pillow TrueType 回退复用。
+                return path_candidate_font
 
     # 当前环境没有命中任何候选字体时返回空值，让上层继续走默认字体回退。
     return None
