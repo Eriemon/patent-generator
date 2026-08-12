@@ -564,6 +564,269 @@ def append_inline_content(obj_paragraph: Any, str_text: str, dict_render_context
             {"latex": str(dict_inline_segment["text"]), "display": False}
         )
 
+# 写入普通正文块，并按可见文本应用对应段落角色。
+def append_paragraph_block(
+    obj_paragraph: Any,
+    dict_block: dict[str, str],
+    dict_render_context: dict[str, Any],
+) -> None:
+    """写入单个普通正文块并应用段落样式。
+
+    参数：
+    - `obj_paragraph`：承载当前正文块的 Word 段落。
+    - `dict_block`：包含块类型和正文文本的结构化记录。
+    - `dict_render_context`：公式回调与排版合同组成的渲染上下文。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 行内公式转换失败时继续抛出底层异常。
+    """
+
+    # 写入正文文字并把其中的公式转换为原位数学节点。
+    append_inline_content(obj_paragraph, str(dict_block["text"]), dict_render_context)
+
+    # 根据可见文本确定正文、编号步骤或参考文献角色。
+    str_paragraph_role = classify_paragraph_role(  # 当前普通段落角色
+        str(dict_block["text"]),  # 当前结构化正文文本
+        str(dict_block["kind"]),  # 当前结构化块类型
+    )
+
+    # 覆盖模板示例段落遗留的字体、行距和缩进。
+    apply_paragraph_role_style(
+        obj_paragraph,  # 接受内容样式的普通文字段落
+        str_paragraph_role,  # 文本内容对应的合同角色
+        dict_render_context["style_contract"],  # 当前导出的排版合同
+    )
+
+# 写入带书签边界的 MathType 行间公式占位符。
+def append_mathtype_formula(
+    obj_paragraph: Any,
+    dict_block: dict[str, str],
+    dict_render_context: dict[str, Any],
+) -> None:
+    """登记单个 MathType 行间公式及其精确定位书签。
+
+    参数：
+    - `obj_paragraph`：承载 MathType 占位符的 Word 段落。
+    - `dict_block`：包含当前公式 LaTeX 正文的结构化记录。
+    - `dict_render_context`：公式清单和排版合同组成的渲染上下文。
+
+    返回：
+    - `None`。
+
+    异常：
+    - DOCX XML 节点创建失败时继续抛出底层异常。
+    """
+
+    # 延迟导入 MathType 定位和段落版式所需组件。
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    # 使用公式清单顺序生成稳定且成对的定位信息。
+    int_record_number = len(dict_render_context["formula_records"]) + 1  # 当前公式清单序号
+
+    # 生成不会与技术正文冲突的当前行间公式标记。
+    str_marker = f"[[MATHTYPE_EQ_{int_record_number:06d}]]"  # 当前行间公式标记
+
+    # 生成符合 Word 书签命名限制的当前定位名称。
+    str_bookmark = f"MT_EQ_{int_record_number:06d}"  # 当前行间公式书签
+
+    # 公式段落保持居中，使替换后的 OLE 对象沿用预期版式。
+    obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # MathType 行间公式对齐方式
+
+    # 创建覆盖当前占位文本的书签起点。
+    obj_bookmark_start = OxmlElement("w:bookmarkStart")  # 行间公式书签起点
+
+    # 数值标识使当前书签的起止节点可以配对。
+    obj_bookmark_start.set(qn("w:id"), str(int_record_number + 999))
+
+    # 书签名称供 Word COM 精确获取公式占位范围。
+    obj_bookmark_start.set(qn("w:name"), str_bookmark)
+
+    # 起点必须位于公式占位文本之前。
+    obj_paragraph._p.append(obj_bookmark_start)
+
+    # 标记将在同一 Word Range 内被 MathType OLE 替换。
+    obj_paragraph.add_run(str_marker)
+
+    # 创建当前占位范围的书签终点。
+    obj_bookmark_end = OxmlElement("w:bookmarkEnd")  # 行间公式书签终点
+
+    # 终点使用与起点相同的数值标识。
+    obj_bookmark_end.set(qn("w:id"), str(int_record_number + 999))
+
+    # 终点紧随占位文本，避免包含相邻技术正文。
+    obj_paragraph._p.append(obj_bookmark_end)
+
+    # MathType 占位段落与最终 OLE 对象共同保持居中且无缩进。
+    apply_paragraph_role_style(
+        obj_paragraph,  # 当前 MathType 公式占位段落
+        "display_formula",  # 行间公式合同角色
+        dict_render_context["style_contract"],  # 正式 DOCX 排版合同
+    )
+
+    # 保存源公式、布局和定位信息，供 MathType 写入器处理。
+    dict_render_context["formula_records"].append(
+        {
+            "latex": str(dict_block["text"]),
+            "display": True,
+            "marker": str_marker,
+            "bookmark": str_bookmark,
+        }
+    )
+
+# 将单个 Office 行间公式转换为原生 OMML 并登记源文本。
+def append_office_formula(
+    obj_paragraph: Any,
+    dict_block: dict[str, str],
+    dict_render_context: dict[str, Any],
+) -> None:
+    """写入单个可编辑 Office 行间公式。
+
+    参数：
+    - `obj_paragraph`：承载当前 OMML 节点的 Word 段落。
+    - `dict_block`：包含当前公式 LaTeX 正文的结构化记录。
+    - `dict_render_context`：公式转换器、模式和排版合同组成的上下文。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 公式转换或 XML 写入失败时继续抛出底层异常。
+    """
+
+    # 延迟导入行间公式段落的对齐常量。
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    # 将公式转换为原生 OMML，禁止创建公式图片。
+    obj_formula = dict_render_context["formula_converter"](  # 当前可编辑行间公式节点
+        str(dict_block["text"]),  # 当前公式的 LaTeX 正文
+        True,  # 模板公式块按行间公式布局
+        dict_render_context["equation_mode"],  # 当前导出的公式兼容模式
+    )
+
+    # 公式段落保持居中，与参考模板的公式版式一致。
+    obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 公式段落水平对齐方式
+
+    # 原生数学节点直接进入段落 XML，Office 可双击编辑。
+    obj_paragraph._p.append(obj_formula)
+
+    # Office 公式段落显式使用居中且无缩进角色。
+    apply_paragraph_role_style(
+        obj_paragraph,  # 当前 Office 公式段落
+        "display_formula",  # Office 数学节点使用的公式角色
+        dict_render_context["style_contract"],  # Office 公式排版合同
+    )
+
+    # 保存行间公式源文本，供导出结构报告核对。
+    dict_render_context["formula_records"].append(
+        {"latex": str(dict_block["text"]), "display": True}
+    )
+
+# 在附图说明槽位按清单顺序写入所有存在的正式附图。
+def append_slot_figures(
+    obj_anchor_element: Any,
+    dict_render_context: dict[str, Any],
+) -> tuple[Any, bool]:
+    """写入当前槽位附图并返回推进后的锚点和写入状态。
+
+    参数：
+    - `obj_anchor_element`：当前槽位最后一个 XML 插入锚点。
+    - `dict_render_context`：文档、附图清单和排版合同组成的上下文。
+
+    返回：
+    - `tuple[Any, bool]`：最终插入锚点与是否实际写入附图。
+
+    异常：
+    - 图片嵌入失败时继续抛出底层异常。
+    """
+
+    # 延迟导入附图段落版式与宽度单位。
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches
+
+    # 非附图说明槽位禁止跨章节重复嵌入图片。
+    if dict_render_context["slot_heading"] != "五、附图及附图的简单说明":
+
+        # 返回原锚点并标记本轮没有附图写入。
+        return obj_anchor_element, False
+
+    # 默认认为附图清单尚未产生实际媒体段落。
+    bool_figure_added = False  # 当前槽位是否已写入正式附图
+
+    # 按附图清单顺序写入所有存在的图片。
+    for path_figure in dict_render_context["figure_paths"]:
+
+        # 不存在的可选附图由正式媒体数量校验统一处理。
+        if not path_figure.exists():
+
+            # 当前路径无可嵌入内容，继续检查下一张附图。
+            continue
+
+        # 创建继承当前槽位模板属性的独立媒体段落。
+        tuple_figure_paragraph = insert_paragraph_after(  # 当前附图段落及推进后的锚点
+            dict_render_context["document"],  # 接收正式附图的模板文档
+            obj_anchor_element,  # 前一内容节点形成的 XML 锚点
+            dict_render_context["template_properties"],  # 附图说明章节的段落版式
+        )
+
+        # 当前元组首项专门承载正式附图，不与说明文字混排。
+        obj_paragraph = tuple_figure_paragraph[0]  # 当前新增附图段落
+
+        # 下一附图必须排在当前媒体段落之后。
+        obj_anchor_element = tuple_figure_paragraph[1]  # 推进后的附图插入锚点
+
+        # 至少一张正式附图已进入当前槽位。
+        bool_figure_added = True  # 当前槽位已写入正式附图
+
+        # 附图在页面可用宽度内居中显示。
+        obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 附图段落水平对齐方式
+
+        # 嵌入正式 PNG，独立附图包仍保留原文件。
+        obj_paragraph.add_run().add_picture(str(path_figure), width=Inches(6.0))
+
+        # 附图段落显式使用居中且无缩进角色。
+        apply_paragraph_role_style(
+            obj_paragraph,  # 接受图片布局的独立媒体段落
+            "figure",  # 附图合同角色
+            dict_render_context["style_contract"],  # 图片段落排版合同
+        )
+
+    # 返回最后一个媒体锚点和实际写入状态。
+    return obj_anchor_element, bool_figure_added
+
+# 为已有内容的槽位追加唯一尾空段，形成可验证的章节边界。
+def append_slot_boundary(obj_anchor_element: Any, dict_render_context: dict[str, Any]) -> None:
+    """在当前槽位末尾追加一个无可见内容的边界段落。
+
+    参数：
+    - `obj_anchor_element`：当前槽位最后一个内容节点。
+    - `dict_render_context`：文档、模板属性和排版合同组成的上下文。
+
+    返回：
+    - `None`。
+
+    异常：
+    - DOCX 段落创建或样式写入失败时继续抛出底层异常。
+    """
+
+    # 使用当前槽位模板属性创建尾空段，不改动下一标题原节点。
+    tuple_blank_paragraph = insert_paragraph_after(  # 当前尾空段及结束锚点
+        dict_render_context["document"],  # 承载章节边界的模板文档
+        obj_anchor_element,  # 当前槽位最后一个内容节点
+        dict_render_context["template_properties"],  # 当前槽位原始段落版式
+    )
+
+    # 空段不携带正文缩进或可见文字样式。
+    apply_paragraph_role_style(
+        tuple_blank_paragraph[0],  # 当前槽位唯一尾空段
+        "section_blank",  # 章节边界空段角色
+        dict_render_context["style_contract"],  # 尾空段边界排版合同
+    )
+
 # 将单个槽位的正文、公式和附图依次插入原始标题节点之后。
 def append_slot_blocks(
     obj_heading: Any,
@@ -586,10 +849,6 @@ def append_slot_blocks(
     - 公式转换或 DOCX 嵌入失败时继续抛出底层异常。
     """
 
-    # 延迟导入版式常量，只有正式导出时才要求 python-docx 可用。
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Inches
-
     # 首个正文块紧随原始标题节点插入。
     obj_anchor_element = obj_heading._p  # 当前正文插入锚点
 
@@ -599,189 +858,63 @@ def append_slot_blocks(
     # 按代理起草结果中的稳定顺序写入正文或公式块。
     for dict_block in list_blocks:
 
-        # 为当前 block 新建继承模板版式的正文段落。
-        tuple_obj_paragraph, tuple_obj_anchor_element = insert_paragraph_after(  # 新段落及推进后的插入锚点
+        # 为当前 block 创建继承模板版式的独立段落。
+        tuple_block_paragraph = insert_paragraph_after(  # 当前正文段落及推进后的锚点
             dict_render_context["document"],  # 承载当前技术章节的模板文档
             obj_anchor_element,  # 前一正文块形成的 XML 顺序锚点
-            dict_render_context["template_properties"],  # 从本槽位示例段落提取的版式
+            dict_render_context["template_properties"],  # 本槽位示例段落版式
         )
 
-        # 解包新增段落和后继锚点，分别承载内容写入和顺序推进职责。
-        obj_paragraph = tuple_obj_paragraph  # 当前新增正文段落
+        # 当前元组首项承载正文或行间公式内容。
+        obj_paragraph = tuple_block_paragraph[0]  # 当前新增正文段落
 
         # 后续 block 必须紧随当前新增段落插入。
-        obj_anchor_element = tuple_obj_anchor_element  # 推进后的正文插入锚点
+        obj_anchor_element = tuple_block_paragraph[1]  # 推进后的正文插入锚点
 
-        # 普通正文交给行内内容 helper 处理文字与可编辑公式。
+        # 普通正文保留行内文字和可编辑公式混排。
         if dict_block["kind"] == "paragraph":
 
-            # 写入正文文字并把其中的公式转换为原位 m:oMath 节点。
-            append_inline_content(obj_paragraph, str(dict_block["text"]), dict_render_context)
+            # 正文 helper 同时负责内容和合同角色样式。
+            append_paragraph_block(obj_paragraph, dict_block, dict_render_context)
 
-            # 根据可见文本应用正文、编号步骤或参考文献角色。
-            str_paragraph_role = classify_paragraph_role(  # 当前普通段落角色
-                str(dict_block["text"]),  # 当前结构化正文文本
-                str(dict_block["kind"]),  # 当前结构化块类型
-            )
-
-            # 显式覆盖模板示例段落遗留的字体、行距和缩进。
-            apply_paragraph_role_style(
-                obj_paragraph,  # 接受内容样式的普通文字段落
-                str_paragraph_role,  # 文本内容对应的合同角色
-                dict_render_context["style_contract"],  # MathType 路径共享的排版合同
-            )
-
-            # 当前 block 已完成，继续处理下一个正文块。
+            # 当前 block 已完成，继续处理下一项。
             continue
 
-        # MathType 模式在当前段落写入唯一标记，后续由 Word COM 原位创建 OLE。
+        # MathType 路径登记书签占位符，不推进 Office 公式编号。
         if dict_render_context["equation_mode"] == "mathtype":
 
-            # 延迟导入书签 XML helper，只在原生 MathType 模式创建定位边界。
-            from docx.oxml import OxmlElement
-            from docx.oxml.ns import qn
+            # 原生 OLE 写入器将在保存后替换当前占位范围。
+            append_mathtype_formula(obj_paragraph, dict_block, dict_render_context)
 
-            # 使用公式清单顺序生成当前行间公式的稳定定位标记。
-            str_marker = f"[[MATHTYPE_EQ_{len(dict_render_context['formula_records']) + 1:06d}]]"  # 当前行间公式标记
-
-            # 生成符合 Word 书签命名限制的行间公式定位名称。
-            str_bookmark = f"MT_EQ_{len(dict_render_context['formula_records']) + 1:06d}"  # 当前行间公式书签
-
-            # 公式段落保持居中，使替换后的 MathType 对象沿用预期版式。
-            obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # MathType 行间公式对齐方式
-
-            # 为独立公式段落创建书签起点，Word 将维护跨版式后的真实位置。
-            obj_bookmark_start = OxmlElement("w:bookmarkStart")  # 行间公式书签起点
-
-            # 写入当前行间书签的数值标识，使起止节点可以配对。
-            obj_bookmark_start.set(qn("w:id"), str(len(dict_render_context["formula_records"]) + 1000))
-
-            # 绑定独立公式段落与转换清单中的行间定位名称。
-            obj_bookmark_start.set(qn("w:name"), str_bookmark)
-
-            # 把书签起点放在居中公式占位文本之前。
-            obj_paragraph._p.append(obj_bookmark_start)
-
-            # 把标记写入目标段落，Word COM 将在同一 Range 内完成替换。
-            obj_paragraph.add_run(str_marker)
-
-            # 在居中标记之后关闭范围，确保书签不包含相邻技术正文。
-            obj_bookmark_end = OxmlElement("w:bookmarkEnd")  # 行间公式书签终点
-
-            # 使用相同数值标识关闭当前行间书签。
-            obj_bookmark_end.set(qn("w:id"), str(len(dict_render_context["formula_records"]) + 1000))
-
-            # 把书签终点放在行间公式占位文本之后。
-            obj_paragraph._p.append(obj_bookmark_end)
-
-            # MathType 占位段落必须与最终 OLE 对象共同保持居中且无缩进。
-            apply_paragraph_role_style(
-                obj_paragraph,  # 当前 MathType 公式占位段落
-                "display_formula",  # 行间公式合同角色
-                dict_render_context["style_contract"],  # 正式 DOCX 样式合同
-            )
-
-            # 保存行间公式源文本、布局和精确定位标记。
-            dict_render_context["formula_records"].append(
-                {
-                    "latex": str(dict_block["text"]),
-                    "display": True,
-                    "marker": str_marker,
-                    "bookmark": str_bookmark,
-                }
-            )
-
-            # 当前 MathType 公式已经登记，不进入 Office OMML 分支。
+            # 当前公式已经登记，不进入 Office 分支。
             continue
 
-        # Office 模式将公式转换为原生 OMML，禁止创建任何公式图片。
-        obj_formula = dict_render_context["formula_converter"](  # 当前可编辑行间公式节点
-            str(dict_block["text"]),  # 当前公式的 LaTeX 正文
-            True,  # 模板公式块按行间公式布局
-            dict_render_context["equation_mode"],  # 行间公式沿用本次导出的兼容模式
-        )
+        # Office 路径直接写入原生 OMML 数学节点。
+        append_office_formula(obj_paragraph, dict_block, dict_render_context)
 
-        # 公式段落保持居中，与参考模板的公式版式一致。
-        obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 公式段落水平对齐方式
-
-        # 将原生数学节点直接追加到段落 XML，Office 可双击进入公式编辑器。
-        obj_paragraph._p.append(obj_formula)
-
-        # Office 公式段落显式使用居中且无缩进角色。
-        apply_paragraph_role_style(
-            obj_paragraph,  # 当前 Office 公式段落
-            "display_formula",  # Office 数学节点使用的公式角色
-            dict_render_context["style_contract"],  # Office 公式路径读取的排版合同
-        )
-
-        # 记录行间公式源文本，供原生 MathType OLE 写入器生成 MTEF 内容。
-        dict_render_context["formula_records"].append(
-            {"latex": str(dict_block["text"]), "display": True}
-        )
-
-        # 推进公式编号，供结构报告核对跨章节公式总量。
+        # 只有 Office 公式推进结构报告使用的公式编号。
         int_formula_index += 1  # 下一条原生公式编号
 
-    # 附图只写入模板规定的附图说明槽位，避免跨章节重复嵌入。
-    if dict_render_context["slot_heading"] == "五、附图及附图的简单说明":
+    # 附图 helper 只会在指定槽位实际写入存在的媒体。
+    tuple_figure_result = append_slot_figures(  # 最终媒体锚点和实际写入状态
+        obj_anchor_element,  # 当前槽位最后一个正文或公式节点
+        dict_render_context,  # 当前槽位共享的渲染上下文
+    )
 
-        # 按附图清单顺序写入方法流程图和系统模块图。
-        for path_figure in dict_render_context["figure_paths"]:
+    # 后续边界段必须紧随最后一个正文或媒体节点。
+    obj_anchor_element = tuple_figure_result[0]  # 当前槽位最终内容锚点
 
-            # 跳过不存在的可选附图，正式校验会检查实际媒体数量。
-            if not path_figure.exists():
+    # 实际媒体写入会使空正文槽位同样需要边界段。
+    bool_figure_added = tuple_figure_result[1]  # 当前槽位是否写入正式附图
 
-                # 当前路径无可嵌入内容，继续检查下一张附图。
-                continue
+    # 附图写入同样使当前槽位需要唯一尾空段。
+    bool_slot_populated = bool_slot_populated or bool_figure_added  # 当前槽位最终内容状态
 
-            # 为当前附图创建独立居中段落。
-            tuple_obj_paragraph, tuple_obj_anchor_element = insert_paragraph_after(  # 当前附图段落及新锚点
-                dict_render_context["document"],  # 接收正式附图的模板文档
-                obj_anchor_element,  # 前一附图或说明段落的 XML 锚点
-                dict_render_context["template_properties"],  # 附图说明章节的段落版式
-            )
-
-            # 当前段落专门承载正式附图，不与说明文字混排。
-            obj_paragraph = tuple_obj_paragraph  # 当前新增附图段落
-
-            # 下一附图应排在当前图片之后。
-            obj_anchor_element = tuple_obj_anchor_element  # 推进后的附图插入锚点
-
-            # 至少一张正式附图写入后，本槽位需要唯一尾空段。
-            bool_slot_populated = True  # 当前槽位已写入正式附图
-
-            # 附图在页面可用宽度内居中显示。
-            obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 附图段落水平对齐方式
-
-            # 嵌入正式 PNG，独立附图包仍保留原文件。
-            obj_paragraph.add_run().add_picture(str(path_figure), width=Inches(6.0))
-
-            # 附图段落显式使用居中且无缩进角色。
-            apply_paragraph_role_style(
-                obj_paragraph,  # 接受图片布局的独立媒体段落
-                "figure",  # 附图合同角色
-                dict_render_context["style_contract"],  # 图片段落读取的排版合同
-            )
-
-    # 有内容槽位结束后添加唯一空段，建立清晰且可验证的章节边界。
+    # 有内容槽位结束后添加唯一边界空段。
     if bool_slot_populated:
 
-        # 使用当前槽位的模板属性创建尾空段，不影响下一标题原节点。
-        tuple_blank_paragraph, tuple_blank_anchor = insert_paragraph_after(  # 尾空段及结束锚点
-            dict_render_context["document"],  # 承载章节边界的模板文档
-            obj_anchor_element,  # 当前槽位最后一个内容节点
-            dict_render_context["template_properties"],  # 当前槽位原始段落版式
-        )
-
-        # 空段不携带正文缩进或可见文字样式。
-        apply_paragraph_role_style(
-            tuple_blank_paragraph,  # 当前槽位唯一尾空段
-            "section_blank",  # 章节边界空段角色
-            dict_render_context["style_contract"],  # 尾空段边界读取的排版合同
-        )
-
-        # 显式消费结束锚点，表明空段已经成为本槽位最后节点。
-        obj_anchor_element = tuple_blank_anchor  # 当前槽位最终插入锚点
+        # 边界 helper 保持下一标题原节点不变。
+        append_slot_boundary(obj_anchor_element, dict_render_context)
 
     # 返回推进后的公式编号供下一槽位继续使用。
     return int_formula_index

@@ -395,6 +395,129 @@ def replace_active_review(
     # 每次活动态变化后从事实域完整重算待办和迁移状态。
     refresh_pending_state(dict_model, dict_claims_map)
 
+# 将人工确认的 AI 适用性快照写入候选规则事实域。
+def apply_ai_applicability_review(
+    dict_candidate: dict[str, Any],
+    dict_embedded: Mapping[str, Any],
+) -> None:
+    """应用单条人工 AI 适用性确认。
+
+    参数：
+    - `dict_candidate`：等待状态推进的独立模型候选。
+    - `dict_embedded`：已经绑定实时事实的人工确认记录。
+
+    返回：
+    - `None`。
+
+    异常：
+    - `ValueError`：确认内容不是对象时抛出。
+    """
+
+    # 只信任 recorder 已嵌入并参与哈希的目标快照。
+    obj_content = dict_embedded.get("target_content")  # 当前 AI 规则确认内容
+
+    # 非对象内容无法形成完整规则结论。
+    if not isinstance(obj_content, Mapping):
+
+        # 状态函数失败关闭，不猜测默认适用性。
+        raise ValueError("> ERR: [Python] AI 适用性确认内容必须为对象。")
+
+    # 深复制防止活动记录与业务事实共享可变引用。
+    dict_candidate["rule_applicability"] = copy.deepcopy(dict(obj_content))  # 当前确认后的规则事实
+
+# 将人工确认的技术效果写入唯一稳定特征。
+def apply_feature_effect_review(
+    dict_candidate: dict[str, Any],
+    dict_embedded: Mapping[str, Any],
+) -> None:
+    """应用单条人工特征技术效果确认。
+
+    参数：
+    - `dict_candidate`：等待状态推进的独立模型候选。
+    - `dict_embedded`：已经绑定实时事实的人工确认记录。
+
+    返回：
+    - `None`。
+
+    异常：
+    - `ValueError`：效果为空或目标特征不存在时抛出。
+    """
+
+    # 效果数组来自已经计算 target_hash 的嵌入记录。
+    obj_content = dict_embedded.get("target_content")  # 当前确认的技术效果数组
+
+    # 空数组不能制造形式上的因果效果闭包。
+    if not isinstance(obj_content, list) or not obj_content:
+
+        # 要求调用方提交实体效果文本。
+        raise ValueError("> ERR: [Python] 技术效果确认内容必须为非空数组。")
+
+    # 稳定 feature_id 是允许写入的唯一定位方式。
+    str_target_id = str(dict_embedded.get("target_id", ""))  # 当前目标特征身份
+
+    # 记录目标是否真实存在，禁止静默生成新特征。
+    bool_updated = False  # 当前候选是否已更新唯一目标
+
+    # 遍历正式特征登记表定位同一稳定身份。
+    for dict_feature in dict_candidate.get("feature_registry", []):
+
+        # 非结构化记录或其他特征都不属于当前确认目标。
+        if not isinstance(dict_feature, dict) or str(dict_feature.get("feature_id", "")) != str_target_id:
+
+            # 当前特征不能接收本次效果确认，继续定位。
+            continue
+
+        # 事实域保存独立效果数组，避免与审查快照共享引用。
+        dict_feature["technical_effects"] = copy.deepcopy(obj_content)  # 当前确认后的效果事实
+
+        # 标记唯一写入已经完成。
+        bool_updated = True  # 当前稳定特征已经更新
+
+        # feature_id 全局唯一，命中后无需继续扫描。
+        break
+
+    # 悬空确认不能进入活动记录或关闭待办。
+    if not bool_updated:
+
+        # 目标缺失说明父事实与确认输入不一致。
+        raise ValueError("> ERR: [Python] 技术效果确认目标不存在。")
+
+# 按人工复核目标类型分派唯一允许的事实域更新。
+def apply_human_fact_review(
+    dict_candidate: dict[str, Any],
+    dict_embedded: Mapping[str, Any],
+) -> None:
+    """按目标类型应用人工确认事实，未知类型保持无操作。
+
+    参数：
+    - `dict_candidate`：等待状态推进的独立模型候选。
+    - `dict_embedded`：已经绑定实时事实的人工确认记录。
+
+    返回：
+    - `None`。
+
+    异常：
+    - `ValueError`：受支持目标的确认内容无效时抛出。
+    """
+
+    # 目标类型决定唯一允许更新的事实域，禁止宽泛顶层白名单。
+    str_target_type = str(dict_embedded.get("target_type", ""))  # 当前人工事实目标类型
+
+    # AI 适用性确认写入规则事实域。
+    if str_target_type == "ai_applicability":
+
+        # 专用 helper 校验并复制当前确认内容。
+        apply_ai_applicability_review(dict_candidate, dict_embedded)
+
+        # 当前目标已完成，避免继续匹配其他事实域。
+        return
+
+    # 技术效果确认只允许更新指定稳定特征。
+    if str_target_type == "feature_technical_effect":
+
+        # 专用 helper 校验并更新唯一 feature_id。
+        apply_feature_effect_review(dict_candidate, dict_embedded)
+
 # 构造 recorder 的唯一纯状态转换候选。
 def build_review_candidate(
     dict_parent: Mapping[str, Any],
@@ -423,65 +546,8 @@ def build_review_candidate(
     # 只有人工确认允许在记录状态推进前更新受控事实域。
     if str_reviewer_type == "human":
 
-        # 目标类型决定唯一允许更新的事实域，禁止宽泛顶层白名单。
-        str_target_type = str(dict_embedded.get("target_type", ""))  # 当前人工事实目标类型
-
-        # AI 适用性确认必须把同一记录内容写入规则事实域。
-        if str_target_type == "ai_applicability":
-
-            # 只信任 recorder 已嵌入并参与哈希的目标快照。
-            obj_content = dict_embedded.get("target_content")  # 当前 AI 规则确认内容
-
-            # 非对象内容无法形成完整规则结论。
-            if not isinstance(obj_content, Mapping):
-
-                # 状态函数失败关闭，不猜测默认适用性。
-                raise ValueError("> ERR: [Python] AI 适用性确认内容必须为对象。")
-
-            # 深复制防止活动记录与业务事实共享可变引用。
-            dict_candidate["rule_applicability"] = copy.deepcopy(dict(obj_content))  # 当前确认后的规则事实
-
-        # 技术效果确认只允许更新指定稳定特征。
-        elif str_target_type == "feature_technical_effect":
-
-            # 效果数组来自已经计算 target_hash 的嵌入记录。
-            obj_content = dict_embedded.get("target_content")  # 当前确认的技术效果数组
-
-            # 空数组不能制造形式上的因果效果闭包。
-            if not isinstance(obj_content, list) or not obj_content:
-
-                # 要求调用方提交实体效果文本。
-                raise ValueError("> ERR: [Python] 技术效果确认内容必须为非空数组。")
-
-            # 稳定 feature_id 是允许写入的唯一定位方式。
-            str_target_id = str(dict_embedded.get("target_id", ""))  # 当前目标特征身份
-
-            # 记录目标是否真实存在，禁止静默生成新特征。
-            bool_updated = False  # 当前候选是否已更新唯一目标
-
-            # 遍历正式特征登记表定位同一稳定身份。
-            for dict_feature in dict_candidate.get("feature_registry", []):
-
-                # 只更新结构化且身份完全匹配的特征记录。
-                if (
-                    isinstance(dict_feature, dict)
-                    and str(dict_feature.get("feature_id", "")) == str_target_id
-                ):
-
-                    # 事实域保存独立效果数组，避免与审查快照共享引用。
-                    dict_feature["technical_effects"] = copy.deepcopy(obj_content)  # 当前确认后的效果事实
-
-                    # 标记唯一写入已经完成。
-                    bool_updated = True  # 当前稳定特征已经更新
-
-                    # feature_id 全局唯一，命中后无需继续扫描。
-                    break
-
-            # 悬空确认不能进入活动记录或关闭待办。
-            if not bool_updated:
-
-                # 目标缺失说明父事实与确认输入不一致。
-                raise ValueError("> ERR: [Python] 技术效果确认目标不存在。")
+        # 分派 helper 只更新当前 target_type 允许的事实域。
+        apply_human_fact_review(dict_candidate, dict_embedded)
 
     # 活动态、不可变历史和迁移待办继续由唯一状态实现推进。
     replace_active_review(

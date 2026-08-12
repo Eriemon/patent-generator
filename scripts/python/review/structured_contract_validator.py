@@ -679,6 +679,354 @@ def validate_semantic_review(
     # 返回所有嵌入式审查和确认问题。
     return list_findings
 
+# 将 claims map schema 错误转换为稳定 blocker finding。
+def build_claims_schema_findings(
+    dict_claims_map: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    """验证 claims map 结构并返回统一 schema findings。
+
+    参数：
+    - `dict_claims_map`：待执行 Draft 2020-12 校验的权利要求映射。
+
+    返回：
+    - `list[dict[str, str]]`：按实例路径稳定排序的 schema blockers。
+
+    异常：
+    - claims schema 缺失或损坏时由底层异常上抛。
+    """
+
+    # 使用 Draft 2020-12 执行 claims map 结构合同。
+    dict_schema = load_schema(PATH_CLAIMS_SCHEMA)  # 版本三权利要求映射合同
+
+    # 创建实例验证器并稳定排序错误。
+    obj_validator = Draft202012Validator(dict_schema)  # 权利要求映射实例验证器
+
+    # schema 错误按嵌套实例路径排序，保证报告顺序稳定。
+    list_schema_errors = sorted(  # 当前映射结构错误
+        obj_validator.iter_errors(dict(dict_claims_map)),  # 当前 claims 结构错误
+        key=lambda obj_error: list(obj_error.absolute_path),  # 嵌套实例路径排序键
+    )
+
+    # 每个 schema 错误都转换为统一 blocker 结构。
+    return [
+        build_blocker(
+            "CLM_SCHEMA",
+            (
+                "claims map schema 失败:"
+                f"{'/'.join(str(obj_part) for obj_part in obj_error.absolute_path) or '<root>'}:"
+                f"{obj_error.message}"
+            ),
+            "按 claims_map.schema.json 修复映射",
+        )
+        for obj_error in list_schema_errors
+    ]
+
+# 从规范化 Model 4.0 构建 claims 支撑闭包所需的事实索引。
+def build_claim_support_indexes(
+    dict_model: Mapping[str, Any],
+) -> tuple[set[str], dict[str, set[str]], set[str], dict[str, Mapping[str, Any]], Any]:
+    """构建章节、证据、特征和人工确认索引。
+
+    参数：
+    - `dict_model`：已经完成安全容器规整的版本四模型。
+
+    返回：
+    - `tuple`：章节编号、章节证据、证据编号、特征和人工确认集合。
+
+    异常：
+    - 无。
+    """
+
+    # 章节编号只接纳具有稳定身份的结构化记录。
+    set_section_ids = {
+        str(dict_section.get("id"))  # claims 支撑闭包章节编号
+        for dict_section in dict_model.get("sections", [])  # 建立 claims 章节集合
+        if isinstance(dict_section, Mapping) and dict_section.get("id")  # 保留有效章节
+    }  # 模型章节编号
+
+    # 章节证据索引禁止只凭全局证据存在性推断支撑。
+    dict_section_evidence = {
+        str(dict_section.get("id")): {  # claims 章节稳定编号
+            str(obj_evidence_id)  # 当前章节引用证据编号
+            for obj_evidence_id in dict_section.get("evidence_ids", [])  # 提取章节证据
+        }
+        for dict_section in dict_model.get("sections", [])  # 建立 claims 章节索引
+        if isinstance(dict_section, Mapping) and dict_section.get("id")  # 排除损坏章节
+    }  # claims 支撑章节证据索引
+
+    # 证据编号只来自模型登记表。
+    set_evidence_ids = collect_evidence_ids(dict_model.get("evidence_registry"))  # 模型证据编号
+
+    # 特征索引允许 claims map 通过稳定 ID 查询。
+    dict_features = {
+        str(dict_feature.get("feature_id")): dict_feature  # 当前稳定特征索引项
+        for dict_feature in dict_model.get("feature_registry", [])  # 建立 claims 特征索引
+        if isinstance(dict_feature, Mapping) and dict_feature.get("feature_id")  # 仅索引声明稳定身份的映射
+    }  # 稳定技术特征索引
+
+    # 审查容器可能损坏，损坏值不能形成有效确认。
+    obj_semantic_review = dict_model.get("semantic_review", {})  # 模型审查容器
+
+    # 读取独立项确认记录，后续依据实时事实复算摘要。
+    list_human_confirmations = (
+        obj_semantic_review.get("human_confirmations", [])  # 已嵌入人工确认数组
+        if isinstance(obj_semantic_review, Mapping)  # 审查容器类型有效
+        else []  # 损坏审查容器视为空确认集合
+    )  # 当前模型人工确认记录
+
+    # 返回各自独立的事实索引，不引入可变上下文对象。
+    return (
+        set_section_ids,
+        dict_section_evidence,
+        set_evidence_ids,
+        dict_features,
+        list_human_confirmations,
+    )
+
+# 收集当前权利要求中无法形成章节、证据和效果闭包的特征。
+def find_unsupported_feature_ids(
+    list_feature_ids: list[str],
+    dict_features: Mapping[str, Mapping[str, Any]],
+    set_section_ids: set[str],
+    set_evidence_ids: set[str],
+    dict_section_evidence: Mapping[str, set[str]],
+) -> list[str]:
+    """返回当前权利要求缺少完整支撑闭包的特征编号。
+
+    参数：
+    - `list_feature_ids`：当前权利要求引用的稳定特征编号。
+    - `dict_features`：模型稳定技术特征索引。
+    - `set_section_ids`：模型有效章节编号。
+    - `set_evidence_ids`：模型有效证据编号。
+    - `dict_section_evidence`：章节到证据编号的精确绑定。
+
+    返回：
+    - `list[str]`：按输入顺序保留的无支撑特征编号。
+
+    异常：
+    - 无。
+    """
+
+    # 从空缺口开始逐项验证三层支撑闭包。
+    list_unsupported_feature_ids: list[str] = []  # 当前权利要求无支撑特征
+
+    # 每个特征必须存在且具有真实章节、证据和效果。
+    for str_feature_id in list_feature_ids:
+
+        # 取回当前稳定特征记录。
+        dict_feature = dict_features.get(str_feature_id)  # 当前技术特征记录
+
+        # 不存在的特征直接列为无支撑。
+        if dict_feature is None:
+
+            # 保存悬空 feature_id 供修复。
+            list_unsupported_feature_ids.append(str_feature_id)
+
+            # 继续检查剩余特征。
+            continue
+
+        # 任一闭包条件失败都将特征标为无支撑。
+        if not feature_has_support_closure(
+            dict_feature,  # 待判断闭包的当前特征实体
+            set_section_ids,  # 模型有效章节编号
+            set_evidence_ids,  # 模型有效证据编号
+            dict_section_evidence,  # 章节与证据精确绑定
+        ):
+
+            # 保留当前 feature_id 供 claims map 精确补料。
+            list_unsupported_feature_ids.append(str_feature_id)
+
+    # 返回按权利要求输入顺序排列的全部闭包缺口。
+    return list_unsupported_feature_ids
+
+# 计算独立权利要求当前特征集合绑定的研发证据并集。
+def collect_claim_evidence_ids(
+    list_feature_ids: list[str],
+    dict_features: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    """返回独立权利要求全部特征引用的规范证据编号。
+
+    参数：
+    - `list_feature_ids`：当前独立项稳定特征集合。
+    - `dict_features`：模型稳定技术特征索引。
+
+    返回：
+    - `list[str]`：排序并去重后的研发证据编号。
+
+    异常：
+    - 无。
+    """
+
+    # 证据并集绑定确认时可见的全部实时研发事实。
+    return sorted(
+        {
+            str(obj_evidence_id)  # 当前特征绑定的规范证据编号
+            for str_feature_id in list_feature_ids  # 遍历独立项特征
+            for obj_evidence_id in dict_features.get(  # 读取当前特征证据数组
+                str_feature_id,  # 当前独立项稳定特征编号
+                {},  # 缺失特征使用空映射
+            ).get("evidence_ids", [])  # 遍历当前特征证据
+        }
+    )
+
+# 判断独立权利要求是否具有与实时事实一致的明确人工确认。
+def claim_confirmation_is_current(
+    dict_claim: Mapping[str, Any],
+    list_feature_ids: list[str],
+    dict_features: Mapping[str, Mapping[str, Any]],
+    obj_human_confirmations: Any,
+    str_contract_version: str,
+) -> bool:
+    """验证独立权利要求人工确认的目标和摘要是否仍然新鲜。
+
+    参数：
+    - `dict_claim`：当前独立权利要求记录。
+    - `list_feature_ids`：当前独立项稳定特征集合。
+    - `dict_features`：模型稳定技术特征索引。
+    - `obj_human_confirmations`：模型活动人工确认容器。
+    - `str_contract_version`：当前模型合同版本。
+
+    返回：
+    - `bool`：存在目标匹配、决定明确且摘要新鲜的确认时为真。
+
+    异常：
+    - 无。
+    """
+
+    # 权利要求编号作为通用人工确认目标。
+    str_claim_id = str(dict_claim.get("claim_no", ""))  # 当前独立项确认编号
+
+    # 摘要同时绑定特征集合和这些特征的证据并集。
+    list_claim_evidence_ids = collect_claim_evidence_ids(  # 当前独立项全部研发证据
+        list_feature_ids,  # 当前独立项稳定特征集合
+        dict_features,  # 当前模型稳定特征索引
+    )
+
+    # 重新计算当前独立项确认摘要，过期记录不能关闭待办。
+    str_expected_claim_hash = calculate_semantic_review_hash(  # 当前独立项确认摘要
+        "independent_claim",  # 独立权利要求确认目标类型
+        str_claim_id,  # 当前独立权利要求编号
+        list_feature_ids,  # 参与确认摘要的实时特征次序
+        list_claim_evidence_ids,  # 绑定确认时可见的证据范围
+        str_contract_version,  # 当前合同版本
+    )
+
+    # 损坏确认容器不能形成有效确认。
+    if not isinstance(obj_human_confirmations, list):
+
+        # 与原有失败关闭语义一致，拒绝解释其他可迭代对象。
+        return False
+
+    # 只有事项、目标、决定和摘要全部匹配的记录有效。
+    return any(
+        isinstance(dict_item, Mapping)  # 当前确认记录必须是映射
+        and dict_item.get("confirmation_type") == "independent_claim_feature_set"  # 事项类别匹配
+        and dict_item.get("target_type") == "independent_claim"  # 目标类型匹配
+        and str(dict_item.get("target_id", "")) == str_claim_id  # 目标编号匹配
+        and dict_item.get("decision") == "confirm"  # 决定明确确认
+        and dict_item.get("target_hash") == str_expected_claim_hash  # 摘要仍然新鲜
+        for dict_item in obj_human_confirmations  # 遍历模型人工确认
+    )
+
+# 验证单条 claims map 记录的支撑状态和人工确认。
+def validate_claim_record(
+    dict_claim: Mapping[str, Any], dict_features: Mapping[str, Mapping[str, Any]],
+    set_section_ids: set[str], set_evidence_ids: set[str],
+    dict_section_evidence: Mapping[str, set[str]], obj_human_confirmations: Any,
+    str_contract_version: str,
+) -> list[dict[str, str]]:
+    """验证单条权利要求并保持支撑 finding 先于人工确认 finding。
+
+    参数：
+    - `dict_claim`：当前结构化权利要求记录。
+    - `dict_features`：模型稳定技术特征索引。
+    - `set_section_ids`：模型有效章节编号。
+    - `set_evidence_ids`：模型有效证据编号。
+    - `dict_section_evidence`：章节与证据精确绑定。
+    - `obj_human_confirmations`：模型活动人工确认容器。
+    - `str_contract_version`：当前模型合同版本。
+
+    返回：
+    - `list[dict[str, str]]`：当前权利要求的 CLM001 和 HUM003 findings。
+
+    异常：
+    - 无。
+    """
+
+    # 读取当前权利要求稳定特征集合。
+    list_feature_ids = [
+        str(obj_id)  # 当前权利要求引用的规范特征编号
+        for obj_id in dict_claim.get("feature_ids", [])  # 遍历权利要求特征
+    ]  # 当前权利要求特征集合
+
+    # 根据实时模型事实计算全部闭包缺口。
+    list_unsupported_feature_ids = find_unsupported_feature_ids(  # 本 claim 待报告的三层闭包缺口
+        list_feature_ids,  # 保持当前 claim 的原始特征次序
+        dict_features,  # 供缺口查询的完整特征登记表
+        set_section_ids,  # 判定章节身份是否真实存在
+        set_evidence_ids,  # 判定证据身份是否真实存在
+        dict_section_evidence,  # 验证章节与证据的局部绑定
+    )
+
+    # 至少一个稳定特征且所有特征闭包成立才派生为 supported。
+    str_derived_status = (
+        "supported"  # 全部特征闭包成立
+        if list_feature_ids and not list_unsupported_feature_ids  # 存在特征且无缺口
+        else "unsupported"  # 缺少特征或存在闭包缺口
+    )  # 从特征闭包派生的支撑状态
+
+    # 记录当前权利要求 findings，并保持追加顺序稳定。
+    list_findings: list[dict[str, str]] = []  # 当前权利要求 findings
+
+    # 输入状态不一致，或独立项实际无支撑时形成 blocker。
+    if dict_claim.get("support_status") != str_derived_status or (
+        str(dict_claim.get("claim_type", "")).startswith("independent_")
+        and str_derived_status != "supported"
+    ):
+
+        # 上层不得信任输入 support_status。
+        list_findings.append(
+            build_blocker(
+                "CLM001",
+                (
+                    f"权利要求{dict_claim.get('claim_no', '')}"
+                    f"派生支撑状态为{str_derived_status}:"
+                    f"缺口{list_unsupported_feature_ids}"
+                ),
+                "修复 feature_id、章节和证据闭包后重新生成 claims map",
+            )
+        )
+
+    # 从属项不要求独立项特征集人工确认。
+    if not str(dict_claim.get("claim_type", "")).startswith("independent_"):
+
+        # 返回当前支撑 finding，不追加 HUM003。
+        return list_findings
+
+    # 每个独立项特征集都必须具有实时人工确认。
+    bool_confirmed = claim_confirmation_is_current(  # 当前独立项人工确认状态
+        dict_claim,  # 当前独立权利要求记录
+        list_feature_ids,  # 绑定确认摘要的特征排列
+        dict_features,  # 汇总这些特征的证据并集
+        obj_human_confirmations,  # 当前模型人工确认容器
+        str_contract_version,  # 当前模型合同版本
+    )
+
+    # 缺失或过期人工确认时不能进入最终权利要求。
+    if not bool_confirmed:
+
+        # Task 1 只实现通用确认器，不决定具体保护范围。
+        list_findings.append(
+            build_blocker(
+                "HUM003",
+                f"独立权利要求特征集缺少人工确认:{dict_claim.get('claim_no', '')}",
+                "逐项确认独立项包含的 feature_ids",
+            )
+        )
+
+    # 返回当前权利要求全部支撑和人工确认问题。
+    return list_findings
+
 # 从 Model 4.0 特征闭包派生 claims map 支撑状态。
 def validate_claims_map(
     dict_claims_map: Mapping[str, Any],
@@ -712,33 +1060,8 @@ def validate_claims_map(
             )
         )
 
-    # 使用 Draft 2020-12 执行 claims map 结构合同。
-    dict_schema = load_schema(PATH_CLAIMS_SCHEMA)  # 版本三权利要求映射合同
-
-    # 创建实例验证器并稳定排序错误。
-    obj_validator = Draft202012Validator(dict_schema)  # 权利要求映射实例验证器
-
-    # schema 错误均进入 blocker 报告。
-    list_schema_errors = sorted(  # 按实例路径排序的映射结构错误
-        obj_validator.iter_errors(dict(dict_claims_map)),  # 当前 claims 结构错误
-        key=lambda obj_error: list(obj_error.absolute_path),  # 依据嵌套实例路径排序
-    )
-
-    # 把 schema 失败转换为统一结构。
-    list_findings.extend(
-        [
-            build_blocker(
-                "CLM_SCHEMA",
-                (
-                    "claims map schema 失败:"
-                    f"{'/'.join(str(obj_part) for obj_part in obj_error.absolute_path) or '<root>'}:"
-                    f"{obj_error.message}"
-                ),
-                "按 claims_map.schema.json 修复映射",
-            )
-            for obj_error in list_schema_errors
-        ]
-    )
+    # schema findings 紧随迁移 finding 追加，保持报告顺序稳定。
+    list_findings.extend(build_claims_schema_findings(dict_claims_map))
 
     # schema finding 已保留；后续语义检查使用安全副本继续汇总。
     module_safe_types = load_model_safe_types()  # Model 与 claims 共用规整职责
@@ -749,42 +1072,23 @@ def validate_claims_map(
     # 再收敛 Model 4 嵌套容器，保证全部语义规则可累计 finding。
     dict_model = module_safe_types.normalize_model(dict_model)  # type-total 模型副本
 
-    # 建立实际章节、证据和特征索引，支撑状态只从这些事实派生。
-    set_section_ids = {
-        str(dict_section.get("id"))  # claims 支撑闭包章节编号
-        for dict_section in dict_model.get("sections", [])  # 建立 claims 章节集合
-        if isinstance(dict_section, Mapping) and dict_section.get("id")  # 支撑闭包保留有效章节
-    }  # 模型章节编号
+    # 构建支撑闭包和人工确认时效校验所需的全部索引。
+    tuple_support_indexes = build_claim_support_indexes(dict_model)  # claims 支撑事实索引
 
-    # 建立章节到证据的精确绑定，禁止只凭全局证据存在性推断支撑。
-    dict_section_evidence = {
-        str(dict_section.get("id")): {  # claims 章节稳定编号
-            str(obj_evidence_id)  # 当前章节引用证据编号
-            for obj_evidence_id in dict_section.get("evidence_ids", [])  # 提取 claims 章节证据
-        }
-        for dict_section in dict_model.get("sections", [])  # 建立 claims 章节索引
-        if isinstance(dict_section, Mapping) and dict_section.get("id")  # claims 索引排除损坏章节
-    }  # claims 支撑章节证据索引
+    # 分别读取各类索引，保持后续 helper 调用语义明确。
+    set_section_ids = tuple_support_indexes[0]  # 支撑闭包可引用的章节身份
 
-    # 证据编号只来自模型登记表。
-    set_evidence_ids = collect_evidence_ids(dict_model.get("evidence_registry"))  # 模型证据编号
+    # 章节证据必须保持精确绑定关系。
+    dict_section_evidence = tuple_support_indexes[1]  # 各章节真实引用的证据集合
 
-    # 特征索引允许 claims map 通过稳定 ID 查询。
-    dict_features = {
-        str(dict_feature.get("feature_id")): dict_feature  # 当前稳定特征索引项
-        for dict_feature in dict_model.get("feature_registry", [])  # 建立 claims 特征索引
-        if isinstance(dict_feature, Mapping) and dict_feature.get("feature_id")  # claims 索引保留有效特征
-    }  # 稳定技术特征索引
+    # 全局证据集合用于拒绝悬空证据编号。
+    set_evidence_ids = tuple_support_indexes[2]  # 证据登记表中的可用身份
 
-    # 人工确认集合用于独立项特征集检查。
-    obj_semantic_review = dict_model.get("semantic_review", {})  # 模型审查容器
+    # 稳定特征索引用于解析每条 claim 的 feature_ids。
+    dict_features = tuple_support_indexes[3]  # 通过 feature_id 定位事实实体的映射
 
-    # 读取独立项确认记录，后续依据当前 feature_ids 和证据集合复算摘要。
-    list_human_confirmations = (
-        obj_semantic_review.get("human_confirmations", [])  # 已嵌入人工确认数组
-        if isinstance(obj_semantic_review, Mapping)  # 审查容器类型有效
-        else []  # 损坏审查容器视为空确认集合
-    )  # 当前模型人工确认记录
+    # 人工确认数组用于复算独立项确认摘要。
+    obj_human_confirmations = tuple_support_indexes[4]  # 等待时效判定的活动人工确认
 
     # 逐项根据特征、章节和证据重新计算支撑状态。
     for dict_claim in dict_claims_map.get("claims", []):
@@ -795,120 +1099,18 @@ def validate_claims_map(
             # 跳过损坏记录。
             continue
 
-        # 读取当前权利要求稳定特征集合。
-        list_feature_ids = [
-            str(obj_id)  # 当前权利要求引用的规范特征编号
-            for obj_id in dict_claim.get("feature_ids", [])  # 遍历权利要求特征
-        ]  # 当前权利要求特征集合
-
-        # 记录无法通过三层闭包的特征编号。
-        list_unsupported_feature_ids: list[str] = []  # 当前权利要求无支撑特征
-
-        # 每个特征必须存在且具有真实章节、证据和效果。
-        for str_feature_id in list_feature_ids:
-
-            # 取回当前稳定特征记录。
-            dict_feature = dict_features.get(str_feature_id)  # 当前技术特征记录
-
-            # 不存在的特征直接列为无支撑。
-            if dict_feature is None:
-
-                # 保存悬空 feature_id 供修复。
-                list_unsupported_feature_ids.append(str_feature_id)
-
-                # 继续检查剩余特征。
-                continue
-
-            # 任一闭包条件失败都将特征标为无支撑。
-            if not feature_has_support_closure(
-                dict_feature,
-                set_section_ids,
-                set_evidence_ids,
-                dict_section_evidence,
-            ):
-
-                # 保留当前 feature_id 供 claims map 精确补料。
-                list_unsupported_feature_ids.append(str_feature_id)
-
-        # 至少一个稳定特征且所有特征闭包成立才派生为 supported。
-        str_derived_status = (
-            "supported"  # 全部特征闭包成立
-            if list_feature_ids and not list_unsupported_feature_ids  # 存在特征且无缺口
-            else "unsupported"  # 缺少特征或存在闭包缺口
-        )  # 从特征闭包派生的支撑状态
-
-        # 输入状态与派生状态不一致，或独立项实际无支撑时都形成 blocker。
-        if dict_claim.get("support_status") != str_derived_status or (
-            str(dict_claim.get("claim_type", "")).startswith("independent_")
-            and str_derived_status != "supported"
-        ):
-
-            # 上层不得信任输入 support_status。
-            list_findings.append(
-                build_blocker(
-                    "CLM001",
-                    (
-                        f"权利要求{dict_claim.get('claim_no', '')}"
-                        f"派生支撑状态为{str_derived_status}:"
-                        f"缺口{list_unsupported_feature_ids}"
-                    ),
-                    "修复 feature_id、章节和证据闭包后重新生成 claims map",
-                )
+        # 单项 helper 保持 CLM001 先于 HUM003 的原有 finding 顺序。
+        list_findings.extend(
+            validate_claim_record(
+                dict_claim,  # 当前结构化权利要求记录
+                dict_features,  # 解析 feature_ids 的实时登记表
+                set_section_ids,  # 当前模型允许引用的 section_ids
+                set_evidence_ids,  # 拒绝悬空 evidence_id 的全局集合
+                dict_section_evidence,  # 检查局部证据归属的章节索引
+                obj_human_confirmations,  # 用于匹配当前摘要的确认集合
+                str(dict_model.get("contract_version", "")),  # 纳入摘要计算的模型版本
             )
-
-        # 每个独立项特征集都必须由人确认。
-        if str(dict_claim.get("claim_type", "")).startswith("independent_"):
-
-            # 权利要求编号作为通用人工确认目标。
-            str_claim_id = str(dict_claim.get("claim_no", ""))  # 当前独立项确认编号
-
-            # 独立项确认摘要同时绑定特征集合和这些特征的证据并集。
-            list_claim_evidence_ids = sorted(  # 当前独立项全部研发证据
-                {
-                    str(obj_evidence_id)  # 当前特征绑定的规范证据编号
-                    for str_feature_id in list_feature_ids  # 遍历独立项特征
-                    for obj_evidence_id in dict_features.get(  # 读取当前特征的证据数组
-                        str_feature_id,  # 当前独立项稳定特征编号
-                        {},  # 缺失特征使用空映射
-                    ).get("evidence_ids", [])  # 遍历当前特征证据
-                }
-            )  # 当前独立项证据并集
-
-            # 摘要同时绑定独立项特征集合和证据并集。
-            str_expected_claim_hash = calculate_semantic_review_hash(  # 当前独立项确认摘要
-                "independent_claim",  # 独立权利要求确认目标类型
-                str_claim_id,  # 当前独立权利要求编号
-                list_feature_ids,  # 当前独立项稳定特征集合
-                list_claim_evidence_ids,  # 绑定确认时可见的证据范围
-                str(dict_model.get("contract_version", "")),  # 当前合同版本
-            )
-
-            # 只有摘要新鲜且明确 confirm 的记录有效。
-            bool_confirmed = (
-                any(  # 查找当前独立项的有效人工确认
-                    isinstance(dict_item, Mapping)  # 当前确认记录必须是映射
-                    and dict_item.get("confirmation_type") == "independent_claim_feature_set"  # 事项类别匹配
-                    and dict_item.get("target_type") == "independent_claim"  # 目标类型匹配
-                    and str(dict_item.get("target_id", "")) == str_claim_id  # 目标编号匹配
-                    and dict_item.get("decision") == "confirm"  # 决定明确确认
-                    and dict_item.get("target_hash") == str_expected_claim_hash  # 摘要仍然新鲜
-                    for dict_item in list_human_confirmations  # 遍历模型人工确认
-                )
-                if isinstance(list_human_confirmations, list)  # 确认容器类型有效
-                else False  # 损坏容器不能形成有效确认
-            )  # 当前独立项是否具有有效人工确认
-
-            # 缺失或过期人工确认时不能进入最终权利要求。
-            if not bool_confirmed:
-
-                # Task 1 只实现通用确认器，不决定具体保护范围。
-                list_findings.append(
-                    build_blocker(
-                        "HUM003",
-                        f"独立权利要求特征集缺少人工确认:{str_claim_id}",
-                        "逐项确认独立项包含的 feature_ids",
-                    )
-                )
+        )
 
     # 返回 schema、支撑和人工确认问题。
     return list_findings
