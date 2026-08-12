@@ -16,6 +16,9 @@ PATH_SECTION_CONTRACT = Path(__file__).resolve().parents[3] / "assets" / "sectio
 # 固定同目录公式校验模块路径，使公式规则保持单一实现来源。
 PATH_FORMULA_VALIDATOR = Path(__file__).resolve().parent / "formula_contract_validator.py"  # 公式校验模块路径
 
+# 固定事实完整性合同路径，使模型登记表门禁进入正式验证链。
+PATH_FACT_INTEGRITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "fact_integrity_contract.py"  # 事实合同模块路径
+
 # 将各专用规则发现统一为现有验证报告可直接消费的结构。
 def build_blocker(str_code: str, str_message: str, str_suggestion: str) -> dict[str, str]:
     """构造结构化合同 blocker finding。
@@ -90,6 +93,41 @@ def load_formula_validator() -> Any:
 
     # 返回已初始化模块供统一验证入口调用。
     return module_validator
+
+# 动态加载事实完整性合同，避免依赖调用方模块搜索路径。
+def load_fact_integrity_contract() -> Any:
+    """加载正式事实完整性合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行源码的事实完整性模块。
+
+    异常：
+    - `ImportError`：模块规格或加载器不可用时抛出。
+    """
+
+    # 使用稳定内部名称隔离事实合同模块实例。
+    str_module_name = "patent_fact_integrity_contract"  # 事实合同内部模块名
+
+    # 将事实合同源码绑定到当前验证进程的独立模块名。
+    obj_specification = importlib.util.spec_from_file_location(str_module_name, PATH_FACT_INTEGRITY_CONTRACT)  # 事实合同加载规格
+
+    # 规格或加载器缺失意味着事实门禁不可用。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 阻断验证流程，禁止静默跳过核心事实规则。
+        raise ImportError("> ERR: [Python] 无法加载 fact_integrity_contract.py。")
+
+    # 根据已验证规格创建事实合同模块实例。
+    module_contract = importlib.util.module_from_spec(obj_specification)  # 事实合同模块实例
+
+    # 执行正式源码，使调用方消费当前版本规则。
+    obj_specification.loader.exec_module(module_contract)
+
+    # 返回已初始化模块供统一模型验证复用。
+    return module_contract
 
 # 校验模型章节是否覆盖合同要求，并返回正文已声明标识集合。
 def validate_sections(
@@ -267,6 +305,15 @@ def validate_structured_model(dict_model: Mapping[str, Any]) -> list[dict[str, s
     - 正式章节合同或公式验证模块不可读时由底层异常上抛。
     """
 
+    # 旧模型必须重新生成，禁止通过兼容回退继续形成确认稿。
+    list_version_findings: list[dict[str, str]] = []  # 版本三模型状态发现
+
+    # 只有版本三合同可以进入后续正式验证。
+    if dict_model.get("contract_version") != "3.0":
+
+        # 记录稳定 blocker，同时继续汇总旧模型的具体内容问题。
+        list_version_findings.append(build_blocker("MOD001", "结构化模型不是版本3.0", "重新运行起草流程生成 latest_disclosure_model.json"))
+
     # 从正式资产读取章节要求，防止代码与合同文件发生枚举漂移。
     set_required_ids = load_required_section_ids()  # 合同要求章节标识
 
@@ -274,13 +321,13 @@ def validate_structured_model(dict_model: Mapping[str, Any]) -> list[dict[str, s
     tuple_section_result = validate_sections(dict_model.get("sections"), set_required_ids)  # 章节检查结果
 
     # 分离章节 findings 与实际标识集合，使汇总顺序清晰稳定。
-    list_findings = list(tuple_section_result[0])  # 统一结构化 findings
+    list_findings = list_version_findings + list(tuple_section_result[0])  # 统一结构化 findings
 
     # 保存模型实际章节标识，用于判断引用源和目标是否存在。
     set_present_ids = tuple_section_result[1]  # 正文已声明章节标识
 
     # 证据检查紧随章节完整性，优先暴露正文事实支撑缺口。
-    list_findings.extend(validate_evidence_references(dict_model.get("sections"), dict_model.get("evidence_map")))
+    list_findings.extend(validate_evidence_references(dict_model.get("sections"), dict_model.get("evidence_registry")))
 
     # 调用既有公式验证器，保持 FOR001-FOR007 的单一规则来源。
     module_formula_validator = load_formula_validator()  # 正式公式验证模块
@@ -317,6 +364,12 @@ def validate_structured_model(dict_model: Mapping[str, Any]) -> list[dict[str, s
 
     # 最后检查显式章节引用，使报告先呈现内容问题再呈现导航问题。
     list_findings.extend(validate_cross_references(dict_model.get("cross_references", []), set_present_ids))
+
+    # 执行材料、数值、待办和附图来源的模型级事实完整性门禁。
+    module_fact_contract = load_fact_integrity_contract()  # 正式事实完整性模块
+
+    # 将事实合同 findings 直接并入现有阻断状态机。
+    list_findings.extend(module_fact_contract.validate_delivery_model(dict_model))
 
     # 返回统一 findings；任一条都会使现有状态机构建 blocked。
     return list_findings

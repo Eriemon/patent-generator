@@ -2080,6 +2080,118 @@ def build_manifest(
         "delivery_files": list_delivery_files,
     }
 
+# 把附图 manifest 转换为模型中的来源与正文绑定登记表。
+def build_figure_registry(dict_manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """构造附图来源登记表。
+
+    参数：
+    - `dict_manifest`：已生成的 figures manifest。
+
+    返回：
+    - `list[dict[str, Any]]`：可写入结构化交底模型的附图登记表。
+
+    异常：
+    - manifest 中的 `figures` 不是列表时抛出 `ValueError`。
+    """
+
+    # 读取附图条目并验证容器类型，防止损坏 manifest 被写入正式模型。
+    list_figures = dict_manifest.get("figures", [])  # manifest 附图条目
+
+    # manifest 容器类型错误时立即阻断，避免继续解释不可信结构。
+    if not isinstance(list_figures, list):
+
+        # 抛出明确结构错误，要求调用方修复 manifest 后重新生成。
+        raise ValueError("> ERR: [Python] figures manifest 的 figures 必须为列表。")
+
+    # 保留正文草稿绝对路径，作为每张图的统一生成来源。
+    str_provenance = str(dict_manifest.get("source_draft", "")).strip()  # 附图生成来源
+
+    # 按 manifest 稳定顺序生成 FIG 标识，保持多次运行结果一致。
+    list_registry: list[dict[str, Any]] = []  # 附图来源登记表
+
+    # 逐条转换正式附图，保持 manifest 顺序与 FIG 标识一致。
+    for int_index, dict_figure in enumerate(list_figures, start=1):
+
+        # 非对象条目无法提供图号、文件和来源索引，必须立即阻断。
+        if not isinstance(dict_figure, dict):
+
+            # 抛出明确条目类型错误，避免生成部分有效的附图登记表。
+            raise ValueError("> ERR: [Python] figures manifest 的附图条目必须为对象。")
+
+        # 流程图使用步骤索引，模块图使用模块索引，二者统一映射为 source_items。
+        list_source_items = dict_figure.get("steps", dict_figure.get("modules", []))  # 图内结构索引
+
+        # 图内索引不是列表时无法建立稳定映射，必须停止回填。
+        if not isinstance(list_source_items, list):
+
+            # 抛出明确索引类型错误，要求修复附图生成输入。
+            raise ValueError("> ERR: [Python] 附图 steps/modules 必须为列表。")
+
+        # 记录来源、图号、文件及正文绑定，供审查与导出阶段交叉验证。
+        list_registry.append(
+            {
+                "figure_id": f"FIG{int_index:03d}",
+                "figure_no": str(dict_figure.get("figure_no", "")).strip(),
+                "title": str(dict_figure.get("title", "")).strip(),
+                "provenance": str_provenance,
+                "section_ids": ["4.2", "5", "6"],
+                "file": str(dict_figure.get("file", "")).strip(),
+                "delivery_file": str(dict_figure.get("delivery_file", "")).strip(),
+                "source_items": [str(obj_item).strip() for obj_item in list_source_items],
+            }
+        )
+
+    # 返回与模型版本三合同兼容的附图登记表。
+    return list_registry
+
+# 在附图完成后回填结构化交底模型，避免模型与交付图件脱节。
+def update_disclosure_model_figure_registry(
+    path_case_dir: Path,
+    dict_manifest: dict[str, Any],
+    module_runtime_support: Any,
+) -> Path:
+    """回填结构化模型中的附图登记表。
+
+    参数：
+    - `path_case_dir`：当前案件根目录。
+    - `dict_manifest`：已生成的 figures manifest。
+    - `module_runtime_support`：共享运行时支持模块。
+
+    返回：
+    - `Path`：完成回填的结构化模型路径。
+
+    异常：
+    - 模型文件不存在时抛出 `FileNotFoundError`。
+    - 模型顶层不是对象时抛出 `ValueError`。
+    """
+
+    # 固定读取正式版本三模型，禁止在附图阶段另建旁路真相文件。
+    path_model = path_case_dir / "03_drafts" / "latest_disclosure_model.json"  # 正式结构化模型路径
+
+    # 模型不存在时禁止附图旁路落盘，以免交付图件脱离模型真相层。
+    if not path_model.exists():
+
+        # 抛出明确缺失错误，要求先完成正式交底模型生成阶段。
+        raise FileNotFoundError("> ERR: [Python] 缺少 latest_disclosure_model.json，不能登记附图来源。")
+
+    # 读取并验证模型顶层类型，避免覆盖损坏或非对象 JSON。
+    dict_model = module_runtime_support.read_json_file(path_model)  # 当前结构化交底模型
+
+    # 非对象模型无法安全更新登记表，必须保留原文件并停止处理。
+    if not isinstance(dict_model, dict):
+
+        # 抛出明确结构错误，避免覆盖损坏的模型文件。
+        raise ValueError("> ERR: [Python] latest_disclosure_model.json 顶层必须为对象。")
+
+    # 使用本次 manifest 重建附图登记表，使重复运行保持幂等。
+    dict_model["figure_registry"] = build_figure_registry(dict_manifest)  # 本次附图来源登记表
+
+    # 原位写回正式模型，让后续验证和 DOCX 导出读取同一事实源。
+    module_runtime_support.write_json_file(path_model, dict_model)
+
+    # 返回模型路径，便于调用方测试或记录本次回填目标。
+    return path_model
+
 # 生成 figures manifest 的 Markdown 摘要文本，便于人工快速审阅。
 def render_manifest_markdown(path_markdown: Path) -> str:
     """渲染 figures manifest Markdown 摘要文本。
@@ -2199,6 +2311,9 @@ def main() -> int:
 
     # 把 figures manifest JSON 写入案件目录。
     module_runtime_support.write_json_file(path_manifest_json, dict_manifest)
+
+    # 回填正式结构化模型中的附图来源与正文绑定，禁止交付图件脱离模型真相层。
+    update_disclosure_model_figure_registry(path_case_dir, dict_manifest, module_runtime_support)
 
     # 渲染供人工快速审阅的 Markdown 摘要文本。
     str_manifest_markdown = render_manifest_markdown(path_markdown)  # figures manifest Markdown 摘要文本

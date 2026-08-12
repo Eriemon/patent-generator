@@ -211,7 +211,7 @@ def append_structured_model_findings(
     """
 
     # 固定新版模型文件位置，避免验证器在案件目录内模糊搜索。
-    path_model = path_case_dir / "03_drafts" / "disclosure_model.json"  # 结构化交底模型路径
+    path_model = path_case_dir / "03_drafts" / "latest_disclosure_model.json"  # 结构化交底模型路径
 
     # 旧案件没有版本二模型时保持可读取兼容，不伪称已执行新合同。
     if not path_model.exists():

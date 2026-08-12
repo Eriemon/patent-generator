@@ -203,6 +203,153 @@
           "terms": ["examination_assessment.json", "append_examination_findings"]
         }
       ]
+    },
+    {
+      "id": "human-approved-data-only",
+      "title": "Material numbers and comparisons require explicit human approval",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline generator may copy experimental values or comparisons directly from supplied papers into the disclosure.",
+      "required_files": [
+        "SKILL.md",
+        "scripts/python/support/fact_integrity_contract.py"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "explicit acceptance",
+            "stable `data_id`",
+            "Do not copy"
+          ]
+        },
+        {
+          "file": "scripts/python/support/fact_integrity_contract.py",
+          "terms": [
+            "validate_numeric_claims",
+            "build_approved_data_registry"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "explicit-material-role",
+      "title": "Accepted material requires a human-confirmed content role",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline generator may guess whether an input is invention evidence or prior art and then reuse it in the wrong section.",
+      "required_files": [
+        "SKILL.md",
+        "scripts/python/support/fact_integrity_contract.py"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "explicit `source_roles`",
+            "`invention_evidence`",
+            "`prior_art`"
+          ]
+        },
+        {
+          "file": "scripts/python/support/fact_integrity_contract.py",
+          "terms": [
+            "validate_accepted_source_roles",
+            "REV003"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prior-art-time-boundary",
+      "title": "Later publications cannot establish the prior-art baseline",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline generator may cite a post-reference-date publication as if it were available prior art.",
+      "required_files": [
+        "SKILL.md",
+        "scripts/python/support/fact_integrity_contract.py"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "patent reference date",
+            "later references"
+          ]
+        },
+        {
+          "file": "scripts/python/support/fact_integrity_contract.py",
+          "terms": [
+            "classify_prior_art_timing",
+            "validate_prior_art_usage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "office-mathtype-native-equations",
+      "title": "Formal formulas remain native editable Office or MathType objects",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline exporter may rasterize equations, retain plain text, or silently fall back between equation formats.",
+      "required_files": [
+        "SKILL.md",
+        "scripts/python/export/export_docx.py"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "native MathType OLE/MTEF",
+            "native OMML",
+            "silent fallback"
+          ]
+        },
+        {
+          "file": "scripts/python/export/export_docx.py",
+          "terms": [
+            "Equation.DSMT4",
+            "m:oMath"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "model-and-figure-provenance",
+      "title": "Technical points and figures retain evidence provenance",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline disclosure may contain unsupported technical points or figures with no traceable source binding.",
+      "required_files": [
+        "SKILL.md",
+        "scripts/python/support/fact_integrity_contract.py",
+        "scripts/python/figures/generate_figures.py"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "`evidence_registry`",
+            "`term_registry`",
+            "`figure_registry`"
+          ]
+        },
+        {
+          "file": "scripts/python/support/fact_integrity_contract.py",
+          "terms": [
+            "validate_feature_evidence",
+            "validate_term_registry"
+          ]
+        },
+        {
+          "file": "scripts/python/figures/generate_figures.py",
+          "terms": [
+            "build_figure_registry",
+            "update_disclosure_model_figure_registry"
+          ]
+        }
+      ]
     }
   ]
 }

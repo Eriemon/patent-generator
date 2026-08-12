@@ -456,7 +456,7 @@ def create_case_until_preview(namespace_arguments: argparse.Namespace) -> Previe
 
 # 确保既有案件目录中已经存在预览材料；缺失时自动补生成当前预览。
 def ensure_existing_preview(path_case_dir: Path) -> Path:
-    """确保既有案件目录下存在预览材料。
+    """刷新既有案件目录下的预览材料。
 
     参数：
     - `path_case_dir`：当前案件根目录路径。
@@ -465,25 +465,16 @@ def ensure_existing_preview(path_case_dir: Path) -> Path:
     - `Path`：当前案件可用的预览 Markdown 路径。
 
     异常：
-    - 预览补生成失败时抛出 `RuntimeError`。
+    - 预览刷新失败时抛出 `RuntimeError`。
     """
 
-    # 固定正式案件下的预览 Markdown 路径，优先命中稳定文件而不是重复补跑预览入口。
-    path_preview_markdown = path_case_dir / "03_drafts" / "pre_draft_preview.md"  # 稳定预览 Markdown 路径
+    # 准备预览刷新参数，使事实审核决定变化后能够重新计算 review_closed。
+    list_preview_args = ["--case-dir", str(path_case_dir)]  # 预览刷新入口参数列表
 
-    # 在预览 Markdown 已经存在时直接返回其绝对路径。
-    if path_preview_markdown.exists():
+    # 每次续跑都刷新预览状态，禁止以已存在的 Markdown 代替当前审核闭包检查。
+    completed_process_preview = run_required_stage(PATH_GENERATE_PREVIEW_SCRIPT, list_preview_args)  # 预览刷新入口执行结果对象
 
-        # 返回既有预览材料路径，避免重复执行预览入口。
-        return path_preview_markdown.resolve()
-
-    # 先准备预览补生成入口参数，确保补出的材料仍然落回当前案件目录。
-    list_preview_args = ["--case-dir", str(path_case_dir)]  # 预览补生成入口参数列表
-
-    # 在预览材料缺失时补执行一次预览入口，恢复正式确认门文件。
-    completed_process_preview = run_required_stage(PATH_GENERATE_PREVIEW_SCRIPT, list_preview_args)  # 预览补生成入口执行结果对象
-
-    # 返回补生成后的预览 Markdown 路径，供后续确认门判断复用。
+    # 返回刷新后的预览 Markdown 路径，供后续确认门判断复用。
     return read_output_path(completed_process_preview)
 
 # 在需要时把预览状态切换为已确认，并返回当前案件最新的预览状态字典。
@@ -576,6 +567,21 @@ def apply_preview_confirmation(
 
         # 要求调用方先对疑似AI建议给出明确决定。
         raise ValueError("> ERR: [Python] 请先使用 --confirm-technical-profile 明确案件技术类型。")
+
+    # 命令行确认不能绕过逐项事实复核门，且要纠正外部直接写入的非法确认状态。
+    if confirmed_preview and not dict_preview_status.get("review_closed", False):
+
+        # 恢复未确认状态，阻止主流程在事实复核仍有待决项时进入正式后链。
+        dict_preview_status["confirmed"] = False  # 事实复核未闭环时的预览确认标记
+
+        # 同步恢复状态文本，避免布尔值与文本状态表达相互矛盾。
+        dict_preview_status["status"] = "pending_confirmation"  # 事实复核未闭环时的预览状态
+
+        # 持久化纠正后的状态，使后续重试和审计读取同一事实。
+        module_runtime_support.write_json_file(path_preview_status, dict_preview_status)
+
+        # 立即返回纠正后的状态，统一复用主流程已有的 preview_pending 返回路径。
+        return dict_preview_status
 
     # 在调用方显式要求确认预览时，把当前状态切换为已确认。
     if confirmed_preview:

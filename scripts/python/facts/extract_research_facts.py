@@ -4,7 +4,11 @@ from __future__ import annotations
 
 # 这里引入标准库参数、时间、序列化和路径工具，供 facts 入口完成本地事实汇总与落盘。
 import argparse
+import hashlib
+import importlib.util
 import json
+
+# 正则、进程、时间和路径工具负责文本抽取及本地入口运行。
 import re
 import sys
 from datetime import datetime
@@ -15,6 +19,9 @@ from typing import Any
 # 这里引入拆分后的报告辅助函数，让主文件只保留事实抽取和聚合流程。
 from facts_report_support import build_missing_information
 from facts_report_support import render_markdown
+
+# 固定事实完整性模块路径，使数值候选与最终数据门禁同源。
+PATH_FACT_INTEGRITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "fact_integrity_contract.py"  # 事实合同模块路径
 
 # 这里集中列出术语统计阶段要主动忽略的泛化词，避免候选专利点被空泛词主导。
 STOP_TERMS = frozenset(  # 高频术语统计停用词集合
@@ -1343,6 +1350,176 @@ def build_candidate_points(list_sources: list[dict[str, Any]]) -> list[dict[str,
     # 这里返回最终候选专利点列表，供 facts JSON 和 Markdown 渲染复用。
     return list_candidate_points[:12]
 
+# 组合主案与数据两类候选，形成不得直接进入正文的审核队列。
+def load_fact_integrity_contract_module() -> Any:
+    """加载数值候选使用的事实完整性合同。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行源码的事实合同模块。
+
+    异常：
+    - 模块规格或加载器缺失时抛出 `ImportError`。
+    """
+
+    # 使用 facts 专用模块名绑定正式事实合同源码。
+    obj_specification = importlib.util.spec_from_file_location(  # 事实合同加载规格
+        "patent_facts_integrity_contract",  # facts 隔离模块名称
+        PATH_FACT_INTEGRITY_CONTRACT,  # 正式事实合同源码路径
+    )
+
+    # 无法加载规则时必须阻断候选生成，禁止回退到第二套数值正则。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出稳定错误，明确事实候选门禁缺失。
+        raise ImportError("> ERR: [Python] 无法加载事实完整性合同模块。")
+
+    # 创建隔离模块对象供本次 facts 运行使用。
+    module_contract = importlib.util.module_from_spec(obj_specification)  # 事实合同模块对象
+
+    # 执行正式源码，使候选抽取与验证共享相同豁免规则。
+    obj_specification.loader.exec_module(module_contract)
+
+    # 返回已经初始化的事实合同模块。
+    return module_contract
+
+# 把事实抽取结果转换为必须逐项审核且内容绑定的候选工件。
+def build_review_candidates(list_candidate_points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """构建带稳定指纹的人工审核候选数组。
+
+    参数：
+    - `list_candidate_points`：事实抽取阶段生成的候选专利点。
+
+    返回：
+    - `list[dict[str, Any]]`：不得直接进入正文的审核候选数组。
+
+    异常：
+    - 候选包含非 JSON 值时由序列化逻辑上抛。
+    """
+
+    # 保存与候选点顺序一致的审核记录。
+    list_review_candidates: list[dict[str, Any]] = []  # 人工审核候选数组
+
+    # 加载同源数值识别规则，避免 facts 与最终验证发生漂移。
+    module_fact_contract = load_fact_integrity_contract_module()  # 事实完整性合同模块
+
+    # 逐项绑定身份和规范化内容摘要，避免材料变化后沿用旧决定。
+    for int_index, dict_candidate in enumerate(list_candidate_points, start=1):
+
+        # 使用稳定 JSON 编码计算当前候选的内容指纹。
+        str_payload_json = json.dumps(  # 候选点规范化 JSON
+            dict_candidate,  # 当前候选完整事实载荷
+            ensure_ascii=False,  # 保持中文语义参与摘要
+            sort_keys=True,  # 固定对象字段顺序
+            separators=(",", ":"),  # 排除无意义空白差异
+        )
+
+        # SHA-256 指纹同时绑定人工决定和后续失效判断。
+        str_fingerprint = hashlib.sha256(str_payload_json.encode("utf-8")).hexdigest()  # 当前候选内容摘要
+
+        # 追加只读载荷及来源身份，不把候选文本自动升级为确认事实。
+        list_review_candidates.append(
+            {
+                "candidate_id": f"C{int_index:03d}",  # 当前候选稳定编号
+                "candidate_type": "invention_point",  # 当前候选业务类型
+                "fingerprint": str_fingerprint,  # 当前候选内容绑定摘要
+                "source_paths": list(dict_candidate.get("source_paths", [])),  # 候选对应本地材料
+                "payload": dict_candidate,  # 等待人工审核的原始事实载荷
+            }
+        )
+
+    # 从候选事实载荷中收集需要独立批准的量化文本。
+    list_numeric_texts = module_fact_contract.collect_governed_numeric_texts(list_candidate_points)  # 量化事实候选文本
+
+    # 数据候选编号接续主案候选，保证全部决定身份唯一。
+    int_start_index = len(list_review_candidates) + 1  # 首条数据候选顺序编号
+
+    # 每条量化文本单独绑定指纹，不允许随主案整体接受。
+    for int_offset, str_numeric_text in enumerate(list_numeric_texts):
+
+        # 对原始量化句计算稳定摘要，供人工决定失效检查。
+        str_fingerprint = hashlib.sha256(str_numeric_text.encode("utf-8")).hexdigest()  # 数据候选内容摘要
+
+        # 追加独立 data_claim 候选，后续获批后才可形成 data_registry。
+        list_review_candidates.append(
+            {
+                "candidate_id": f"C{int_start_index + int_offset:03d}",  # 数据候选稳定编号
+                "candidate_type": "data_claim",  # 需要独立批准的数值事实类型
+                "fingerprint": str_fingerprint,  # 当前量化文本内容摘要
+                "source_paths": [],  # 来源路径由人工审核时补齐或确认
+                "payload": {"text": str_numeric_text},  # 保留完整量化原句供审核
+            }
+        )
+
+    # 返回完整候选数组供决定工件和预览门禁共同消费。
+    return list_review_candidates
+
+# 为首次出现的候选创建显式 pending 决定，不默认接受提取结果。
+def build_initial_review_decisions(list_review_candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """创建与当前候选一一对应的待审核决定。
+
+    参数：
+    - `list_review_candidates`：已经绑定内容摘要的候选数组。
+
+    返回：
+    - `list[dict[str, Any]]`：初始 pending 决定数组。
+
+    异常：
+    - 无。
+    """
+
+    # 每条决定复制候选身份和指纹，但不预填接受结论。
+    list_decisions = [  # 首次人工审核决定数组
+        {
+            "candidate_id": str(dict_candidate["candidate_id"]),  # 当前审核候选编号
+            "fingerprint": str(dict_candidate["fingerprint"]),  # 决定绑定的候选版本摘要
+            "decision": "pending",  # 等待人工选择的初始状态
+            "source_roles": {  # 每份来源路径的人工用途决定
+                str(obj_path): "unknown"  # 每份材料初始保持未确认用途
+                for obj_path in dict_candidate.get("source_paths", [])  # 遍历当前候选涉及的来源路径
+            },  # 人工必须逐份改为 invention_evidence 或 prior_art
+        }
+        for dict_candidate in list_review_candidates  # 为每条审核候选建立初始决定
+    ]  # 完成所有候选的未决审核状态初始化
+
+    # 返回初始决定，后续只允许人工改为 accept、modify 或 reject。
+    return list_decisions
+
+# 在不覆盖人工结论的前提下创建首次审核决定工件。
+def ensure_initial_review_decisions(
+    path_review_decisions: Path,
+    list_review_candidates: list[dict[str, Any]],
+) -> None:
+    """确保首次人工审核决定工件存在。
+
+    参数：
+    - `path_review_decisions`：人工决定 JSON 路径。
+    - `list_review_candidates`：当前内容绑定候选数组。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 目录创建或 JSON 写入失败时由底层异常上抛。
+    """
+
+    # 已有人工决定属于用户工件，事实重算不得自动覆盖。
+    if path_review_decisions.exists():
+
+        # 直接返回并保留现有逐项审核结果。
+        return
+
+    # 首次生成先确保草稿目录存在。
+    ensure_dir(path_review_decisions.parent)
+
+    # 生成与候选一一对应且默认未接受、来源角色未知的决定数组。
+    list_review_decisions = build_initial_review_decisions(list_review_candidates)  # 初始人工决定数组
+
+    # 写入决定工件供 confirmed preview 门禁消费。
+    write_json_file(path_review_decisions, list_review_decisions)
+
 # 这里执行 facts 主流程，并把 Markdown 报告路径写到标准输出末尾。
 def main() -> int:
     """
@@ -1501,6 +1678,21 @@ def main() -> int:
 
     # 这里把结构化 facts 数据写成 JSON 文件，作为后续步骤的稳定机器输入。
     write_json_file(path_facts_json, dict_facts)
+
+    # 把候选点转换为内容绑定的审核工件，禁止直接流入正文。
+    list_review_candidates = build_review_candidates(list_candidate_points)  # 当前候选审核数组
+
+    # 固定审核候选路径，供人工决定和预览门禁读取同一份候选。
+    path_review_candidates = path_output_dir / "review_candidates.json"  # 审核候选工件路径
+
+    # 写入当前候选集合；材料变化后指纹会随载荷同步变化。
+    write_json_file(path_review_candidates, list_review_candidates)
+
+    # 固定人工决定路径，使决定与草稿阶段同域管理。
+    path_review_decisions = path_case_dir / "03_drafts" / "review_decisions.json"  # 人工决定工件路径
+
+    # 首次生成 pending 决定，并保留任何已存在的人工审核结果。
+    ensure_initial_review_decisions(path_review_decisions, list_review_candidates)
 
     # 这里渲染 facts Markdown 文本，供人工快速审阅候选专利点和待补信息。
     str_facts_markdown = render_markdown(dict_facts)  # 待写入案件目录的 facts Markdown 报告文本

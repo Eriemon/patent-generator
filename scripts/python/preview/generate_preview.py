@@ -13,6 +13,9 @@ from typing import Any
 # 固定统一审查合同模块路径，使预览与最终验证读取同一profile规则。
 PATH_EXAMINATION_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "examination_quality_contract.py"  # 审查合同模块路径
 
+# 固定事实完整性模块路径，使预览确认状态消费正式候选审核规则。
+PATH_FACT_INTEGRITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "fact_integrity_contract.py"  # 事实完整性模块路径
+
 # 按真实文件路径加载统一审查合同，避免复制profile识别规则。
 def load_examination_contract_module() -> Any:
     """加载统一审查合同模块。
@@ -43,6 +46,41 @@ def load_examination_contract_module() -> Any:
     obj_specification.loader.exec_module(module_contract)
 
     # 返回已初始化的统一合同模块。
+    return module_contract
+
+# 加载候选审核使用的事实完整性合同。
+def load_fact_integrity_contract_module() -> Any:
+    """加载事实完整性合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行源码的事实完整性模块。
+
+    异常：
+    - 模块缺失或加载规格无效时抛出 `ImportError`。
+    """
+
+    # 把正式事实合同绑定到预览进程内的隔离模块名称。
+    obj_specification = importlib.util.spec_from_file_location(  # 事实合同加载规格
+        "patent_preview_fact_integrity",  # 预览专用隔离模块名
+        PATH_FACT_INTEGRITY_CONTRACT,  # 正式事实合同源码路径
+    )
+
+    # 加载规格和加载器缺失时不得继续计算确认状态。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出稳定错误，避免预览静默跳过人工候选门禁。
+        raise ImportError("> ERR: [Python] 无法加载事实完整性合同模块。")
+
+    # 根据已验证规格创建独立事实合同模块。
+    module_contract = importlib.util.module_from_spec(obj_specification)  # 事实完整性模块对象
+
+    # 执行正式源码，使预览使用与最终验证同源的审核规则。
+    obj_specification.loader.exec_module(module_contract)
+
+    # 返回已经初始化的事实合同模块。
     return module_contract
 
 # 这里解析命令行参数，锁定本次预览生成要处理的案件目录。
@@ -350,6 +388,53 @@ def main() -> int:
 
     # 这里读取已有预览状态或初始化默认状态，确保首次执行会停在人工确认门前。
     dict_status = load_preview_status(path_preview_status_json)  # 当前预览状态字典
+
+    # 固定候选和决定工件路径，保证确认状态建立在当前内容摘要之上。
+    path_review_candidates = path_case_dir / "02_facts" / "review_candidates.json"  # 审核候选工件路径
+
+    # 人工决定与草稿阶段状态同域保存。
+    path_review_decisions = path_case_dir / "03_drafts" / "review_decisions.json"  # 人工决定工件路径
+
+    # 加载同源事实合同，执行候选身份和指纹闭包检查。
+    module_fact_contract = load_fact_integrity_contract_module()  # 事实完整性合同模块
+
+    # 两类工件缺失时构造明确 blocker，不把空集合解释为审核完成。
+    if not path_review_candidates.exists() or not path_review_decisions.exists():
+
+        # 缺失审核工件时保留稳定 REV001 finding。
+        list_review_findings = [  # 审核工件缺失 findings
+            module_fact_contract.build_blocker("REV001", "候选审核工件缺失", "重新运行 facts 并逐项审核")  # 缺失工件阻断记录
+        ]  # 完成预览状态可消费的缺失原因数组
+
+    # 工件齐全时验证决定值和内容指纹。
+    else:
+
+        # 读取当前候选集合，材料变化后其指纹会同步变化。
+        list_review_candidates = read_json_file(path_review_candidates)  # 当前审核候选数组
+
+        # 读取人工决定，不允许预览生成器自行修改决定内容。
+        list_review_decisions = read_json_file(path_review_decisions)  # 当前人工决定数组
+
+        # 执行逐项决定闭包和过时决定检查。
+        list_review_findings = module_fact_contract.validate_review_decisions(  # 候选审核 findings
+            list_review_candidates,  # 当前内容绑定候选
+            list_review_decisions,  # 当前人工决定
+        )
+
+    # 审核闭包状态写入预览状态文件，供流水线和用户共同读取。
+    dict_status["review_closed"] = not list_review_findings  # 候选审核是否全部关闭
+
+    # 保存稳定 findings，解释确认状态为何可以或不可以继续。
+    dict_status["review_findings"] = list_review_findings  # 候选审核问题数组
+
+    # 任一候选未审核或决定过时时撤销历史 confirmed 标记。
+    if list_review_findings:
+
+        # 强制恢复未确认状态，禁止只改 preview_status 越过事实门禁。
+        dict_status["confirmed"] = False  # 被审核门撤销的预览确认标记
+
+        # 与现有流水线状态机保持兼容的预览待确认值。
+        dict_status["status"] = "pending_confirmation"  # 候选审核未关闭状态
 
     # 读取案件配置，确定用户建案时明确保存的技术类型。
     dict_case_config = read_json_file(path_case_dir / "case_config.json")  # 当前案件配置

@@ -20,7 +20,10 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 # 固定正文质量合同路径，确保起草、证据映射和后续自检共用同一受控推断边界。
 PATH_QUALITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "disclosure_quality_contract.py"  # 正文质量合同模块路径
 
-# 固定版本二结构化模型构建器路径，确保正式生成链真实产出中间真相层。
+# 固定事实完整性合同路径，使审核决定与模型数据白名单使用同源规则。
+PATH_FACT_INTEGRITY_CONTRACT = Path(__file__).resolve().parents[1] / "support" / "fact_integrity_contract.py"  # 事实完整性模块路径
+
+# 固定版本三结构化模型构建器路径，确保正式生成链真实产出中间真相层。
 PATH_DISCLOSURE_MODEL = Path(__file__).resolve().parent / "disclosure_model.py"  # 结构化模型构建器路径
 
 # 固定最终 DOCX 模板路径，供预览状态记录可追溯的模板哈希。
@@ -96,7 +99,42 @@ def load_quality_contract_module() -> Any:
     # 返回已完成加载的质量合同模块，供起草全链路复用同一规则集。
     return module_quality_contract
 
-# 按受管路径加载版本二结构化模型构建器。
+# 加载候选审核和数据白名单使用的事实完整性合同。
+def load_fact_integrity_contract_module() -> Any:
+    """加载事实完整性合同模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行源码的事实完整性模块。
+
+    异常：
+    - `ImportError`：模块规格或加载器不可用时抛出。
+    """
+
+    # 使用起草专用模块名绑定正式事实合同源码。
+    obj_specification = importlib.util.spec_from_file_location(  # 事实完整性模块加载规格
+        "readable_patent_fact_integrity_contract",  # 起草进程内隔离模块名
+        PATH_FACT_INTEGRITY_CONTRACT,  # 正式事实合同源码路径
+    )
+
+    # 无法加载事实规则时禁止继续构造版本三模型。
+    if obj_specification is None or obj_specification.loader is None:
+
+        # 抛出稳定错误，提醒修复正式事实合同。
+        raise ImportError("> ERR: [Python] 无法加载 support/fact_integrity_contract.py。")
+
+    # 根据已验证规格创建事实合同模块对象。
+    module_contract = importlib.util.module_from_spec(obj_specification)  # 事实完整性模块对象
+
+    # 执行正式源码，使起草与自检共享数据批准规则。
+    obj_specification.loader.exec_module(module_contract)
+
+    # 返回已经初始化的事实合同模块。
+    return module_contract
+
+# 按受管路径加载版本三结构化模型构建器。
 def load_disclosure_model_module() -> Any:
     """加载结构化专利交底模型构建器。
 
@@ -813,12 +851,58 @@ def build_effect_lines(
     # 证据不足时保留空列表，让质量门生成待修订项，禁止用无依据的效果句掩盖缺口。
     return []
 
+# 构造保留公开时序和明确用途的现有技术证据记录。
+def build_prior_evidence_record(
+    dict_prior_record: dict[str, Any],
+    str_summary: str,
+    int_index: int,
+    module_runtime_support: Any,
+    module_quality_contract: Any,
+) -> dict[str, Any]:
+    """构造版本三现有技术证据记录。
+
+    参数：
+    - `dict_prior_record`：人工核验的现有技术记录。
+    - `str_summary`：正文使用的受控摘要。
+    - `int_index`：当前记录的一基引用顺序。
+    - `module_runtime_support`：共享文本清洗模块。
+    - `module_quality_contract`：证据关键词提取合同。
+
+    返回：
+    - `dict[str, Any]`：可供文献时序门禁消费的证据记录。
+
+    异常：
+    - 无。
+    """
+
+    # 读取人工声明用途，缺失时只允许作为背景说明。
+    obj_uses = dict_prior_record.get("uses", ["background_only"])  # 当前文献用途原始值
+
+    # 非数组用途不能扩大解释，统一降为背景说明。
+    list_uses = list(obj_uses) if isinstance(obj_uses, list) else ["background_only"]  # 当前文献明确用途
+
+    # 返回正文证据字段及时间用途字段，禁止在模型阶段补猜日期。
+    return {
+        "id": f"E-PRIOR-{int_index}",  # 现有技术证据编号
+        "kind": "prior_art",  # 现有技术证据类型
+        "text": module_runtime_support.clean_text(str_summary),  # 正文使用的受控摘要
+        "keywords": collect_evidence_keywords(str_summary, module_quality_contract),  # 摘要关键词
+        "publication_date": str(dict_prior_record.get("publication_date", "")),  # 人工核验公开日
+        "reference_date": str(dict_prior_record.get("reference_date", "")),  # 本案现有技术参考日
+        "uses": list_uses,  # 人工明确声明的文献用途
+    }
+
 # 生成 review 与 claims 可复用的轻量来源映射，避免正文关键特征脱离真实材料。
 def build_evidence_map(
     path_case_dir: Path,
     list_steps: list[dict[str, Any]],
+
+    # 主案事实与现有技术事实分别承担发明证据和背景证据来源。
     dict_selected: dict[str, Any],
     list_prior_summaries: list[str],
+    list_prior_records: list[dict[str, Any]],
+
+    # 两个共享模块分别负责文本处理和证据映射规则。
     module_runtime_support: Any,
     module_quality_contract: Any,
 ) -> dict[str, Any]:
@@ -829,6 +913,7 @@ def build_evidence_map(
     - `list_steps`：结构化方法步骤列表。
     - `dict_selected`：当前主案选择结果字典。
     - `list_prior_summaries`：最接近现有技术摘要列表。
+    - `list_prior_records`：保留公开时序与用途的人工核验记录。
     - `module_runtime_support`：共享运行时支持模块对象。
     - `module_quality_contract`：正文质量合同模块对象。
 
@@ -902,14 +987,24 @@ def build_evidence_map(
     # 逐项登记最接近现有技术摘要，补齐背景技术对比来源索引。
     for int_index, str_summary in enumerate(list_prior_summaries, start=1):
 
-        # 把当前现有技术摘要登记到证据索引列表，供 review 与导出回溯来源。
+        # 按同一顺序读取人工核验记录；缺失时保持空字段而不猜测时序。
+        dict_prior_record = (  # 当前摘要对应的核验记录
+            list_prior_records[int_index - 1]  # 与摘要共用的一基顺序
+            if int_index <= len(list_prior_records)  # 当前索引存在核验记录
+            else {}  # 缺失记录时保留空事实边界
+        )
+
+        # 把摘要及其公开时序和用途登记到证据索引。
         list_evidence_index.append(
-            {
-                "id": f"E-PRIOR-{int_index}",
-                "kind": "prior_art",
-                "text": module_runtime_support.clean_text(str_summary),
-                "keywords": collect_evidence_keywords(str_summary, module_quality_contract),
-            }
+            build_prior_evidence_record(
+                dict_prior_record,  # 当前人工核验记录
+                str_summary,  # 正文使用的现有技术摘要
+                int_index,  # 当前引用顺序
+
+                # 共享模块保持摘要清洗和关键词生成与其他证据类型一致。
+                module_runtime_support,  # 文本清洗支持模块
+                module_quality_contract,  # 证据关键词合同
+            )
         )
 
     # 由质量合同按关键词构建步骤到证据的最小映射，禁止把全部证据泛挂到每一步。
@@ -1903,6 +1998,7 @@ def build_structured_model_payload(
             "modules": dict_render_payload["list_modules"],  # 结构化装置模块
             "effects": dict_render_payload["list_effects"],  # 已分类技术效果
             "prior_summaries": dict_render_payload["list_prior_summaries"],  # 已核验现有技术摘要
+            "prior_records": dict_render_payload["list_prior_records"],  # 保留公开时序和用途的查新记录
         },
     }
 
@@ -1914,13 +2010,13 @@ def write_structured_disclosure_model(
     module_disclosure_model: Any,
     module_quality_contract: Any,
 ) -> None:
-    """把正文上下文、公式事实和证据映射写成版本二模型。
+    """把正文上下文、公式事实和证据映射写成版本三模型。
 
     参数：
     - `path_case_dir`：当前案件根目录。
     - `dict_model_payload`：公式块、证据映射和章节上下文。
     - `module_runtime_support`：共享 JSON 写入模块。
-    - `module_disclosure_model`：版本二模型构建模块。
+    - `module_disclosure_model`：版本三模型构建模块。
     - `module_quality_contract`：证据映射使用的正文质量合同模块。
 
     返回：
@@ -1930,12 +2026,13 @@ def write_structured_disclosure_model(
     - 公式事实或章节合同损坏时由模型模块异常上抛。
     """
 
-    # 先写出最新证据映射，使旧版消费者和版本二模型共享同一来源编号。
+    # 先写出最新证据映射，使事实报告和版本三模型共享同一来源编号。
     dict_evidence_map = build_evidence_map(  # 正文与结构化模型共享的来源映射
         path_case_dir,  # 当前案件根目录
         dict_model_payload["context"]["steps"],  # 已生成的方法步骤
         dict_model_payload["selected"],  # 当前主案事实
         dict_model_payload["context"]["prior_summaries"],  # 背景章节使用的查新摘要
+        dict_model_payload["context"]["prior_records"],  # 背景文献公开时序和明确用途
         module_runtime_support,  # JSON 与文本支持模块
         module_quality_contract,  # 精确步骤证据映射规则
     )
@@ -1955,8 +2052,79 @@ def write_structured_disclosure_model(
         dict_evidence_map,  # 当前案件真实来源映射
     )
 
-    # 将旧版 evidence_index 映射为验证器消费的 records，同时保留兼容字段。
-    dict_normalized_evidence_map = module_disclosure_model.normalize_evidence_map(  # 版本二证据映射
+    # 加载候选审核工件，构建版本三数据和来源登记表。
+    path_review_candidates = path_case_dir / "02_facts" / "review_candidates.json"  # 审核候选工件路径
+
+    # 人工决定保存在草稿阶段目录，与预览确认状态共同受管。
+    path_review_decisions = path_case_dir / "03_drafts" / "review_decisions.json"  # 人工决定工件路径
+
+    # 缺少任一审核工件时使用空数组，后续模型门禁会明确阻断。
+    list_review_candidates = (  # 当前审核候选数组
+        module_runtime_support.read_json_file(path_review_candidates)  # 已存在工件中的内容绑定候选
+        if path_review_candidates.exists()  # 仅在 facts 已生成候选时读取
+        else []  # 缺失工件时保持空数组供模型门禁阻断
+    )  # 完成候选工件存在性保护后的读取结果
+
+    # 读取当前人工决定，禁止起草器自动创建接受结论。
+    list_review_decisions = (  # 当前人工决定数组
+        module_runtime_support.read_json_file(path_review_decisions)  # 已存在工件中的人工决定
+        if path_review_decisions.exists()  # 仅在草稿阶段工件存在时读取
+        else []  # 缺失决定时保持未批准状态
+    )  # 完成决定工件存在性保护后的读取结果
+
+    # 加载同源事实合同，构造只含有效接受决定的数据白名单。
+    module_fact_contract = load_fact_integrity_contract_module()  # 事实完整性合同模块
+
+    # 数据登记表只接纳类型为 data_claim 且指纹匹配的 accept 决定。
+    list_data_registry = module_fact_contract.build_approved_data_registry(  # 已批准数据登记表
+        list_review_candidates,  # 当前内容绑定候选
+        list_review_decisions,  # 当前人工决定
+    )
+
+    # 为每个章节绑定正文实际包含的获批数据编号。
+    for dict_section in list_section_records:
+
+        # 读取章节正文，执行获批原句的精确包含判断。
+        str_section_content = str(dict_section.get("content", ""))  # 当前章节正文
+
+        # 仅把正文真实包含的批准数据编号写入章节。
+        dict_section["data_ids"] = [
+            str(dict_record["data_id"])  # 当前章节引用的正式数据编号
+            for dict_record in list_data_registry  # 遍历全部获批数据记录
+            if str(dict_record["text"]) in str_section_content  # 要求获批原句真实出现在当前章节
+        ]  # 当前章节数据引用闭包
+
+    # 来源登记表只接纳指纹匹配的接受候选，并保留受管原文供重合检查。
+    list_source_manifest = module_fact_contract.build_approved_source_manifest(  # 版本三获批来源登记表
+        list_review_candidates,  # 用于来源清单筛选的候选
+        list_review_decisions,  # 当前人工审核决定
+    )
+
+    # 从起草上下文生成术语登记表，保留正文实际使用顺序。
+    list_term_registry = [  # 版本三术语登记表
+        {
+            "term_id": f"T{int_index:03d}",  # 正式术语编号
+            "canonical": str(str_term),  # 当前术语规范名称
+            "aliases": [],  # 尚未声明其他允许别名
+        }
+        for int_index, str_term in enumerate(  # 按正文术语顺序分配稳定编号
+            dict_model_payload["context"].get("terms", []),  # 当前起草上下文术语
+            start=1,  # 术语编号从一开始
+        )
+    ]  # 完成当前正文使用术语的规范名称登记
+
+    # 汇总当前起草阶段可以确定的版本三附加登记表。
+    dict_registries = {
+        "source_manifest": list_source_manifest,  # 已接受候选来源登记表
+        "data_registry": list_data_registry,  # 获批量化事实白名单
+        "term_registry": list_term_registry,  # 正文术语规范名称
+        "figure_registry": [],  # 附图阶段完成后由专用入口补齐
+        "cross_references": [],  # 当前生成器尚未声明显式章节引用
+        "pending_items": [],  # 预览审核已关闭后进入正式起草
+    }  # 版本三模型附加事实域
+
+    # 将 evidence_index 映射为验证器消费的正式 evidence_registry。
+    dict_normalized_evidence_map = module_disclosure_model.normalize_evidence_map(  # 版本三证据登记表
         dict_evidence_map  # 旧版 evidence_index 来源对象
     )
 
@@ -1964,27 +2132,28 @@ def write_structured_disclosure_model(
     dict_disclosure_model = module_disclosure_model.build_disclosure_model(  # 完整结构化交底模型
         list_section_records,  # 十一项章节事实
         list_formula_records,  # 与正文展示公式一致的语义登记
-        dict_normalized_evidence_map,  # 含版本二 records 的来源映射
+        dict_normalized_evidence_map,  # 含正式 records 的来源映射
+        dict_registries,  # 来源、数据、术语及其他版本三登记表
     )
 
-    # 固定写入验证器约定路径，使当前案件无法绕过版本二跨对象门禁。
+    # 固定写入验证器约定路径，使旧案件必须重新生成版本三模型。
     module_runtime_support.write_json_file(
-        path_case_dir / "03_drafts" / "disclosure_model.json",
+        path_case_dir / "03_drafts" / "latest_disclosure_model.json",
         dict_disclosure_model,
     )
 
-# 执行正式正文生成入口。
-def main() -> int:
-    """执行正式草稿生成入口。
+# 加载生成依赖、解析案件路径并执行正式起草前置门禁。
+def prepare_generation_runtime() -> tuple[Any, Any, Any, Path]:
+    """准备正文生成入口需要的运行时上下文。
 
     参数：
     - 无。
 
     返回：
-    - `int`：成功时返回 `0`。
+    - `tuple[Any, Any, Any, Path]`：运行时支持、质量合同、模型模块和案件目录。
 
     异常：
-    - 预览未确认、主案结果缺失或文件写入失败时由底层异常上抛。
+    - 参数无效、预览未确认或查新记录同步失败时由底层异常上抛。
     """
 
     # 加载共享运行时支持模块，复用文本清洗、时间戳和 JSON 读写工具。
@@ -1993,7 +2162,7 @@ def main() -> int:
     # 加载正文质量合同，统一约束术语、效果、证据映射与受控推断边界。
     module_quality_contract = load_quality_contract_module()  # 正文质量合同模块
 
-    # 加载版本二模型构建器，使正式生成链同步产出章节、公式和证据真相层。
+    # 加载版本三模型构建器，使正式生成链同步产出章节、公式和证据真相层。
     module_disclosure_model = load_disclosure_model_module()  # 结构化交底模型模块
 
     # 解析命令行参数，读取案件目录和内部预览放行开关。
@@ -2010,6 +2179,29 @@ def main() -> int:
 
     # 把研究根目录中的已核验查新记录同步到案件目录，避免正文直接依赖工作区外部文件。
     stage_verified_prior_art_records(path_case_dir, module_runtime_support)
+
+    # 返回已经通过前置门禁的生成上下文。
+    return module_runtime_support, module_quality_contract, module_disclosure_model, path_case_dir
+
+# 执行正式正文生成入口。
+def main() -> int:
+    """执行正式草稿生成入口。
+
+    参数：
+    - 无。
+
+    返回：
+    - `int`：成功时返回 `0`。
+
+    异常：
+    - 预览未确认、主案结果缺失或文件写入失败时由底层异常上抛。
+    """
+
+    # 一次取得已通过预览门的运行时依赖和案件目录，减少主入口装配职责。
+    tuple_runtime_context = prepare_generation_runtime()  # 正式起草运行时上下文
+
+    # 按固定返回顺序解出三个模块和案件路径。
+    module_runtime_support, module_quality_contract, module_disclosure_model, path_case_dir = tuple_runtime_context  # 已通过前置门的生成依赖
 
     # 读取主案选择结果与 facts 结果，作为正文起草阶段的上游结构化输入。
     dict_loaded_bundle = load_selected_bundle(path_case_dir, module_runtime_support)  # 主案与 facts 结果组合字典
@@ -2104,6 +2296,7 @@ def main() -> int:
             "list_terms": list_terms,  # 背景与术语说明词表
             "list_background_lines": list_background_lines,  # 3.1 小节来源支持的背景段落
             "list_prior_summaries": list_prior_summaries,  # 3.2 小节现有技术摘要
+            "list_prior_records": list_prior_records,  # 保留公开时序和用途的核验记录
             "list_reference_entries": list_reference_entries,  # 背景章节参考文献条目
             "list_missing_information": list_missing_information,  # 内部审查待确认事项列表
         }

@@ -51,15 +51,33 @@ Default workflow:
 2. Read only the local source material needed for the current patent task.
 3. Extract invention points, draft the required patent sections, and record
    reviewable intermediate artifacts under governed directories.
+   Treat every imported material as review input, not as正文事实. Before a
+   material can contribute to the formal draft, require an explicit human
+   decision and an explicit `source_roles` value of `invention_evidence` or
+   `prior_art`; never infer the role from a file name, paper section, or model
+   guess. Keep rejected, pending, conflicting, and unknown-role material out of
+   the formal model.
+   Treat every measured value, comparison, percentage, threshold, sample
+   count, parameter value, and performance statement as a governed data
+   candidate. It may enter the formal draft only after explicit acceptance and
+   assignment of a stable `data_id` in `data_registry`. Do not copy numerical
+   results from papers or supplied materials merely because they appear
+   relevant. Formula literals are governed by `formula_registry`, not silently
+   reclassified as experimental data.
    Background technology must explain the prior mechanism, inputs/outputs,
    constraints, and technical gap from verified prior-art records. Cite every
    sourced background statement with stable numeric references and include the
    corresponding bibliographic entries; unverifiable non-patent background
    text must block formal drafting.
+   Classify each prior-art record against the patent reference date. Documents
+   published after that date may be retained only as later references and must
+   not be used to establish the background or inventive-step baseline.
    For inventive-step review, record the closest prior art, distinguishing
    features, their technical effects, the reformulated objective technical
    problem, and whether the prior art supplies a technical motivation with
-   evidence.
+   evidence. Bind every technical feature to stable evidence identifiers,
+   normalize terminology through `term_registry`, and block unsupported,
+   contradictory, or drifting technical points.
    Generate claims only from mapped support. Unsupported independent claims
    block delivery; unsupported dependent, system, device, or medium candidates
    are omitted and reported for optional material supplementation.
@@ -74,9 +92,14 @@ Default workflow:
    explicit `office` compatibility mode writes native OMML. Standalone formula
    images, plain-text fallback, and silent fallback from MathType to Office are
    forbidden. Any formula conversion failure must block delivery.
-5. Keep generated assets, references, evals, and fixtures in their governed
+5. Persist the formal disclosure as the versioned disclosure model, including
+   `source_manifest`, `evidence_registry`, `data_registry`,
+   `formula_registry`, `term_registry`, and `figure_registry`. Every generated
+   figure must retain its draft source, file outputs, section bindings, and
+   source-item provenance; unregistered figures must block delivery.
+6. Keep generated assets, references, evals, and fixtures in their governed
    locations.
-6. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
+7. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
    case as complete unless the final DOCX preserves the template information
    table, required section headings, non-empty technical sections, and no
    internal review placeholders. Apply the governed Chinese layout contract:
@@ -86,7 +109,7 @@ Default workflow:
    slot ends with exactly one blank paragraph and each empty slot with none.
    Validate these properties independently from the final saved DOCX before
    delivery.
-7. Verify structure, language gates, and delivery evidence before treating the
+8. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
 
 Formula export modes:

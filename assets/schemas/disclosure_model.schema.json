@@ -4,9 +4,23 @@
   "title": "Structured Patent Disclosure Model",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract_version", "sections", "formula_registry", "evidence_map"],
+  "required": [
+    "contract_version",
+    "source_manifest",
+    "evidence_registry",
+    "data_registry",
+    "formula_registry",
+    "term_registry",
+    "figure_registry",
+    "sections",
+    "cross_references",
+    "pending_items"
+  ],
   "properties": {
-    "contract_version": {"const": "2.0"},
+    "contract_version": {"const": "3.0"},
+    "source_manifest": {"type": "array", "items": {"type": "object"}},
+    "evidence_registry": {"type": "object"},
+    "data_registry": {"type": "array", "items": {"type": "object"}},
     "sections": {
       "type": "array",
       "items": {
@@ -21,7 +35,8 @@
       }
     },
     "formula_registry": {"$ref": "formula_registry.schema.json"},
-    "evidence_map": {"type": "object"},
+    "term_registry": {"type": "array", "items": {"type": "object"}},
+    "figure_registry": {"type": "array", "items": {"type": "object"}},
     "cross_references": {"type": "array", "items": {"type": "object"}},
     "pending_items": {"type": "array", "items": {"type": "object"}}
   }

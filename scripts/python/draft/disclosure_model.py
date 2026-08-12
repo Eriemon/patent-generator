@@ -1,4 +1,4 @@
-"""构建章节、公式和证据分离的版本二专利交底模型。"""
+"""构建来源、证据、数据、公式、术语和附图分离的版本三专利交底模型。"""
 
 # 延迟解析类型注解，兼容技能支持的 Python 版本。
 from __future__ import annotations
@@ -96,28 +96,39 @@ def build_disclosure_model(
     list_sections: Sequence[Mapping[str, Any]],
     list_formulas: Sequence[Mapping[str, Any]],
     dict_evidence_map: Mapping[str, Any],
+    dict_registries: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """构建版本二结构化专利交底模型。
+    """构建版本三结构化专利交底模型。
 
     参数：
     - `list_sections`：按合同顺序排列的章节内容。
     - `list_formulas`：已确认的公式语义记录。
     - `dict_evidence_map`：章节、步骤或公式到来源编号的映射。
+    - `dict_registries`：来源、数据、术语、附图、交叉引用和待办登记表集合。
 
     返回：
-    - `dict[str, Any]`：不共享输入可变对象的版本二模型。
+    - `dict[str, Any]`：不共享输入可变对象的版本三模型。
 
     异常：
     - `TypeError`：任一输入不是 JSON 兼容数据时由复制逻辑上抛。
     """
 
-    # 三个核心对象分别复制，避免后续渲染或验证阶段反向污染事实层。
+    # 未传入附加登记表时保留显式空结构，供验证层判断是否需要补齐。
+    dict_safe_registries = dict_registries if dict_registries is not None else {}  # 可读取附加登记表
+
+    # 每类事实分别复制，避免渲染或验证阶段反向污染登记表。
     dict_model = {
-        "contract_version": "2.0",  # 当前结构化合同版本
+        "contract_version": "3.0",  # 当前结构化合同版本
+        "source_manifest": copy_json_value(dict_safe_registries.get("source_manifest", [])),  # 材料来源及实际用途登记表
+        "evidence_registry": copy_json_value(dict_evidence_map),  # 证据记录与精确引用关系
+        "data_registry": copy_json_value(dict_safe_registries.get("data_registry", [])),  # 数值事实及人工批准状态
         "sections": copy_json_value(list_sections),  # 章节事实副本
         "formula_registry": build_formula_registry(list_formulas),  # 公式事实及内容绑定值
-        "evidence_map": copy_json_value(dict_evidence_map),  # 证据映射副本
-    }  # 版本二结构化交底模型
+        "term_registry": copy_json_value(dict_safe_registries.get("term_registry", [])),  # 术语定义与允许别名
+        "figure_registry": copy_json_value(dict_safe_registries.get("figure_registry", [])),  # 附图来源与正文绑定记录
+        "cross_references": copy_json_value(dict_safe_registries.get("cross_references", [])),  # 章节显式交叉引用
+        "pending_items": copy_json_value(dict_safe_registries.get("pending_items", [])),  # 尚未关闭的人工处理项
+    }  # 版本三结构化交底模型
 
     # 返回完整模型，调用方负责落盘与执行 schema/语义验证。
     return dict_model
