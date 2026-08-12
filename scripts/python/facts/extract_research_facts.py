@@ -145,7 +145,7 @@ architecture
 """.split()  # 技术方案匹配模式列表
 
 # 效果句匹配词组集合。
-EFFECT_PATTERNS = """
+EFFECT_PATTERNS = r"""
 提升
 降低
 减少
