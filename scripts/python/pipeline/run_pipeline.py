@@ -157,7 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
     obj_parser.add_argument(  # 公式兼容模式参数
         "--equation-mode",  # 流水线参数名称
         choices=("office", "mathtype"),  # Office OMML 或原生 MathType OLE
-        default="office",  # 默认由 Office 原生公式编辑器直接编辑
+        default="mathtype",  # 默认生成原生 MathType OLE 公式对象
         help="Editable equation mode for the final DOCX.",  # 参数说明
     )
 
@@ -800,4 +800,3 @@ if __name__ == "__main__":
 
     # 把主流程退出码交还给当前 shell 调用方。
     raise SystemExit(main())
-

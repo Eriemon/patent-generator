@@ -459,7 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
     obj_parser.add_argument(  # 公式兼容模式参数
         "--equation-mode",  # CLI 参数名称
         choices=("office", "mathtype"),  # 允许的可编辑公式对象模式
-        default="office",  # 默认使用 Office 原生公式模式
+        default="mathtype",  # 默认使用原生 MathType OLE 公式模式
         help="Editable equation mode: Office OMML or native MathType OLE.",  # 参数说明
     )
 
@@ -1918,6 +1918,82 @@ def validate_template_docx_output(
     # 抛出明确错误，阻止 pipeline 把不合格 DOCX 标为 completed。
     raise ValueError("> ERR: [Python] 严格模板 DOCX 校验失败。\n" + str_joined_findings)
 
+# 在 Word 完成 MathType OLE 写入后恢复中文排版合同要求的显式属性。
+def restore_mathtype_docx_explicit_layout(
+    path_docx: Path,
+    obj_template_renderer: Any,
+    obj_template_validator: Any,
+) -> None:
+    """恢复 Word 规范化后被折叠为样式继承的正文排版属性。
+
+    参数：
+    - `path_docx`：已经完成 MathType OLE 替换的 DOCX 路径。
+    - `obj_template_renderer`：正式模板渲染器模块。
+    - `obj_template_validator`：正式模板验证器模块。
+
+    返回：
+    - `None`：槽位正文和公式段已经重新写入显式排版属性。
+
+    异常：
+    - DOCX 读取、样式合同加载或保存失败时继续抛出底层异常。
+    """
+
+    # 延迟导入 Document，保持模块发现阶段不强制加载文档依赖。
+    from docx import Document
+
+    # 读取 Word 已保存的最终 MathType 文档和正式样式合同。
+    obj_document = Document(str(path_docx))  # Word 规范化后的 MathType 文档
+
+    # 加载渲染阶段使用的同一排版合同，避免恢复规则与生成规则漂移。
+    dict_contract = obj_template_renderer.load_docx_style_contract(PATH_DOCX_STYLE_CONTRACT)  # 正式排版合同
+
+    # 构造无空白标题集合，供扫描时识别正式槽位边界。
+    set_normalized_headings = {
+        obj_template_validator.normalize_slot_text(str_heading)  # 当前正式槽位标题比较键
+        for str_heading in dict_contract["slot_headings"]  # 正式合同声明的槽位标题
+    }  # 正式槽位标题比较键集合
+
+    # 只恢复首个正式槽位之后的交付正文，避免改写模板说明页。
+    bool_inside_delivery_slots = False  # 当前扫描位置是否已经进入正式槽位
+
+    # 按最终文档顺序扫描段落，保持公式对象和正文位置不变。
+    for obj_paragraph in obj_document.paragraphs:
+
+        # 规整当前段落文本，判断它是否是正式槽位标题。
+        str_normalized_text = obj_template_validator.normalize_slot_text(obj_paragraph.text)  # 当前段落比较键
+
+        # 标题只负责推进槽位边界，其原始模板样式不应被正文角色覆盖。
+        if str_normalized_text in set_normalized_headings:
+
+            # 标记扫描已经进入正式交付区，后续非空段落需要恢复显式样式。
+            bool_inside_delivery_slots = True  # 已进入正式交付槽位
+
+            # 当前标题保持模板自身样式，直接处理下一个段落。
+            continue
+
+        # 模板说明区和真正的尾空段都不需要正文角色样式。
+        bool_has_structured_content = (
+            bool(obj_paragraph.text.strip())  # 可见正文形成的内容条件
+            or obj_template_validator.paragraph_contains_tag(obj_paragraph, "oMath")  # Office 数学节点条件
+            or obj_template_validator.paragraph_contains_tag(obj_paragraph, "object")  # 原生 OLE 对象条件
+            or obj_template_validator.paragraph_contains_tag(obj_paragraph, "drawing")  # 正式附图节点条件
+        )  # 当前段落是否承载需要恢复样式的正式内容
+
+        # 未进入正式槽位或当前段落为空时保持原样。
+        if not bool_inside_delivery_slots or not bool_has_structured_content:
+
+            # 跳过模板说明与尾空段，防止意外赋予正文缩进。
+            continue
+
+        # 依据最终可见文本和 OOXML 重新判定角色，兼容纯 OLE 与行内 OLE。
+        str_role = obj_template_validator.classify_final_paragraph(obj_paragraph)  # 当前最终段落角色
+
+        # 重新写入被 Word 折叠的字号、字体、缩进、行距和对齐属性。
+        obj_template_renderer.apply_paragraph_role_style(obj_paragraph, str_role, dict_contract)
+
+    # 保存显式排版恢复结果；调用方随后重新核验 MathType OLE 结构与版式。
+    obj_document.save(str(path_docx))
+
 # 清空模板正文并保留首个信息表与最终 section，供代理交付版 DOCX 在模板壳上重建正文。
 def clear_template_body_keep_first_table(obj_document: Any) -> None:
     """清空模板正文并保留首个信息表与最终 section。
@@ -2054,6 +2130,22 @@ def export_with_template_docx(
         obj_mathtype_ole.replace_omml_with_mathtype(
             dict_paths["path_output"],  # 已保存的中间 DOCX 路径
             list_formula_records,  # 按文档顺序记录的公式源文本
+        )
+
+        # Word 会折叠与样式等价的直接排版属性，需在最终交付前按合同恢复。
+        obj_template_validator = load_template_validator_module()  # MathType 后处理使用的模板验证器
+
+        # 使用正式渲染与验证模块共同恢复最终交付件的显式样式。
+        restore_mathtype_docx_explicit_layout(
+            dict_paths["path_output"],
+            obj_template_renderer,
+            obj_template_validator,
+        )
+
+        # python-docx 后处理必须继续保留全部原生 MathType OLE，禁止只信转换前校验。
+        obj_mathtype_ole.validate_native_mathtype_docx(
+            dict_paths["path_output"],
+            len(list_formula_records),
         )
 
     # 同内容附图会被 python-docx 合并为一个媒体部件，因此按真实字节内容去重估算媒体下限。

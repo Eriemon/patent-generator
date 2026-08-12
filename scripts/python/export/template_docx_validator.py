@@ -70,8 +70,11 @@ def classify_final_paragraph(obj_paragraph: Any) -> str:
     # 先提取普通可见文本，区分独立公式段落和含行内公式的正文。
     str_text = obj_paragraph.text.strip()  # 最终段落普通可见文本
 
-    # 只有不含普通文本的纯数学段落才使用行间公式角色。
-    if not str_text and paragraph_contains_tag(obj_paragraph, "oMath"):
+    # 只有不含普通文本的纯 OMML 或 MathType OLE 段落才使用行间公式角色。
+    if not str_text and (
+        paragraph_contains_tag(obj_paragraph, "oMath")
+        or paragraph_contains_tag(obj_paragraph, "object")
+    ):
 
         # 原生 Office 数学节点使用行间公式角色。
         return "display_formula"
@@ -434,10 +437,11 @@ def collect_docx_style_findings(path_docx: Path, path_contract: Path) -> list[di
         # 逆序扫描直到遇到首个可见正文、公式或图片。
         for obj_candidate in reversed(list_slot_paragraphs):
 
-            # 纯空段既没有可见文本，也没有数学或图片节点。
+            # 纯空段既没有可见文本，也没有 OMML、MathType OLE 或图片节点。
             bool_candidate_blank = (
                 not obj_candidate.text.strip()  # 当前候选没有可见文本
                 and not paragraph_contains_tag(obj_candidate, "oMath")  # 当前候选没有数学节点
+                and not paragraph_contains_tag(obj_candidate, "object")  # 当前候选没有 MathType OLE 对象
                 and not paragraph_contains_tag(obj_candidate, "drawing")  # 当前候选没有图片节点
             )  # 当前候选是否为纯空段
 

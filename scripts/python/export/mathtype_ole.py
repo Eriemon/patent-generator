@@ -41,7 +41,7 @@ def convert_latex_to_mathml(str_latex: str) -> str:
     - 缺少转换依赖、公式为空或 LaTeX 解析失败时抛出异常。
     """
 
-    # 延迟导入转换器，使 Office 默认模式不依赖 MathType 写入环境。
+    # 延迟导入转换器，使显式 Office 兼容模式不依赖 MathType 写入环境。
     try:
         import latex2mathml.converter
 
@@ -98,7 +98,7 @@ def load_com_modules() -> tuple[Any, Any, Any]:
         import win32clipboard
         import win32com.client
 
-    # 缺少 COM 依赖时阻断可选模式，Office 模式仍可独立使用。
+    # 缺少 COM 依赖时阻断默认 MathType 模式，显式 Office 兼容模式仍可独立使用。
     except ImportError as obj_error:
 
         # 明确提示安装 Windows 条件依赖。
