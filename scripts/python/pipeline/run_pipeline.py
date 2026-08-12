@@ -153,6 +153,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Retained for compatibility; the pipeline now exports DOCX by default.",
     )
 
+    # 注册公式兼容模式并透传给正式 DOCX 导出入口。
+    obj_parser.add_argument(  # 公式兼容模式参数
+        "--equation-mode",  # 流水线参数名称
+        choices=("office", "mathtype"),  # Office OMML 或原生 MathType OLE
+        default="office",  # 默认由 Office 原生公式编辑器直接编辑
+        help="Editable equation mode for the final DOCX.",  # 参数说明
+    )
+
     # 返回完成参数注册的解析器对象。
     return obj_parser
 
@@ -545,11 +553,13 @@ def collect_delivery_figure_files(path_case_dir: Path) -> list[str]:
 # 在预览已确认后执行正文、附图、权利要求、自检与可选导出阶段。
 def run_post_preview_chain(
     path_case_dir: Path,
+    str_equation_mode: str,
 ) -> PostPreviewChainResult:
     """执行预览确认后的正式后链。
 
     参数：
     - `path_case_dir`：当前案件根目录路径。
+    - `str_equation_mode`：Office OMML 或原生 MathType OLE 公式模式。
 
     返回：
     - `PostPreviewChainResult`：包含退出码与机器可读 JSON 载荷的后链结果。
@@ -633,7 +643,14 @@ def run_post_preview_chain(
         return PostPreviewChainResult(int_return_code=2, dict_payload=dict_payload)
 
     # 先准备 DOCX 导出入口参数，确保导出件与当前正式 Markdown 主稿一一对应。
-    list_export_args = ["--case-dir", str(path_case_dir), "--input", str(path_draft)]  # DOCX 导出入口参数列表
+    list_export_args = [  # DOCX 导出入口参数列表
+        "--case-dir",  # 案件目录参数名
+        str(path_case_dir),  # 当前正式案件目录
+        "--input",  # 正文输入参数名
+        str(path_draft),  # 已通过自检的 Markdown 主稿
+        "--equation-mode",  # 原生公式兼容模式参数名
+        str_equation_mode,  # Office OMML 或原生 MathType OLE 模式
+    ]
 
     # 把当前正文转成正式导出件，导出器内部会执行严格模板与媒体嵌入校验。
     completed_process_export = run_required_stage(PATH_EXPORT_DOCX_SCRIPT, list_export_args)  # DOCX 导出入口执行结果对象
@@ -765,7 +782,8 @@ def main() -> int:
 
     # 把已经通过确认门的案件目录交给正式后链执行器继续推进。
     post_preview_chain_result_state = run_post_preview_chain(  # 预览确认后的正式后链结果
-        preview_checkpoint_state.path_case_dir  # 已通过确认门的案件目录
+        preview_checkpoint_state.path_case_dir,  # 已通过确认门的案件目录
+        namespace_arguments.equation_mode,  # 透传到最终 DOCX 的公式兼容模式
     )
 
     # 复制一份后链结果载荷，保持正式交付包结果与内部执行态隔离。

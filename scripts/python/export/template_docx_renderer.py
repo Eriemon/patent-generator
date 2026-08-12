@@ -311,6 +311,102 @@ def insert_paragraph_after(
     # 返回 python-docx 包装对象和 XML 节点供调用方继续推进锚点。
     return Paragraph(obj_paragraph_element, obj_document._body), obj_paragraph_element
 
+# 把普通正文中的文字和行内公式依次追加到同一 Word 段落。
+def append_inline_content(obj_paragraph: Any, str_text: str, dict_render_context: dict[str, Any]) -> None:
+    """写入普通正文及其中的 Office 原生行内公式。
+
+    参数：
+    - `obj_paragraph`：接收正文片段的 Word 段落对象。
+    - `str_text`：可能包含行内公式分隔符的正文文本。
+    - `dict_render_context`：公式拆分、转换和模式依赖。
+
+    返回：
+    - `None`。
+
+    异常：
+    - 行内公式分隔或转换失败时继续抛出底层异常。
+    """
+
+    # 顺序拆分普通文字与行内公式，保持公式位于原正文段落内。
+    list_inline_segments = dict_render_context["inline_splitter"](str_text)  # 当前正文的行内片段列表
+
+    # 逐片段写入文字 run 或原生行内 OMML。
+    for dict_inline_segment in list_inline_segments:
+
+        # 普通文字继续使用 Word 文本 run。
+        if dict_inline_segment["kind"] == "text":
+
+            # 保留当前片段的原始空格、标点与字符顺序。
+            obj_paragraph.add_run(str(dict_inline_segment["text"]))
+
+            # 当前文字已经写入，不进入公式转换分支。
+            continue
+
+        # MathType 模式先写入唯一定位标记，保存后由 Word COM 原位替换为 OLE。
+        if dict_render_context["equation_mode"] == "mathtype":
+
+            # 延迟导入书签 XML helper，只在原生 MathType 模式创建定位边界。
+            from docx.oxml import OxmlElement
+            from docx.oxml.ns import qn
+
+            # 使用当前清单长度生成不会与技术正文冲突的稳定定位标记。
+            str_marker = f"[[MATHTYPE_EQ_{len(dict_render_context['formula_records']) + 1:06d}]]"  # 当前行内公式标记
+
+            # 生成符合 Word 书签命名限制的定位名称。
+            str_bookmark = f"MT_EQ_{len(dict_render_context['formula_records']) + 1:06d}"  # 当前行内公式书签
+
+            # 以递增编号创建书签开始节点，Word 会维护其真实字符位置。
+            obj_bookmark_start = OxmlElement("w:bookmarkStart")  # 行内公式书签起点
+
+            # 写入当前书签的数值标识，使起止节点可以配对。
+            obj_bookmark_start.set(qn("w:id"), str(len(dict_render_context["formula_records"]) + 1000))
+
+            # 写入供 Word COM 按名称读取的行内公式书签名。
+            obj_bookmark_start.set(qn("w:name"), str_bookmark)
+
+            # 把书签起点放在行内公式占位文本之前。
+            obj_paragraph._p.append(obj_bookmark_start)
+
+            # 把定位标记写入原公式位置，COM 完成后不会残留在最终文档。
+            obj_paragraph.add_run(str_marker)
+
+            # 在标记之后关闭书签范围，使 Word Range 只覆盖占位文本。
+            obj_bookmark_end = OxmlElement("w:bookmarkEnd")  # 行内公式书签终点
+
+            # 使用相同数值标识关闭当前行内书签。
+            obj_bookmark_end.set(qn("w:id"), str(len(dict_render_context["formula_records"]) + 1000))
+
+            # 把书签终点放在行内公式占位文本之后。
+            obj_paragraph._p.append(obj_bookmark_end)
+
+            # 登记源公式、布局和定位标记，供 MathType 写入器精确查找。
+            dict_render_context["formula_records"].append(
+                {
+                    "latex": str(dict_inline_segment["text"]),
+                    "display": False,
+                    "marker": str_marker,
+                    "bookmark": str_bookmark,
+                }
+            )
+
+            # 当前公式已经登记为 MathType 占位符，不再生成中间 OMML。
+            continue
+
+        # 行内公式转换为 m:oMath，不创建独立段落或图片。
+        obj_inline_formula = dict_render_context["formula_converter"](  # 当前可编辑行内公式节点
+            str(dict_inline_segment["text"]),  # 不含分隔符的 LaTeX 正文
+            False,  # 当前公式保持行内布局
+            dict_render_context["equation_mode"],  # Office 或 MathType 中间模式
+        )
+
+        # 把当前数学节点原位追加到正文段落 XML。
+        obj_paragraph._p.append(obj_inline_formula)
+
+        # 记录公式源文本，供 MathType 模式按文档顺序替换中间 OMML。
+        dict_render_context["formula_records"].append(
+            {"latex": str(dict_inline_segment["text"]), "display": False}
+        )
+
 # 将单个槽位的正文、公式和附图依次插入原始标题节点之后。
 def append_slot_blocks(
     obj_heading: Any,
@@ -324,13 +420,13 @@ def append_slot_blocks(
     - `obj_heading`：当前槽位的原始标题段落。
     - `list_blocks`：代理起草的正文和公式块列表，不涉及数组形状或数值 dtype。
     - `int_formula_index`：从一开始递增的无量纲公式编号。
-    - `dict_render_context`：文档、版式、临时目录、标题、公式回调和附图清单。
+    - `dict_render_context`：文档、版式、标题、OMML 公式回调和附图清单。
 
     返回：
     - `int`：供下一槽位继续使用的无量纲公式编号。
 
     异常：
-    - 图片渲染或 DOCX 嵌入失败时继续抛出底层异常。
+    - 公式转换或 DOCX 嵌入失败时继续抛出底层异常。
     """
 
     # 延迟导入版式常量，只有正式导出时才要求 python-docx 可用。
@@ -356,29 +452,88 @@ def append_slot_blocks(
         # 后续 block 必须紧随当前新增段落插入。
         obj_anchor_element = tuple_obj_anchor_element  # 推进后的正文插入锚点
 
-        # 普通正文直接写入当前段落，不经过公式图片路径。
+        # 普通正文交给行内内容 helper 处理文字与可编辑公式。
         if dict_block["kind"] == "paragraph":
 
-            # 写入代理起草的正式正文文本。
-            obj_paragraph.add_run(str(dict_block["text"]))
+            # 写入正文文字并把其中的公式转换为原位 m:oMath 节点。
+            append_inline_content(obj_paragraph, str(dict_block["text"]), dict_render_context)
 
             # 当前 block 已完成，继续处理下一个正文块。
             continue
 
-        # 使用槽位名和顺序编号构造稳定的临时公式图片路径。
-        path_formula_png = dict_render_context["temp_dir"] / f"formula_{int_formula_index:02d}.png"  # 当前公式临时图片路径
+        # MathType 模式在当前段落写入唯一标记，后续由 Word COM 原位创建 OLE。
+        if dict_render_context["equation_mode"] == "mathtype":
 
-        # 将公式渲染为图片，避免 Word 中出现原始 Markdown 公式标记。
-        dict_render_context["formula_renderer"](path_formula_png, str(dict_block["text"]))
+            # 延迟导入书签 XML helper，只在原生 MathType 模式创建定位边界。
+            from docx.oxml import OxmlElement
+            from docx.oxml.ns import qn
+
+            # 使用公式清单顺序生成当前行间公式的稳定定位标记。
+            str_marker = f"[[MATHTYPE_EQ_{len(dict_render_context['formula_records']) + 1:06d}]]"  # 当前行间公式标记
+
+            # 生成符合 Word 书签命名限制的行间公式定位名称。
+            str_bookmark = f"MT_EQ_{len(dict_render_context['formula_records']) + 1:06d}"  # 当前行间公式书签
+
+            # 公式段落保持居中，使替换后的 MathType 对象沿用预期版式。
+            obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # MathType 行间公式对齐方式
+
+            # 为独立公式段落创建书签起点，Word 将维护跨版式后的真实位置。
+            obj_bookmark_start = OxmlElement("w:bookmarkStart")  # 行间公式书签起点
+
+            # 写入当前行间书签的数值标识，使起止节点可以配对。
+            obj_bookmark_start.set(qn("w:id"), str(len(dict_render_context["formula_records"]) + 1000))
+
+            # 绑定独立公式段落与转换清单中的行间定位名称。
+            obj_bookmark_start.set(qn("w:name"), str_bookmark)
+
+            # 把书签起点放在居中公式占位文本之前。
+            obj_paragraph._p.append(obj_bookmark_start)
+
+            # 把标记写入目标段落，Word COM 将在同一 Range 内完成替换。
+            obj_paragraph.add_run(str_marker)
+
+            # 在居中标记之后关闭范围，确保书签不包含相邻技术正文。
+            obj_bookmark_end = OxmlElement("w:bookmarkEnd")  # 行间公式书签终点
+
+            # 使用相同数值标识关闭当前行间书签。
+            obj_bookmark_end.set(qn("w:id"), str(len(dict_render_context["formula_records"]) + 1000))
+
+            # 把书签终点放在行间公式占位文本之后。
+            obj_paragraph._p.append(obj_bookmark_end)
+
+            # 保存行间公式源文本、布局和精确定位标记。
+            dict_render_context["formula_records"].append(
+                {
+                    "latex": str(dict_block["text"]),
+                    "display": True,
+                    "marker": str_marker,
+                    "bookmark": str_bookmark,
+                }
+            )
+
+            # 当前 MathType 公式已经登记，不进入 Office OMML 分支。
+            continue
+
+        # Office 模式将公式转换为原生 OMML，禁止创建任何公式图片。
+        obj_formula = dict_render_context["formula_converter"](  # 当前可编辑行间公式节点
+            str(dict_block["text"]),  # 当前公式的 LaTeX 正文
+            True,  # 模板公式块按行间公式布局
+            dict_render_context["equation_mode"],  # 行间公式沿用本次导出的兼容模式
+        )
 
         # 公式段落保持居中，与参考模板的公式版式一致。
         obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 公式段落水平对齐方式
 
-        # 将公式图片嵌入当前正文段落。
-        obj_paragraph.add_run().add_picture(str(path_formula_png), width=Inches(5.8))
+        # 将原生数学节点直接追加到段落 XML，Office 可双击进入公式编辑器。
+        obj_paragraph._p.append(obj_formula)
 
-        # 推进公式编号，确保同一文档内临时文件名不冲突。
-        int_formula_index += 1  # 下一公式图片编号
+        # 记录行间公式源文本，供原生 MathType OLE 写入器生成 MTEF 内容。
+        dict_render_context["formula_records"].append(
+            {"latex": str(dict_block["text"]), "display": True}
+        )
+
+        # 推进公式编号，供结构报告核对跨章节公式总量。
+        int_formula_index += 1  # 下一条原生公式编号
 
     # 附图只写入模板规定的附图说明槽位，避免跨章节重复嵌入。
     if dict_render_context["slot_heading"] == "五、附图及附图的简单说明":
@@ -495,12 +650,16 @@ def purge_unreferenced_image_relationships(obj_document: Any) -> None:
 # 协调全部槽位清理、标题复用、正文插入和媒体关系收尾。
 def replace_template_slots(
     obj_document: Any,
+    # 槽位顺序和正文数据共同决定模板内容边界。
     list_slot_order: list[str],
     dict_sections: dict[str, list[dict[str, str]]],
+    # 附图、公式转换与行内拆分均由调用方显式注入。
     list_figure_paths: list[Path],
-    path_temp_dir: Path,
-    func_render_formula_image: Callable[[Path, str], None],
-) -> None:
+    func_convert_formula: Callable[[str, bool, str], Any],
+    func_split_inline_equations: Callable[[str], list[dict[str, str]]],
+    # 渲染模式决定保留 OMML，还是在保存后替换为原生 MathType OLE。
+    str_equation_mode: str,
+) -> list[dict[str, Any]]:
     """在原模板节点上完成全部正式正文槽位替换。
 
     参数：
@@ -508,14 +667,15 @@ def replace_template_slots(
     - `list_slot_order`：一维标题序列，不涉及数值 shape、dtype 或物理单位。
     - `dict_sections`：槽位标题到代理起草正文块的映射。
     - `list_figure_paths`：需要嵌入主稿的正式 PNG 路径。
-    - `path_temp_dir`：公式图片的临时目录。
-    - `func_render_formula_image`：将公式文本渲染为 PNG 的回调。
+    - `func_convert_formula`：将公式文本转换为 OMML 节点的回调。
+    - `func_split_inline_equations`：把正文拆成文字与行内公式片段的回调。
+    - `str_equation_mode`：Office OMML 或 MathType OLE 中间渲染模式。
 
     返回：
-    - `None`。
+    - `list[dict[str, Any]]`：按文档顺序记录的公式源文本与布局类型。
 
     异常：
-    - 模板槽位不完整、公式渲染或图片嵌入失败时继续抛出底层异常。
+    - 模板槽位不完整、公式转换或附图嵌入失败时继续抛出底层异常。
     """
 
     # 先定位全部标题，任何槽位缺失时都不修改模板正文。
@@ -549,8 +709,11 @@ def replace_template_slots(
     # 将发明名称同步写入模板信息表。
     populate_information_table(obj_document, dict_sections)
 
-    # 公式临时图片从编号一开始，便于检查媒体数量和生成顺序。
-    int_formula_index = 1  # 首个待分配的公式图片编号
+    # 公式编号从一开始，便于报告公式转换数量和生成顺序。
+    int_formula_index = 1  # 首个待分配的公式编号
+
+    # 保存公式源文本及布局类型，供 MathType 模式完成 OLE 二次写入。
+    list_formula_records: list[dict[str, Any]] = []  # 文档顺序公式记录
 
     # 按模板槽位顺序插入经过确认的正式正文。
     for str_slot_heading in list_slot_order:
@@ -559,9 +722,11 @@ def replace_template_slots(
         dict_render_context = {  # 当前槽位渲染上下文
             "document": obj_document,  # 本轮唯一的模板文档对象
             "template_properties": dict_slot_properties[str_slot_heading],  # 标题下正文继承的原版式
-            "temp_dir": path_temp_dir,  # 公式临时图片目录
             "slot_heading": str_slot_heading,  # 当前正式槽位标题
-            "formula_renderer": func_render_formula_image,  # 公式渲染回调
+            "formula_converter": func_convert_formula,  # Office 原生公式转换回调
+            "inline_splitter": func_split_inline_equations,  # 行内公式片段识别回调
+            "equation_mode": str_equation_mode,  # 当前公式兼容模式
+            "formula_records": list_formula_records,  # 原生 MathType 写入清单
             "figure_paths": list_figure_paths,  # 当前案件正式附图路径
         }
 
@@ -575,3 +740,6 @@ def replace_template_slots(
 
     # 删除模板示例图片留下的孤立关系，避免无用媒体进入交付件。
     purge_unreferenced_image_relationships(obj_document)
+
+    # 返回稳定公式顺序，使保存后的 Word COM 替换不会重新解析正文。
+    return list_formula_records

@@ -23,7 +23,6 @@ import subprocess
 
 # 引入标准输出、临时目录和 ZIP 打包能力，供导出流程写回结果并处理 DOCX 包。
 import sys
-import tempfile
 import zipfile
 
 # 引入路径、类型和 XML 处理能力，供正式 DOCX 渲染与校验逻辑复用。
@@ -40,143 +39,46 @@ PATH_RUNTIME_SUPPORT = Path(__file__).resolve().parents[1] / "support" / "runtim
 # 固定模板槽位渲染器路径，避免脚本直执行与测试按路径导入时依赖 sys.path 副作用。
 PATH_TEMPLATE_RENDERER = Path(__file__).resolve().with_name("template_docx_renderer.py")  # 模板槽位渲染器路径
 
+# 固定 Office 数学转换模块路径，避免脚本直执行时依赖包导入搜索路径。
+PATH_OFFICE_MATH = Path(__file__).resolve().with_name("office_math.py")  # Office 原生公式模块路径
+
+# 固定原生 MathType OLE 写入模块路径，避免依赖调用方搜索路径。
+PATH_MATHTYPE_OLE = Path(__file__).resolve().with_name("mathtype_ole.py")  # MathType OLE 模块路径
+
 # 固定默认模板路径，供 python-docx 增强路径按需读取页面版式。
 DEFAULT_TEMPLATE = Path(__file__).resolve().parents[3] / "assets" / "cn_technical_disclosure_template.docx"  # 默认模板 DOCX 路径
 
 # 用环境变量标记当前进程是否已经切到文档运行时，避免模板导出递归重启。
 ENV_TEMPLATE_RUNTIME_REEXEC = "READABLE_PATENT_EXPORT_DOCX_REEXEC"  # 模板运行时重启标记环境变量
 
-# 固定 Pillow 公式回退图的探针画布尺寸，避免测量文本边界时使用过小底图。
-FORMULA_FALLBACK_PROBE_SIZE = 32  # Pillow 探针画布尺寸
-
-# 固定 Pillow 公式回退图的最小内容宽度，避免很短公式生成过窄图片。
-FORMULA_FALLBACK_TEXT_WIDTH_DEFAULT = 160  # 回退公式图的默认文本宽度
-
-# 固定 Pillow 公式回退图的默认单行高度，作为文本测量异常时的兜底值。
-FORMULA_FALLBACK_LINE_HEIGHT_DEFAULT = 16  # 回退公式图的默认单行高度
-
-# 固定 Pillow 公式回退图的水平留白，保证公式文本不会紧贴图片边缘。
-FORMULA_FALLBACK_HORIZONTAL_PADDING = 24  # 回退公式图的左右留白
-
-# 固定 Pillow 公式回退图的垂直留白，保证公式文本不会紧贴上下边缘。
-FORMULA_FALLBACK_VERTICAL_PADDING = 20  # 回退公式图的上下留白
-
-# 固定 Pillow 公式回退图的行间距，避免多行文本粘连。
-FORMULA_FALLBACK_LINE_GAP = 8  # 回退公式图的多行文本间距
-
-# 固定 Pillow 公式回退图的最小宽度，避免单短式图片过窄影响阅读。
-FORMULA_FALLBACK_MIN_WIDTH = 280  # 回退公式图的最小宽度
-
-# 固定 Pillow 公式回退图的最小高度，避免单行公式图片过矮。
-FORMULA_FALLBACK_MIN_HEIGHT = 96  # 回退公式图的最小高度
-
-# 基于系统环境变量和当前用户主目录盘符推导 Windows 字体目录，避免在源码里写死本机盘符。
-def build_windows_fonts_dir() -> Path:
-    """推导当前环境下的 Windows 字体目录。
-
-    参数：
-    - 无。
-
-    返回：
-    - `Path`：Windows 字体目录路径。
-
-    异常：
-    - 无。
-    """
-
-    # 先按环境变量与当前用户盘符顺序推导系统根目录，兼容本机与受限运行环境。
-    str_windows_root = os.environ.get("WINDIR")  # 优先尝试当前进程显式暴露的 Windows 根目录
-
-    # WINDIR 缺失时，继续尝试兼容旧式环境变量名。
-    if not str_windows_root:
-
-        # 再读取 SystemRoot，兼容只暴露旧式系统根目录变量的运行环境。
-        str_windows_root = os.environ.get("SystemRoot")  # 兼容只提供旧式变量名的 Windows 根目录
-
-    # 系统环境变量仍缺失时，再回退到当前用户主目录盘符。
-    if not str_windows_root:
-
-        # 主目录盘符通常仍能反映当前 Windows 安装所在盘符。
-        str_windows_root = Path.home().anchor  # 从当前用户主目录反推出本机系统盘符
-
-    # 如果以上候选都为空，再用平台根路径保底，避免得到空路径。
-    if not str_windows_root:
-
-        # 平台根路径是最后的兜底值，保证后续字体目录拼装总有基准。
-        str_windows_root = os.sep  # 在非 Windows 受限环境下保留根路径兜底
-
-    # 再在系统根目录下拼出 Fonts 子目录，供字体探测逻辑稳定复用。
-    path_windows_fonts_dir = Path(str_windows_root) / "Fonts"  # Windows 字体目录路径
-
-    # 返回推导出的 Windows 字体目录。
-    return path_windows_fonts_dir
-
-# 固定 Windows 字体目录路径，供公式 Pillow fallback 优先解析支持运算符的 TrueType 字体。
-WINDOWS_FONTS_DIR = build_windows_fonts_dir()  # 公式回退使用的字体目录
-
-# 固定公式文本回退优先尝试的字体文件名，优先覆盖乘号与常见运算符字形。
-FORMULA_FALLBACK_FONT_FILENAMES = (  # 公式回退优先字体文件名
-    "NotoSansSC-VF.ttf",  # 跨平台开源字体同时覆盖中文和常见数学符号
-    "cambria.ttc",  # Cambria Math 常见可用字体
-    "calibri.ttf",  # Calibri 常见办公字体
-    "arial.ttf",  # Arial 对常见数学运算符支持稳定
-    "msyh.ttc",  # 微软雅黑兼容中文与基础数学符号
-    "simhei.ttf",  # 黑体兼容中文与基础数学符号
-)  # 公式回退优先字体文件名序列
-
-# 允许隔离服务器显式提供字体目录，避免公式 fallback 依赖全局字体安装。
-PATENT_FONT_DIR_ENV = "PATENT_GENERATOR_FONT_DIR"  # 可选字体目录环境变量
-
-# 固定 Pillow 公式回退字体字号，避免默认位图字体过小且缺少符号字形。
-FORMULA_FALLBACK_FONT_SIZE = 28  # 公式回退 TrueType 字号
-
-# 构造 Codex 主运行时 Python 路径，供当前解释器缺少 python-docx 时复用文档导出能力。
+# 构造 Codex 文档运行时 Python 路径，供当前解释器缺少 python-docx 时受控切换。
 def build_codex_bundled_python_path() -> Path:
-    """构造 Codex 主运行时 Python 路径。
+    """构造 Codex 文档运行时 Python 路径。
 
     参数：
     - 无。
 
     返回：
-    - `Path`：Codex 主运行时 Python 可执行文件路径。
+    - `Path`：Codex 文档运行时 Python 可执行文件路径。
 
     异常：
     - 无。
     """
 
-    # 先登记 Codex 主运行时依赖目录段，避免完整路径拼接落成过长单行。
-    tuple_runtime_segments = (".cache", "codex-runtimes", "codex-primary-runtime", "dependencies")  # Codex 主运行时依赖目录段
+    # 登记 Codex 主运行时依赖目录段，避免硬编码完整本机绝对路径。
+    tuple_runtime_segments = (".cache", "codex-runtimes", "codex-primary-runtime", "dependencies")  # Codex 运行时目录段
 
-    # 再用目录段列表拼出依赖根目录，后续统一在此基础上定位外部 Python。
-    path_runtime_root = Path.home().joinpath(*tuple_runtime_segments)  # Codex 主运行时依赖根目录
+    # 从用户目录拼出 Codex 文档运行时依赖根。
+    path_runtime_root = Path.home().joinpath(*tuple_runtime_segments)  # Codex 文档运行时依赖根目录
 
-    # 再在依赖根目录下拼出 Python 可执行文件路径，供模板导出回退逻辑复用。
-    path_bundled_python = path_runtime_root / "python" / "python.exe"  # Codex 主运行时 Python 路径
+    # 在固定依赖根下定位 Windows Python 可执行文件。
+    path_bundled_python = path_runtime_root / "python" / "python.exe"  # Codex 文档运行时 Python 路径
 
-    # 返回构造好的 Codex 文档运行时 Python 路径。
+    # 返回候选路径，由调用方继续检查文件是否存在。
     return path_bundled_python
 
-# 固定 Codex 主运行时 Python 路径，供模板导出受控切换到外部运行时时复用。
-PATH_CODEX_BUNDLED_PYTHON = build_codex_bundled_python_path()  # 模板导出回退使用的外部 Python 路径
-
-# 固定常见 LaTeX 命令到可读文本的映射，供纯文本公式 fallback 做语义不变改写。
-FORMULA_FALLBACK_LATEX_REPLACEMENTS = (  # 公式 fallback 的 LaTeX 命令替换映射
-    (r"\times", "×"),  # 乘号命令改写为直接可读乘号
-    (r"\cdot", "·"),  # 点乘命令改写为中点运算符
-    (r"\leq", "≤"),  # 小于等于命令改写为 Unicode 运算符
-    (r"\geq", "≥"),  # 大于等于命令改写为 Unicode 运算符
-    (r"\neq", "≠"),  # 不等于命令改写为 Unicode 运算符
-    (r"\approx", "≈"),  # 近似命令改写为 Unicode 运算符
-    (r"\pm", "±"),  # 正负号命令改写为 Unicode 运算符
-    (r"\left", ""),  # 左定界尺寸命令直接去掉，保留原括号正文
-    (r"\right", ""),  # 右定界尺寸命令直接去掉，保留原括号正文
-    (r"\_", "_"),  # 转义下划线改回正文下划线字符
-    (r"\,", " "),  # 紧缩空白命令改成普通空格，保证纯文本可读性
-    (r"\;", " "),  # 中等空白命令改成普通空格，保证纯文本可读性
-)
-
-# 预编译多空白压缩规则，供纯文本公式 fallback 规整输出间距。
-RE_FORMULA_MULTISPACE = re.compile(r"\s+")  # 公式 fallback 多空白压缩规则
+# 固定 Codex 文档运行时 Python 候选路径，供模板导出重启逻辑复用。
+PATH_CODEX_BUNDLED_PYTHON = build_codex_bundled_python_path()  # 模板导出外部 Python 路径
 
 # 规整一组文本行，只保留去首尾空白后的非空结果。
 def collect_nonempty_stripped_lines(list_lines: list[str]) -> list[str]:
@@ -197,232 +99,6 @@ def collect_nonempty_stripped_lines(list_lines: list[str]) -> list[str]:
 
     # 返回规整后的非空文本行列表，供调用方继续拼接正文或公式块。
     return list_clean_lines
-
-# 把 LaTeX 风格公式改写成适合纯文本渲染的可读表达，避免 fallback 泄露源码命令。
-def normalize_formula_text_for_fallback(str_formula_text: str) -> str:
-    """把 LaTeX 风格公式改写成纯文本可读表达。
-
-    参数：
-    - `str_formula_text`：待规整的原始公式正文文本。
-
-    返回：
-    - `str`：去掉主要 LaTeX 命令后的可读公式文本。
-
-    异常：
-    - 无。
-    """
-
-    # 先去掉首尾空白，避免替换前后的偶发换行影响纯文本公式可读性。
-    str_readable_formula = str_formula_text.strip()  # 待改写的纯文本公式正文
-
-    # 逐项替换常见 LaTeX 命令，把代理侧能直接阅读的等价符号写回正文。
-    for str_source_token, str_target_token in FORMULA_FALLBACK_LATEX_REPLACEMENTS:
-
-        # 把当前 LaTeX 命令改写成目标可读字符或普通空格。
-        str_readable_formula = str_readable_formula.replace(str_source_token, str_target_token)  # 当前替换后的公式正文
-
-    # 去掉成组控制用的大括号，保留组内运算内容本身。
-    str_readable_formula = str_readable_formula.replace("{", "").replace("}", "")  # 去掉分组包裹符后的公式正文
-
-    # 把多余空白压缩成单空格，避免命令替换后出现难读的空隙堆叠。
-    str_readable_formula = RE_FORMULA_MULTISPACE.sub(" ", str_readable_formula).strip()  # 压缩空白后的可读公式正文
-
-    # 返回规整后的可读公式文本，供纯文本 fallback 图片直接渲染。
-    return str_readable_formula
-
-# 解析首个可用于公式纯文本回退的 TrueType 字体路径。
-def find_formula_fallback_font_path() -> Path | None:
-    """解析公式纯文本回退优先字体路径。
-
-    参数：
-    - 无。
-
-    返回：
-    - `Path | None`：命中时返回首个可用字体路径，否则返回 `None`。
-
-    异常：
-    - 无。
-    """
-
-    # 显式字体目录优先于系统目录，便于无管理员权限的远端验证和运行。
-    list_font_dirs = [Path(os.environ[PATENT_FONT_DIR_ENV])] if os.environ.get(PATENT_FONT_DIR_ENV) else []  # 候选字体目录
-
-    # Windows 字体目录始终作为本地办公环境的兼容回退候选。
-    list_font_dirs.append(WINDOWS_FONTS_DIR)
-
-    # 按目录和文件优先级逐项检查，保证符号字形尽量稳定。
-    for path_font_dir in list_font_dirs:
-
-        # 当前目录按既定字体优先级逐项检查。
-        for str_filename in FORMULA_FALLBACK_FONT_FILENAMES:
-
-            # 拼出当前候选字体路径，供存在性检查复用。
-            path_candidate_font = path_font_dir / str_filename  # 当前候选字体路径
-
-            # 找到首个存在的候选字体后立即返回，减少重复扫描。
-            if path_candidate_font.is_file():
-
-                # 返回首个真实存在的候选字体路径，供 Pillow TrueType 回退复用。
-                return path_candidate_font
-
-    # 当前环境没有命中任何候选字体时返回空值，让上层继续走默认字体回退。
-    return None
-
-# 为公式 Pillow fallback 构造优先支持运算符的字体对象。
-def build_formula_fallback_font(class_image_font: Any) -> Any:
-    """为公式 Pillow fallback 构造字体对象。
-
-    参数：
-    - `class_image_font`：Pillow 的字体模块对象；shape=单个模块句柄，dtype=runtime object，unit=none。
-
-    返回：
-    - `Any`：优先返回 TrueType 字体对象；shape=单个字体句柄，dtype=Pillow font object，unit=font handle。
-
-    异常：
-    - 无；TrueType 字体加载失败时直接回退默认字体。
-    """
-
-    # 先解析当前环境可用的公式回退字体路径，供 TrueType 加载复用。
-    path_font = find_formula_fallback_font_path()  # 当前环境可用公式回退字体路径
-
-    # 在当前环境命中了真实可用字体时优先构造 TrueType 字体对象。
-    if path_font is not None:
-
-        # 尝试按真实字体路径加载 TrueType 字体，优先保证乘号等符号能正确绘制。
-        try:
-
-            # 返回命中字形更完整的 TrueType 字体对象，供公式文本回退图复用。
-            return class_image_font.truetype(str(path_font), FORMULA_FALLBACK_FONT_SIZE)
-
-        # 字体文件虽然存在但无法加载时立即改走默认字体，避免当前公式图因为单个字库异常而失败。
-        except Exception:
-
-            # 直接回退默认字体，保证极端环境下仍能完成受控导出。
-            return class_image_font.load_default()
-
-    # 回退到 Pillow 默认字体，保证极端环境下至少仍能完成导出链路。
-    return class_image_font.load_default()
-
-# 构造文档运行时最小依赖探针命令，供子进程能力检查复用。
-def build_template_runtime_probe_command(path_python: Path) -> list[str]:
-    """构造文档运行时最小依赖探针命令。
-
-    参数：
-    - `path_python`：待探测的 Python 可执行文件路径。
-
-    返回：
-    - `list[str]`：可直接传给 `subprocess.run` 的探针命令参数列表。
-
-    异常：
-    - 无。
-    """
-
-    # 组织最小导入探针命令，只验证 `docx` 和 `PIL` 是否在目标运行时可用。
-    list_probe_command = [str(path_python), "-c", "import docx, PIL"]  # 文档运行时最小依赖探针命令
-
-    # 返回最小依赖探针命令，供运行时探测逻辑直接执行。
-    return list_probe_command
-
-# 构造文档运行时重启命令，供模板导出缺包时复用。
-def build_template_runtime_reexec_command(path_python: Path) -> list[str]:
-    """构造文档运行时重启命令。
-
-    参数：
-    - `path_python`：待执行的外部 Python 可执行文件路径。
-
-    返回：
-    - `list[str]`：可直接传给 `subprocess.run` 的重启命令参数列表。
-
-    异常：
-    - 无。
-    """
-
-    # 组织重启命令，保持脚本路径和原始命令行参数在外部运行时中原样复用。
-    list_reexec_command = [str(path_python), str(Path(__file__).resolve()), *sys.argv[1:]]  # 文档运行时重启命令
-
-    # 返回受控重启命令，供模板导出回退逻辑直接执行。
-    return list_reexec_command
-
-# 在模板 body 节点列表中按后缀查找第一个匹配节点。
-def find_first_body_child_by_suffix(list_children: list[Any], str_suffix: str) -> Any | None:
-    """查找首个命中后缀的 body 子节点。
-
-    参数：
-    - `list_children`：模板 body 子节点列表。
-    - `str_suffix`：目标 XML 标签后缀。
-
-    返回：
-    - `Any | None`：命中时返回首个匹配节点，否则返回 `None`。
-
-    异常：
-    - 无。
-    """
-
-    # 从模板 body 子节点中按顺序定位首个命中后缀的候选节点。
-    obj_matched_child = next((obj_child for obj_child in list_children if obj_child.tag.endswith(str_suffix)), None)  # 首个命中后缀的 body 子节点
-
-    # 返回首个命中的 body 子节点，供模板表格和 section 提取逻辑复用。
-    return obj_matched_child
-
-# 向当前画布中央写入公式文本，供数学模式和纯文本回退模式复用。
-def write_centered_formula_text(
-    obj_axes: Any,
-    str_formula_text: str,
-    int_fontsize: int,
-    bool_use_math_mode: bool,
-) -> Any:
-    """向当前画布中央写入公式文本。
-
-    参数：
-    - `obj_axes`：当前公式图画布对象。
-    - `str_formula_text`：待写入的公式正文文本。
-    - `int_fontsize`：当前文本字号。
-    - `bool_use_math_mode`：是否使用数学公式模式包装文本。
-
-    返回：
-    - `Any`：matplotlib 返回的文本对象。
-
-    异常：
-    - 底层文本写入失败时由 matplotlib 异常继续上抛。
-    """
-
-    # 根据当前渲染模式决定要写入画布的真实文本内容。
-    str_render_text = f"${str_formula_text}$" if bool_use_math_mode else str_formula_text  # 当前要写入画布的文本内容
-
-    # 把文本居中写到当前公式画布，供后续边界框估算和图片导出复用。
-    obj_text = obj_axes.text(0.5, 0.5, str_render_text, ha="center", va="center", fontsize=int_fontsize)  # 当前画布的公式文本对象
-
-    # 返回当前公式文本对象，供上层继续测量边界框和导出图片。
-    return obj_text
-
-# 测量多行公式文本块的整体边界框，供 Pillow 回退图尺寸计算复用。
-def measure_formula_block_bbox(
-    obj_probe_draw: Any,
-    str_formula_block: str,
-    obj_font: Any,
-) -> Any:
-    """测量多行公式文本块的整体边界框。
-
-    参数：
-    - `obj_probe_draw`：探针画布绘图对象。
-    - `str_formula_block`：待测量的多行公式文本块。
-    - `obj_font`：当前使用的 Pillow 字体对象。
-
-    返回：
-    - `Any`：Pillow 返回的多行文本块边界框对象。
-
-    异常：
-    - 底层边界框测量失败时由 Pillow 异常继续上抛。
-    """
-
-    # 直接返回多行公式文本块的整体边界框，减少调用方逐行统计的噪声。
-    return obj_probe_draw.multiline_textbbox(
-        (0, 0),
-        str_formula_block,
-        font=obj_font,
-        spacing=FORMULA_FALLBACK_LINE_GAP,
-        align="center",
-    )
 
 # 预编译 Markdown 标题匹配规则，统一提取标题层级和标题正文。
 RE_HEADING = re.compile(r"^(#{1,6})\s+(.+)$")  # Markdown 标题匹配规则
@@ -636,6 +312,76 @@ def load_template_renderer_module() -> Any:
     # 返回完成初始化的渲染器模块供导出协调层调用。
     return obj_renderer_module
 
+# 按文件路径加载 Office 原生公式模块，禁止导出链回退到公式图片。
+def load_office_math_module() -> Any:
+    """加载 Office 原生公式转换模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已执行的 Office 公式模块对象。
+
+    异常：
+    - 模块缺失或加载规格不完整时抛出 `RuntimeError`。
+    """
+
+    # 从正式 export 目录创建公式模块加载规格。
+    obj_math_spec = importlib.util.spec_from_file_location(  # Office 公式模块加载规格
+        "readable_patent_office_math",  # 公式模块内部加载名称
+        PATH_OFFICE_MATH,  # 公式模块真实落盘路径
+    )
+
+    # 加载器缺失时无法保证公式输出为可编辑 OMML。
+    if obj_math_spec is None or obj_math_spec.loader is None:
+
+        # 阻断导出，禁止回退为图片或普通文本。
+        raise RuntimeError("> ERR: [Python] EQ004 无法加载 Office 公式转换模块。")
+
+    # 创建待执行模块对象。
+    obj_math_module = importlib.util.module_from_spec(obj_math_spec)  # Office 公式模块对象
+
+    # 执行正式公式模块定义。
+    obj_math_spec.loader.exec_module(obj_math_module)
+
+    # 返回转换模块供模板渲染器调用。
+    return obj_math_module
+
+# 按文件路径加载原生 MathType OLE 写入模块。
+def load_mathtype_ole_module() -> Any:
+    """加载保存后执行的 MathType OLE 写入模块。
+
+    参数：
+    - 无。
+
+    返回：
+    - `Any`：已经执行源码的 MathType OLE 写入模块。
+
+    异常：
+    - 模块路径无法形成有效加载规格时抛出 `RuntimeError`。
+    """
+
+    # 从正式 export 目录创建 MathType 写入器加载规格。
+    obj_mathtype_spec = importlib.util.spec_from_file_location(  # MathType 模块加载规格
+        "readable_patent_mathtype_ole",  # MathType 写入模块内部名称
+        PATH_MATHTYPE_OLE,  # MathType 写入模块真实路径
+    )  # 待执行的 MathType 模块加载规格
+
+    # 加载器缺失时禁止把中间 OMML 当作 MathType 结果交付。
+    if obj_mathtype_spec is None or obj_mathtype_spec.loader is None:
+
+        # 中间 OMML 不得冒充原生 MathType 结果继续交付。
+        raise RuntimeError("> ERR: [Python] EQ006 无法加载 MathType OLE 写入模块。")
+
+    # 执行模块定义并返回原生 OLE 写入接口。
+    obj_mathtype_module = importlib.util.module_from_spec(obj_mathtype_spec)  # MathType 模块对象
+
+    # 执行正式写入器源码，使转换入口可被导出协调层调用。
+    obj_mathtype_spec.loader.exec_module(obj_mathtype_module)
+
+    # 返回完成初始化的 MathType 写入模块。
+    return obj_mathtype_module
+
 # 构造导出入口的参数解析器，统一声明案件目录、输入、输出和模板参数。
 def build_parser() -> argparse.ArgumentParser:
     """构造导出入口的命令行参数解析器。
@@ -667,6 +413,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 注册模板参数，允许调用方覆盖默认模板路径。
     obj_parser.add_argument("--template", default=str(DEFAULT_TEMPLATE), help="Optional DOCX template path.")
+
+    # 注册公式对象模式；Office 使用 OMML，MathType 使用 Equation.DSMT4 OLE。
+    obj_parser.add_argument(  # 公式兼容模式参数
+        "--equation-mode",  # CLI 参数名称
+        choices=("office", "mathtype"),  # 允许的可编辑公式对象模式
+        default="office",  # 默认使用 Office 原生公式模式
+        help="Editable equation mode: Office OMML or native MathType OLE.",  # 参数说明
+    )
 
     # 将已经装配完成的解析器对象交给主流程继续解析参数。
     return obj_parser
@@ -737,6 +491,68 @@ def find_codex_bundled_python() -> Path | None:
 
     # 当前环境不存在可复用的 Codex 文档运行时 Python。
     return None
+
+# 构造文档运行时最小依赖探针命令，供子进程能力检查复用。
+def build_template_runtime_probe_command(path_python: Path) -> list[str]:
+    """构造文档运行时最小依赖探针命令。
+
+    参数：
+    - `path_python`：待探测的 Python 可执行文件。
+
+    返回：
+    - `list[str]`：可直接交给子进程执行的参数列表。
+    """
+
+    # 只验证模板 DOCX 导出实际依赖的文档与图像模块。
+    list_probe_command = [str(path_python), "-c", "import docx, PIL"]  # 最小依赖探针命令
+
+    # 返回稳定探针参数，供候选运行时能力检查复用。
+    return list_probe_command
+
+# 构造文档运行时重启命令，供模板导出缺包时复用。
+def build_template_runtime_reexec_command(path_python: Path) -> list[str]:
+    """构造使用外部 Python 重启当前导出入口的参数列表。
+
+    参数：
+    - `path_python`：承担模板导出的外部 Python 可执行文件。
+
+    返回：
+    - `list[str]`：保留当前脚本及原始参数的重启命令。
+    """
+
+    # 保持脚本路径和原始命令行参数不变，只替换解释器。
+    list_reexec_command = [  # 文档运行时重启命令
+        str(path_python),  # 经过探测的外部解释器
+        str(Path(__file__).resolve()),  # 当前 DOCX 导出入口
+        *sys.argv[1:],  # 调用方传入的原始导出参数
+    ]  # 可直接执行的模板运行时重启命令
+
+    # 返回完整命令，调用方负责设置防递归环境标记。
+    return list_reexec_command
+
+# 在模板 body 节点列表中按后缀查找第一个匹配节点。
+def find_first_body_child_by_suffix(
+    list_children: list[Any],
+    str_suffix: str,
+) -> Any | None:
+    """返回模板 body 中首个标签后缀匹配的节点。
+
+    参数：
+    - `list_children`：按模板顺序排列的 body 子节点。
+    - `str_suffix`：需要匹配的 XML 标签后缀。
+
+    返回：
+    - `Any | None`：首个匹配节点，未命中时返回 `None`。
+    """
+
+    # 表格与分节节点都按模板原始顺序选择首个匹配项。
+    obj_matched_child = next(  # 模板结构提取使用的首个匹配节点
+        (obj_child for obj_child in list_children if obj_child.tag.endswith(str_suffix)),  # 顺序匹配节点
+        None,  # 未命中时返回空值
+    )  # 首个匹配的模板节点
+
+    # 返回命中的模板节点，供信息表和分节提取逻辑复用。
+    return obj_matched_child
 
 # 检查给定 Python 是否具备模板 DOCX 导出所需的最小依赖。
 def is_bundled_template_runtime_usable(path_python: Path) -> bool:
@@ -848,11 +664,12 @@ def maybe_reexec_with_bundled_template_runtime(path_template: Path | None) -> in
     return completed_process_reexec.returncode
 
 # 清洗 Markdown 行内标记，避免导出到 Word 后残留源语法噪声。
-def strip_markdown_inline_text(str_text: str) -> str:
+def strip_markdown_inline_text(str_text: str, bool_preserve_inline_math: bool = False) -> str:
     """清洗 Markdown 行内标记并返回纯文本。
 
     参数：
     - `str_text`：待清洗的原始 Markdown 行文本。
+    - `bool_preserve_inline_math`：是否保留 `$...$` 供模板渲染器生成可编辑公式。
 
     返回：
     - `str`：移除图片、链接和强调标记后的纯文本。
@@ -870,8 +687,11 @@ def strip_markdown_inline_text(str_text: str) -> str:
     # 随后去掉行内代码反引号，只保留其中的实际文本内容。
     str_clean_text = re.sub(r"`([^`]+)`", r"\1", str_clean_text)  # 去掉行内代码标记后的文本
 
-    # 再把行内公式标记降级成纯文本，避免 `$...$` 源语法直接进入 DOCX 可见正文。
-    str_clean_text = RE_INLINE_FORMULA.sub(r"\1", str_clean_text)  # 去掉行内公式标记后的文本
+    # 仅在纯文本回退路径去掉公式边界；模板路径必须把边界交给可编辑公式渲染器。
+    if not bool_preserve_inline_math:
+
+        # 回退导出不具备公式节点能力，去掉源标记但保留表达式文本。
+        str_clean_text = RE_INLINE_FORMULA.sub(r"\1", str_clean_text)  # 去掉行内公式标记后的文本
 
     # 最后去掉常见强调标记，让导出正文保留可阅读文本而非 Markdown 语法。
     str_clean_text = re.sub(r"(\*\*|__)(.+?)\1", r"\2", str_clean_text)  # 去掉强调语法后的文本
@@ -1489,7 +1309,7 @@ def collect_template_section_blocks(str_markdown: str) -> dict[str, Any]:
             continue
 
         # 把当前普通行先清成纯文本，再决定它是否进入正式交底书主稿。
-        str_clean_line = strip_markdown_inline_text(str_stripped_line)  # 去掉 Markdown 标记后的正文文本
+        str_clean_line = strip_markdown_inline_text(str_stripped_line, bool_preserve_inline_math=True)  # 保留行内公式边界的正文文本
 
         # 空行只承担段落分隔职责，不进入主稿或内部说明。
         if not str_clean_line:
@@ -2103,312 +1923,6 @@ def resolve_docx_heading_level(str_heading: str) -> int:
     # 中文大章节使用一级标题层级，突出正式模板主结构。
     return 1
 
-# 把 Markdown 公式块渲染为 PNG 图片，供代理交付版 DOCX 以内嵌对象方式展示公式。
-def render_formula_image(path_output_png: Path, str_formula: str) -> None:
-    """把公式块渲染为 PNG 图片。
-
-    参数：
-    - `path_output_png`：公式图片输出路径。
-    - `str_formula`：Markdown 公式块正文。
-
-    返回：
-    - `None`。
-
-    异常：
-    - 图片写入失败时由底层异常继续上抛。
-    """
-
-    # 先收集非空公式正文行，供空公式判定和公式渲染共用同一份规整结果。
-    list_clean_formula_lines = collect_nonempty_stripped_lines(str_formula.splitlines())  # 渲染前保留的有效公式行
-
-    # 把规整后的多行公式压成单行文本，供 matplotlib 与 Pillow 回退路径复用同一语义输入。
-    str_formula_text = " ".join(list_clean_formula_lines)  # 当前公式块压缩后的单行文本
-
-    # 预先准备纯文本 fallback 要使用的可读公式表达，避免回退时把 LaTeX 命令原样带进交付主稿。
-    str_fallback_formula_text = normalize_formula_text_for_fallback(str_formula_text)  # 纯文本回退使用的可读公式正文
-
-    # 在公式正文为空时直接写出空白兜底文本，避免后续图片插入阶段找不到文件。
-    if not str_formula_text:
-
-        # 为空公式写出最小兜底文本，保持导出链路不中断。
-        str_formula_text = "formula unavailable"  # 空公式的最小兜底文本
-
-        # 同步更新纯文本回退表达，避免空公式路径仍沿用旧内容。
-        str_fallback_formula_text = "formula unavailable"  # 空公式对应的回退公式正文
-
-    # 优先尝试用 matplotlib 渲染数学公式；环境不具备时回退到 Pillow 文本图。
-    try:
-
-        # 只在函数内部导入 matplotlib，避免模块导入期强依赖绘图库。
-        from matplotlib import pyplot as plt
-
-    # 缺少 matplotlib 时回退到 Pillow 文本图，至少保证代理侧能直接阅读公式内容。
-    except Exception:
-
-        # 直接进入 Pillow 渲染回退路径，保持模板导出在轻量运行时可继续执行。
-        render_formula_image_with_pillow(path_output_png, str_fallback_formula_text)
-
-        # Pillow 回退已经完成当前公式图片落盘，这里可以直接结束函数。
-        return
-
-    # 先准备白底 figure，后续按数学公式或纯文本两种模式二选一渲染。
-    obj_figure = plt.figure(figsize=(10.0, 1.4), dpi=200)  # 当前公式图对象
-
-    # 把 figure 背景固定为白色，保证插入 Word 后对代理阅读更稳定。
-    obj_figure.patch.set_facecolor("white")
-
-    # 准备一块无坐标轴的画布区域，只用于居中写公式图片正文。
-    obj_axes = obj_figure.add_axes([0.0, 0.0, 1.0, 1.0])  # 当前公式图画布区域
-
-    # 关闭坐标轴显示，避免公式图混入无关刻度和边框。
-    obj_axes.axis("off")
-
-    # 先假设当前公式可按数学公式渲染，失败时再回退到纯文本渲染。
-    try:
-
-        # 以数学公式模式把当前公式写入画布中央。
-        obj_text = write_centered_formula_text(obj_axes, str_formula_text, 16, True)  # 当前公式绘制文本对象
-
-        # 先触发一次画布排版，获取数学公式的真实边界。
-        obj_figure.canvas.draw()
-
-    # 数学公式渲染失败时回退到纯文本模式，至少保证代理可阅读公式正文。
-    except Exception:
-
-        # 清空当前画布，避免数学模式的残留对象影响纯文本回退。
-        obj_axes.clear()
-
-        # 继续保持当前回退画布无坐标轴显示。
-        obj_axes.axis("off")
-
-        # 以纯文本模式重新写入公式正文，保证数学含义至少可见可读。
-        obj_text = write_centered_formula_text(obj_axes, str_fallback_formula_text, 14, False)  # 纯文本回退模式文本对象
-
-        # 重新排版纯文本回退结果，供后续边界框估算复用。
-        obj_figure.canvas.draw()
-
-    # 根据当前文本对象的实际边界估算导出图片裁切范围。
-    obj_bbox = obj_text.get_window_extent(renderer=obj_figure.canvas.get_renderer()).expanded(1.15, 1.5)  # 当前公式图片边界框
-
-    # 把公式图裁切后保存为 PNG，供 DOCX 嵌图阶段直接消费。
-    obj_figure.savefig(
-        path_output_png,
-        dpi=200,
-        bbox_inches=obj_bbox.transformed(obj_figure.dpi_scale_trans.inverted()),
-        facecolor="white",
-        edgecolor="none",
-    )
-
-    # 关闭当前 figure，避免批量导出时累积绘图资源。
-    plt.close(obj_figure)
-
-# 使用 Pillow 把公式正文渲染为纯文本 PNG，作为缺少 matplotlib 时的受控回退。
-def render_formula_image_with_pillow(path_output_png: Path, str_formula_text: str) -> None:
-    """使用 Pillow 把公式正文渲染为 PNG。
-
-    参数：
-    - `path_output_png`：公式图片输出路径。
-    - `str_formula_text`：已规整为单行或少量换行的公式正文。
-
-    返回：
-    - `None`。
-
-    异常：
-    - 图片写入失败时由底层异常继续上抛。
-    """
-
-    # 只在函数内部导入 Pillow，避免模块导入期强依赖图像库。
-    from PIL import Image, ImageDraw, ImageFont
-
-    # 公式文本为空时写出最小兜底内容，避免生成空白图片。
-    if not str_formula_text.strip():
-
-        # 当前回退文本为空时补默认文案，保持导出链路稳定。
-        str_formula_text = "formula unavailable"  # 空文本回退时的最小公式文案
-
-    # 把回退文本规整成非空文本行列表，供后续拼块和测量尺寸复用。
-    list_formula_lines = collect_nonempty_stripped_lines(str_formula_text.splitlines())  # 待绘制的公式文本行列表
-
-    # 没有可见文本行时补单行兜底文本，避免后续尺寸计算越界。
-    if not list_formula_lines:
-
-        # 兜底文本行用于支撑最小 PNG 输出。
-        list_formula_lines = ["formula unavailable"]  # 回退路径的单行公式兜底文本
-
-    # 把规整后的文本行拼成多行文本块，供 Pillow 的多行测量和绘制接口复用。
-    str_formula_block = "\n".join(list_formula_lines)  # 当前回退路径的多行公式文本块
-
-    # 优先加载支持乘号等运算符的 TrueType 字体，避免默认位图字体把公式符号渲染成方块。
-    obj_font = build_formula_fallback_font(ImageFont)  # Pillow 公式回退字体对象
-
-    # 先用探针画布估算文本尺寸，避免最终图片过窄导致裁切。
-    obj_probe_image = Image.new("RGB", (FORMULA_FALLBACK_PROBE_SIZE, FORMULA_FALLBACK_PROBE_SIZE), "white")  # 文本尺寸探针画布
-
-    # 基于探针画布创建绘图对象，后续统一复用它测量文本边界框。
-    obj_probe_draw = ImageDraw.Draw(obj_probe_image)  # 探针画布绘制对象
-
-    # 基于规整后的多行公式正文测量边界框，供最终 PNG 画布尺寸计算复用。
-    obj_text_bbox = measure_formula_block_bbox(obj_probe_draw, str_formula_block, obj_font)  # 当前多行公式文本块边界框
-
-    # 计算最大文本宽度，作为最终图片宽度的主要依据。
-    int_text_width = max(obj_text_bbox[2] - obj_text_bbox[0], FORMULA_FALLBACK_TEXT_WIDTH_DEFAULT)  # 最大文本宽度
-
-    # 计算多行文本块总高度，作为最终图片高度的主要依据。
-    int_text_height = max(obj_text_bbox[3] - obj_text_bbox[1], FORMULA_FALLBACK_LINE_HEIGHT_DEFAULT)  # 多行文本块总高度
-
-    # 固定图片左右留白，避免公式文本紧贴边界。
-    int_horizontal_padding = FORMULA_FALLBACK_HORIZONTAL_PADDING  # 图片左右留白
-
-    # 固定图片上下留白，保证公式内容和边缘有足够呼吸空间。
-    int_vertical_padding = FORMULA_FALLBACK_VERTICAL_PADDING  # 图片上下留白
-
-    # 固定多行文本间距，避免多行公式在回退图中粘连。
-    int_line_gap = FORMULA_FALLBACK_LINE_GAP  # 多行文本之间的垂直间距
-
-    # 计算最终图片宽度并设置最小阈值，避免短公式过窄。
-    int_image_width = max(int_text_width + int_horizontal_padding * 2, FORMULA_FALLBACK_MIN_WIDTH)  # 最终图片宽度
-
-    # 计算最终图片高度并设置最小阈值，兼容单行短公式场景。
-    int_image_height = max(int_text_height + int_vertical_padding * 2, FORMULA_FALLBACK_MIN_HEIGHT)  # 最终图片高度
-
-    # 创建白底目标图片，后续把公式文本居中绘制进去。
-    obj_image = Image.new("RGB", (int_image_width, int_image_height), "white")  # 目标公式图片对象
-
-    # 为目标图片创建绘图对象，统一负责文本写入。
-    obj_draw = ImageDraw.Draw(obj_image)  # 目标图片绘图对象
-
-    # 计算多行文本块的居中起点，避免回退公式图在短文本场景下偏向左上角。
-    int_text_x = max((int_image_width - int_text_width) // 2, int_horizontal_padding)  # 多行文本块横向起点
-
-    # 计算多行文本块的纵向起点，保证上下留白和整体视觉平衡。
-    int_text_y = max((int_image_height - int_text_height) // 2, int_vertical_padding)  # 多行文本块纵向起点
-
-    # 把多行公式文本块一次性写入白底图片，保证代理侧看到的是直接可读的公式表达。
-    obj_draw.multiline_text(
-        (int_text_x, int_text_y),
-        str_formula_block,
-        fill="black",
-        font=obj_font,
-        spacing=int_line_gap,
-        align="center",
-    )
-
-    # 把最终公式图片写到目标路径，供 DOCX 主稿嵌图阶段直接消费。
-    obj_image.save(path_output_png)
-
-# 向 DOCX 主文档追加一段居中的图片段落，供附图和公式嵌入复用。
-def add_centered_picture_paragraph(
-    obj_document: Any,
-    path_image: Path,
-    float_width_inches: float,
-) -> None:
-    """向 DOCX 主文档追加居中的图片段落。
-
-    参数：
-    - `obj_document`：待写入的 python-docx `Document` 对象；shape=单个文档句柄，dtype=runtime object，unit=none。
-    - `path_image`：待嵌入的图片路径；shape=单个文件路径，dtype=`Path`，unit=file path。
-    - `float_width_inches`：图片宽度；shape=标量，dtype=`float`，unit=inch。
-
-    返回：
-    - `None`：shape=标量，dtype=`NoneType`，unit=none。
-
-    异常：
-    - python-docx 插图失败时由底层异常继续上抛。
-    """
-
-    # 只在函数内部导入 python-docx 的版式工具，避免模块导入期强依赖第三方包。
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Inches
-
-    # 新建一个独立段落承载当前图片，避免图片和正文文字混排影响阅读。
-    obj_paragraph = obj_document.add_paragraph()  # 当前图片段落对象
-
-    # 把当前图片段落设置为居中，保证公式和附图在交底书正文中更符合阅读习惯。
-    obj_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER  # 当前图片段落使用居中对齐
-
-    # 向当前段落追加一个 run，并把图片作为嵌入对象写入段落。
-    obj_paragraph.add_run().add_picture(str(path_image), width=Inches(float_width_inches))
-
-# 把模板章节块写入 python-docx 文档，并在附图章节自动嵌入正式 PNG 附图。
-def append_template_section_blocks_to_document(
-    obj_document: Any,
-    str_heading: str,
-    list_blocks: list[dict[str, str]],
-    list_figure_paths: list[Path],
-    path_temp_dir: Path, obj_runtime_module: Any,
-    int_formula_index_start: int,
-) -> int:
-    """把模板章节块写入 python-docx 文档。
-
-    参数：
-    - `obj_document`：待写入的 python-docx `Document` 对象。
-    - `str_heading`：当前模板章节标题。
-    - `list_blocks`：当前章节的结构化块列表。
-    - `list_figure_paths`：当前案件可嵌入 DOCX 的 PNG 附图路径列表。
-    - `path_temp_dir`：本轮导出的临时渲染目录路径。
-    - `obj_runtime_module`：共享运行时支持模块对象。
-    - `int_formula_index_start`：当前公式图片编号起点。
-
-    返回：
-    - `int`：写完本章节后的下一个公式图片编号。
-
-    异常：
-    - 图片渲染、图片插入或正文写入失败时由底层异常继续上抛。
-    """
-
-    # 先写入当前模板章节标题，保证最终 DOCX 主结构与模板合同一致。
-    obj_document.add_heading(str_heading, level=resolve_docx_heading_level(str_heading))
-
-    # 记录当前章节可复用的公式图片编号，后续每写入一个公式自增一次。
-    int_formula_index = int_formula_index_start  # 当前章节公式图片编号
-
-    # 逐块写入当前章节正文；段落按纯文本写入，公式按 PNG 嵌图写入。
-    for dict_block in list_blocks:
-
-        # 当前普通段落直接写入 DOCX 正文。
-        if dict_block["kind"] == "paragraph":
-
-            # 把当前段落文本写入 DOCX，保持与 Markdown 主稿同序。
-            obj_document.add_paragraph(str(dict_block["text"]))
-
-            # 当前段落已写入，继续处理下一个结构化块。
-            continue
-
-        # 当前公式块需要先渲染成 PNG，再以嵌入对象方式写入 DOCX。
-        if dict_block["kind"] == "formula":
-
-            # 为当前公式图片构造稳定文件名，便于同一导出轮次多公式顺序复用。
-            str_formula_file_stem = obj_runtime_module.sanitize_name(str_heading)  # 当前章节名清洗后的文件名片段
-
-            # 拼出当前公式图路径，保持同一导出轮次内的命名稳定且可追踪。
-            path_formula_png = (  # 当前公式图片路径
-                path_temp_dir / f"formula_{int_formula_index:02d}_{str_formula_file_stem}.png"  # 当前公式图片完整路径
-            )
-
-            # 把当前公式块渲染成 PNG，供 DOCX 主稿以内嵌对象方式展示。
-            render_formula_image(path_formula_png, dict_block["text"])
-
-            # 把当前公式图片以居中图片段落方式嵌入主稿。
-            add_centered_picture_paragraph(obj_document, path_formula_png, 5.8)
-
-            # 当前公式图片已经占用一个编号，推进到下一张公式图编号。
-            int_formula_index += 1  # 推进到下一张公式图片编号
-
-    # 在附图说明章节后追加正式 PNG 附图，保证代理看到真实图而非只有图号说明。
-    if str_heading == "五、附图及附图的简单说明":
-
-        # 逐张写入正式 PNG 附图，保持方法流程图和系统模块图顺序稳定。
-        for path_figure in list_figure_paths:
-
-            # 只对真实存在的 PNG 文件执行嵌图，避免意外文件缺失时直接崩溃。
-            if path_figure.exists():
-
-                # 把当前正式附图写入 DOCX 主稿。
-                add_centered_picture_paragraph(obj_document, path_figure, 6.0)
-
-    # 返回推进后的公式图片编号，供后续章节继续顺序命名。
-    return int_formula_index
-
 # 使用模板 DOCX 生成严格交底书 DOCX，并把公式与附图真正嵌入主稿。
 def export_with_template_docx(
     dict_paths: dict[str, Path | None],
@@ -2448,9 +1962,6 @@ def export_with_template_docx(
     # 收集当前案件可嵌入 DOCX 的正式 PNG 附图路径列表。
     list_figure_paths = collect_delivery_figure_image_paths(dict_paths.get("path_case_dir"))  # 当前案件正式 PNG 附图路径列表
 
-    # 统计当前 Markdown 中的公式块数量，供最终 DOCX 媒体数量校验复用。
-    int_formula_count = count_formula_blocks(dict_template_payload["sections"])  # 当前 Markdown 公式块数量
-
     # 确保目标导出目录存在，避免 DOCX 保存阶段因目录缺失失败。
     obj_runtime_module.ensure_dir(dict_paths["path_output"].parent)
 
@@ -2460,24 +1971,34 @@ def export_with_template_docx(
     # 加载独立槽位渲染器，保留模板标题节点、分节和正文段落样式而非重建 Heading。
     obj_template_renderer = load_template_renderer_module()  # 模板槽位渲染器模块对象
 
-    # 在独立临时目录中渲染公式图片，避免把中间 PNG 暴露到正式交付目录。
-    with tempfile.TemporaryDirectory() as str_temp_dir:
+    # 加载纯 Python Office 公式转换器，任何失败都会硬阻断当前交付。
+    obj_office_math = load_office_math_module()  # Office 原生公式转换模块对象
 
-        # 固定本轮导出的临时渲染目录路径，供公式 PNG 稳定落盘。
-        path_temp_dir = Path(str_temp_dir)  # 本轮导出的临时渲染目录路径
+    # 按原模板标题节点替换正文、OMML 公式和附图，保留原有分节与正文样式。
+    list_formula_records = obj_template_renderer.replace_template_slots(  # MathType 原位替换所需公式清单
+        obj_document,  # 当前模板文档对象
+        TEMPLATE_SECTION_ORDER,  # 正式模板槽位顺序
+        dict_template_payload["sections"],  # 待写入的章节内容
+        list_figure_paths,  # 本轮正式附图路径
+        obj_office_math.convert_latex_to_omml,  # 中间 OMML 转换回调
+        obj_office_math.split_inline_equations,  # 行内公式拆分回调
+        str(dict_paths["equation_mode"]),  # 本轮公式对象模式
+    )  # 与 Word OMath 顺序一致的公式源记录
 
-        # 按原模板标题节点替换正文、公式和附图，保留其两个 section 与 Normal 段落样式。
-        obj_template_renderer.replace_template_slots(
-            obj_document,
-            TEMPLATE_SECTION_ORDER,
-            dict_template_payload["sections"],
-            list_figure_paths,
-            path_temp_dir,
-            render_formula_image,
+    # 把当前模板文档保存到目标输出路径，形成正式交付 DOCX。
+    obj_document.save(str(dict_paths["path_output"]))
+
+    # MathType 模式通过 Word COM 把中间 OMML 原位替换为 Equation.DSMT4 OLE。
+    if str(dict_paths["equation_mode"]) == "mathtype":
+
+        # 加载专用写入器并由 MathType 自身把 MathML 转为 OLE 内部 MTEF。
+        obj_mathtype_ole = load_mathtype_ole_module()  # 原生 MathType OLE 写入模块
+
+        # 原位替换全部中间公式，任何 COM 失败都硬阻断当前导出。
+        obj_mathtype_ole.replace_omml_with_mathtype(
+            dict_paths["path_output"],  # 已保存的中间 DOCX 路径
+            list_formula_records,  # 按文档顺序记录的公式源文本
         )
-
-        # 把当前模板文档保存到目标输出路径，形成正式交付 DOCX。
-        obj_document.save(str(dict_paths["path_output"]))
 
     # 同内容附图会被 python-docx 合并为一个媒体部件，因此按真实字节内容去重估算媒体下限。
     set_unique_figure_contents = {
@@ -2486,8 +2007,8 @@ def export_with_template_docx(
         if path_figure.exists()  # 忽略已被上游移除的失效路径
     }  # 当前正式附图的去重字节内容集合
 
-    # 公式各自独立渲染，附图按唯一内容计数，避免把关系引用数误当作 ZIP 媒体部件数。
-    int_expected_media_count = int_formula_count + len(set_unique_figure_contents)  # 严格模板校验的最小媒体部件数量
+    # OMML 不占用媒体部件，严格媒体下限只统计按内容去重的正式附图。
+    int_expected_media_count = len(set_unique_figure_contents)  # 严格模板校验的最小附图媒体数量
 
     # 对最终 DOCX 执行严格模板校验，并要求媒体数量满足公式和附图嵌入预期。
     validate_template_docx_output(
@@ -2951,6 +2472,7 @@ def resolve_paths(
         "path_input": path_input,  # 当前要导出的 Markdown 主稿路径
         "path_output": path_output,  # 当前 DOCX 主交付件输出路径
         "path_template": path_template,  # 当前导出流程使用的模板路径
+        "equation_mode": namespace_arguments.equation_mode,  # Office OMML 或原生 MathType OLE 模式
     }
 
     # 将已经解析完成的路径字典交回主流程继续导出。

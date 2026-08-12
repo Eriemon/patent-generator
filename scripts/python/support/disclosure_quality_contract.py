@@ -16,6 +16,106 @@ SOLUTION_WORDS = ("提出", "方法", "步骤", "包括", "用于", "装置", "�
 # 禁止在受控推断中补写参数、公式和实验事实，确保推断只承担结构连接作用。
 FORBIDDEN_INFERENCE_MARKERS = ("=", "+", "-", "*", "/", "实验", "对比", "数据", "参数", "公式")  # 禁止推断标记集合
 
+# 识别正文中可确定为参数更新规则的赋值表达式，避免把普通等号语句误判为数学公式。
+RE_INLINE_PARAMETER_UPDATE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:max|min)\([^()\n]*\)")  # 参数更新式匹配规则
+
+# 单独识别被 Markdown 代码样式误包裹的完整更新式，使正文数学语义能够脱离反引号。
+RE_BACKTICK_PARAMETER_UPDATE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:max|min)\([^()\n]*\))`")  # 反引号更新式匹配规则
+
+# 隔离已有公式和代码片段，保证标记与漏标检查都不会重复处理受保护内容。
+RE_PROTECTED_MATH_OR_CODE = re.compile(r"(```.*?```|`[^`\n]*`|\$\$.*?\$\$|\$[^$\n]+\$)", flags=re.DOTALL)  # 受保护文本分段规则
+
+# 把正文参数更新式规整为 MathType 转换链可消费的 LaTeX 表达。
+def normalize_inline_math_expression(str_expression: str) -> str:
+    """规范正文参数更新式中的函数和乘法运算符。
+
+    参数：
+    - `str_expression`：从普通正文中识别出的参数更新式。
+
+    返回：
+    - `str`：可由现有 LaTeX 至 MathType 链处理的行内公式。
+
+    异常：
+    - 无。
+    """
+
+    # 将 Unicode 乘号转成标准 LaTeX 命令，避免转换库按普通字符处理。
+    str_normalized = str_expression.replace("×", r"\times ")  # 运算符规范化后的表达式
+
+    # 为数学函数补充 LaTeX 命令前缀，使 MathType 以函数样式显示 max 和 min。
+    str_normalized = re.sub(r"\b(max|min)\s*\(", lambda obj_match: rf"\{obj_match.group(1)}(", str_normalized)  # 函数规范化后的表达式
+
+    # 返回不改变变量名和数值的规范公式文本。
+    return str_normalized
+
+# 在正文普通文本片段中补充行内公式标记，已有公式和代码片段保持原样。
+def mark_inline_math_expressions(str_markdown: str) -> str:
+    """把明确的正文参数更新式转换为 Markdown 行内公式。
+
+    参数：
+    - `str_markdown`：可能包含普通文本数学表达式的交底书正文。
+
+    返回：
+    - `str`：已为确定性参数更新式补充 `$...$` 标记的正文。
+
+    异常：
+    - 无。
+    """
+
+    # 先把被代码样式误包裹的完整更新式改成公式，普通代码标识仍由后续保护规则保留。
+    str_math_ready_markdown = RE_BACKTICK_PARAMETER_UPDATE.sub(  # 已释放反引号公式的正文
+        lambda obj_match: f"${normalize_inline_math_expression(obj_match.group(1))}$",  # 完整更新式的公式包装动作
+        str_markdown,  # 尚未处理反引号数学表达的原始正文
+    )
+
+    # 按已有公式与代码边界切分正文，偶数位置才允许执行自动标记。
+    list_segments = RE_PROTECTED_MATH_OR_CODE.split(str_math_ready_markdown)  # 自动标记使用的正文区段
+
+    # 只改写未受保护的普通正文片段，保持函数重复调用时结果幂等。
+    for int_index in range(0, len(list_segments), 2):
+
+        # 用规范 LaTeX 包裹当前片段内所有确定性参数更新式。
+        str_marked_segment = RE_INLINE_PARAMETER_UPDATE.sub(  # 当前片段的公式标记结果
+            lambda obj_match: f"${normalize_inline_math_expression(obj_match.group(0))}$",  # 单条更新式的 LaTeX 包装动作
+            list_segments[int_index],  # 尚未进入公式语法的普通正文片段
+        )
+
+        # 将完成公式包装的片段放回原序列，后续拼接仍保持文档位置不变。
+        list_segments[int_index] = str_marked_segment  # 当前位置的已标记正文片段
+
+    # 拼回原有正文顺序，使标题、段落和受保护内容均保持原位置。
+    return "".join(list_segments)
+
+# 扫描仍以普通文本存在的参数更新式，供交付校验阻止公式退化。
+def find_unmarked_inline_math_expressions(str_markdown: str) -> list[str]:
+    """查找未使用 Markdown 行内公式标记的参数更新式。
+
+    参数：
+    - `str_markdown`：待执行公式完整性检查的交底书正文。
+
+    返回：
+    - `list[str]`：按正文顺序去重后的未标记表达式。
+
+    异常：
+    - 无。
+    """
+
+    # 先移除完整更新式外层的反引号，使误用代码样式的数学内容仍会被审计发现。
+    str_auditable_markdown = RE_BACKTICK_PARAMETER_UPDATE.sub(lambda obj_match: obj_match.group(1), str_markdown)  # 释放反引号公式后的审计正文
+
+    # 代码示例与合法公式均不属于审计对象，此处仅留下可见正文供裸表达式扫描。
+    list_segments = RE_PROTECTED_MATH_OR_CODE.split(str_auditable_markdown)  # 漏标审计使用的裸文本区段
+
+    # 收集普通正文片段中的参数更新式，避免已有公式触发误报。
+    list_expressions = [  # 未标记参数更新式候选列表
+        obj_match.group(0)  # 保留材料中的原始表达形式
+        for int_index in range(0, len(list_segments), 2)  # 只读取普通正文位置
+        for obj_match in RE_INLINE_PARAMETER_UPDATE.finditer(list_segments[int_index])  # 当前片段命中的赋值更新式
+    ]
+
+    # 按首次出现顺序去重，避免同一漏标表达产生重复 blocker。
+    return list(dict.fromkeys(list_expressions))
+
 # 规整空白，以便多个证据来源进入同一比较规则前具有稳定文本形态。
 def clean_text(str_text: str) -> str:
     """压缩空白并返回可用于质量判断的正文文本。

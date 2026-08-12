@@ -49,6 +49,11 @@ Default workflow:
    references, inputs/outputs, constraints, and every symbol's meaning, unit,
    and domain. Missing formula semantics must block validation; never infer
    them from variable names alone.
+   Export every display and inline formula as an editable equation object. The
+   default `office` mode writes native OMML. The optional `mathtype` mode uses
+   Word COM and MathType's `Equation.DSMT4` `IDataObject` interface to create
+   native MathType OLE/MTEF equations. Standalone formula images and plain-text
+   fallback are forbidden. Any formula conversion failure must block delivery.
 5. Keep generated assets, references, evals, and fixtures in their governed
    locations.
 6. Export through `assets/cn_technical_disclosure_template.docx`; do not treat a
@@ -57,6 +62,14 @@ Default workflow:
    internal review placeholders.
 7. Verify structure, language gates, and delivery evidence before treating the
    work as complete.
+
+Formula export modes:
+
+- `run_pipeline.py --equation-mode office` is the default.
+- `run_pipeline.py --equation-mode mathtype` requires Windows, Word, MathType,
+  and pywin32, and emits native `Equation.DSMT4` OLE equations.
+- Supported inline delimiters are `$...$` and `\(...\)`; display formulas use
+  governed `$$...$$` blocks.
 
 See [references/README.md](references/README.md) for current workflow
 references, writing rules, and review checkpoints.

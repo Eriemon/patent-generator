@@ -56,7 +56,7 @@ def calculate_formula_hash(dict_formula: Mapping[str, Any]) -> str:
     # UTF-8 编码将规范文本转换成哈希算法要求的确定字节序列。
     bytes_canonical = str_canonical.encode("utf-8")  # 规范公式字节
 
-    # 返回十六进制摘要，供公式图片、登记表和正文引用共同绑定。
+    # 返回十六进制摘要，供公式对象、登记表和正文引用共同绑定。
     return hashlib.sha256(bytes_canonical).hexdigest()
 
 # 为每条公式复制语义字段并加入由内容派生的稳定摘要。

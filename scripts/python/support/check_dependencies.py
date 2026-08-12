@@ -30,8 +30,16 @@ PYTHON_GROUPS: dict[str, dict[str, Any]] = {  # Python 依赖分组说明字典
         "note": "Office/PDF 转换和 Word 导出增强能力。",  # Office/PDF 依赖说明
     },
     "render": {  # 渲染增强分组
-        "packages": ["matplotlib"],  # 渲染增强相关可选包
-        "note": "数学公式或位图渲染增强能力。",  # 渲染依赖说明
+        "packages": ["matplotlib"],  # 技术附图渲染相关可选包
+        "note": "技术附图的位图渲染增强能力，不用于公式。",  # 附图渲染依赖说明
+    },
+    "equations": {  # Office 原生公式强制依赖分组
+        "packages": ["latex2mathml", "mathml2omml"],  # LaTeX 到 OMML 的纯 Python 转换链
+        "note": "Office 原生可编辑公式转换；缺失时必须阻断 DOCX 导出。",  # 公式转换依赖说明
+    },
+    "mathtype": {  # Windows 原生 MathType OLE 可选能力分组
+        "packages": ["pythoncom", "win32clipboard", "win32com"],  # pywin32 暴露的 COM 模块
+        "note": "MathType 模式还要求 Windows、Word 和 Equation.DSMT4 OLE 注册。",  # MathType 环境说明
     },
     "search": {  # CNIPA 检索增强分组
         "packages": ["playwright"],  # 检索增强相关可选包

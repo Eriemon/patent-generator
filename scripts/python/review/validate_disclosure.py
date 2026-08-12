@@ -372,6 +372,41 @@ def validate_main_draft_clean(
                 "将术语、证据、待确认事项和模板提示移入内部 sidecar 或补齐正式正文。",
             )
 
+# 校验正文参数更新式均已进入受控行内公式语法。
+def validate_inline_math_markers(
+    str_markdown: str,
+    list_findings: list[dict[str, str]],
+    module_quality_contract: Any,
+) -> None:
+    """阻止确定性数学表达式以普通文字进入 DOCX。
+
+    参数：
+    - `str_markdown`：正文草稿 Markdown 全文。
+    - `list_findings`：待追加的 finding 列表。
+    - `module_quality_contract`：正文数学表达式检测规则模块。
+
+    返回：
+    - `None`：发现漏标表达式时原地追加 blocker。
+
+    异常：
+    - 无。
+    """
+
+    # 收集未被行内公式语法保护的参数更新式，保留原始表达便于定位。
+    list_unmarked = module_quality_contract.find_unmarked_inline_math_expressions(str_markdown)  # 未标记表达式列表
+
+    # 每条漏标表达式独立形成 finding，使报告能够明确指出修订对象。
+    for str_expression in list_unmarked:
+
+        # 使用稳定代码阻止导出器把当前数学表达式继续写成普通 Word 文本。
+        add_finding(
+            list_findings,
+            "blocker",
+            "unmarked_inline_math_expression",
+            f"正文数学表达式未使用行内公式标记：{str_expression}",
+            "使用 $...$ 标记该表达式后重新生成并导出。",
+        )
+
 # 校验已核验查新记录，确保正文至少绑定一组真实、已核验的近似现有技术。
 def validate_prior_art(
     path_case_dir: Path,
@@ -887,6 +922,9 @@ def main() -> int:
 
     # 校验主草稿没有残留内部章节、模板提示或待确认占位。
     validate_main_draft_clean(str_markdown, list_findings)
+
+    # 校验正文参数更新式不会绕过 MathType 行内公式转换链。
+    validate_inline_math_markers(str_markdown, list_findings, module_quality_contract)
 
     # 校验已核验查新记录，确保当前方案绑定真实且已核验的近似现有技术。
     validate_prior_art(path_case_dir, list_findings, module_runtime_support)

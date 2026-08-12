@@ -5,7 +5,8 @@
     "Tool Wrapper",
     "Generator",
     "Reviewer",
-    "Pipeline"
+    "Pipeline",
+    "Inversion"
   ],
   "cases": [
     {
@@ -15,58 +16,42 @@
       "without_skill_expected_pass": false,
       "without_skill_reason": "A baseline assistant is not guaranteed to preserve the local preview-first hard gate before generating downstream patent artifacts.",
       "required_files": [
-        "scripts/python/pipeline/run_pipeline.py",
-        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+        "scripts/python/pipeline/run_pipeline.py"
       ],
       "required_terms": [
         {
           "file": "scripts/python/pipeline/run_pipeline.py",
           "terms": [
-            "\"validation_status\": \"preview_pending\"",
+            "\"delivery_status\": \"preview_pending\"",
             "preview_status.json",
             "--confirmed-preview"
-          ]
-        },
-        {
-          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
-          "terms": [
-            "test_run_pipeline_stops_at_preview_without_confirmation",
-            "\"preview_pending\""
           ]
         }
       ]
     },
     {
       "id": "post-preview-full-chain",
-      "title": "Confirmed preview unlocks draft, figures, claims, review, and export outputs",
+      "title": "Confirmed preview unlocks the governed drafting chain",
       "with_skill_expected_pass": true,
       "without_skill_expected_pass": false,
-      "without_skill_reason": "Without the governed skill, there is no repo-local guarantee that the confirmed preview path emits the full downstream artifact bundle.",
+      "without_skill_reason": "Without the governed skill, there is no repo-local guarantee that the confirmed preview path invokes every downstream stage.",
       "required_files": [
         "scripts/python/pipeline/run_pipeline.py",
         "scripts/python/draft/generate_disclosure_draft.py",
         "scripts/python/figures/generate_figures.py",
         "scripts/python/claims/generate_claims.py",
         "scripts/python/review/validate_disclosure.py",
-        "scripts/python/export/export_docx.py",
-        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+        "scripts/python/export/export_docx.py"
       ],
       "required_terms": [
         {
           "file": "scripts/python/pipeline/run_pipeline.py",
           "terms": [
-            "\"draft\"",
-            "\"figures_manifest\"",
-            "\"claims\"",
-            "\"review_json\"",
-            "\"export_docx\""
-          ]
-        },
-        {
-          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
-          "terms": [
-            "test_run_pipeline_generates_post_preview_artifacts_after_confirmation",
-            "\"completed\""
+            "PATH_GENERATE_DRAFT_SCRIPT",
+            "PATH_GENERATE_FIGURES_SCRIPT",
+            "PATH_GENERATE_CLAIMS_SCRIPT",
+            "PATH_VALIDATE_DISCLOSURE_SCRIPT",
+            "PATH_EXPORT_DOCX_SCRIPT"
           ]
         }
       ]
@@ -76,11 +61,10 @@
       "title": "Dependency surface stays merged into one governed requirements entry",
       "with_skill_expected_pass": true,
       "without_skill_expected_pass": false,
-      "without_skill_reason": "A baseline path does not inherit this repo's single requirements contract or the dependency-check entrypoint.",
+      "without_skill_reason": "A baseline path does not inherit this skill's single requirements contract or dependency-check entrypoint.",
       "required_files": [
         "requirements.txt",
-        "scripts/python/support/check_dependencies.py",
-        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+        "scripts/python/support/check_dependencies.py"
       ],
       "required_terms": [
         {
@@ -88,36 +72,63 @@
           "terms": [
             "SINGLE_REQUIREMENTS_PATH = \"requirements.txt\"",
             "\"requirements\": SINGLE_REQUIREMENTS_PATH",
-            "pip install -r requirements.txt"
-          ]
-        },
-        {
-          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
-          "terms": [
-            "test_dependency_check_uses_single_requirements_entry",
-            "{\"requirements.txt\"}"
+            "pip install -r {SINGLE_REQUIREMENTS_PATH}"
           ]
         }
       ]
     },
     {
-      "id": "local-cnipa-search-smoke",
-      "title": "CNIPA search workflow stays local and supports offline fixture parsing",
+      "id": "local-cnipa-search",
+      "title": "CNIPA search supports a deterministic local HTML path",
       "with_skill_expected_pass": true,
       "without_skill_expected_pass": false,
-      "without_skill_reason": "Without the skill, there is no repo-local contract for local-only CNIPA wrappers and offline HTML fixture smoke coverage.",
+      "without_skill_reason": "Without the skill, there is no repo-local contract for local-only CNIPA parsing and snapshot preservation.",
       "required_files": [
         "scripts/python/search/cnipa_epub_search.py",
         "scripts/python/search/cnipa_epub_parse.py",
-        "scripts/python/search/cnipa_epub_crawler.py",
-        "../../tests/readable_patent_generator/test_intake_entrypoints.py"
+        "scripts/python/search/cnipa_epub_crawler.py"
       ],
       "required_terms": [
         {
-          "file": "../../tests/readable_patent_generator/test_intake_entrypoints.py",
+          "file": "scripts/python/search/cnipa_epub_search.py",
           "terms": [
-            "test_cnipa_local_html_workflow_smoke",
-            "\"CN110000001A\""
+            "--html-file",
+            "parse_result_items"
+          ]
+        },
+        {
+          "file": "scripts/python/search/cnipa_epub_crawler.py",
+          "terms": [
+            "--input-html",
+            "shutil.copyfile"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "human-preview-inversion",
+      "title": "Human confirmation is the explicit prerequisite for automation",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline generator can draft first and ask for review later, which violates the skill's inversion gate.",
+      "required_files": [
+        "SKILL.md",
+        "scripts/python/preview/generate_preview.py"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "Keep the hard preview gate",
+            "preview_pending"
+          ]
+        },
+        {
+          "file": "scripts/python/preview/generate_preview.py",
+          "terms": [
+            "\"confirmed\": False",
+            "preview_status.json",
+            "pre_draft_preview.md"
           ]
         }
       ]

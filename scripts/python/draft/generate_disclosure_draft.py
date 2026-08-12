@@ -1722,14 +1722,17 @@ def write_generated_documents(
     # 使用案件名前缀和时间片段生成唯一正文快照路径。
     path_snapshot_draft = path_output_dir / f"{str_snapshot_name}_{str_snapshot_timestamp}.md"  # 正文快照路径
 
+    # 在正式落盘前为确定性参数更新式补充行内公式标记，确保 DOCX 导出时进入可编辑公式链。
+    str_marked_markdown = module_quality_contract.mark_inline_math_expressions(dict_document_context["markdown"])  # 已结构化标记的正文
+
     # 写入代理人正文、内部审查 sidecar 和时间快照，保持内部材料不进入主文档。
-    module_runtime_support.write_text_file(path_stable_draft, dict_document_context["markdown"])
+    module_runtime_support.write_text_file(path_stable_draft, str_marked_markdown)
 
     # 单独写入内部审查材料，供人工复核证据和待确认项。
     module_runtime_support.write_text_file(path_internal_review, dict_document_context["internal_review"])
 
     # 保存本轮正文快照，便于后续核对确认前后的内容哈希。
-    module_runtime_support.write_text_file(path_snapshot_draft, dict_document_context["markdown"])
+    module_runtime_support.write_text_file(path_snapshot_draft, str_marked_markdown)
 
     # 将正文相关字段收敛为起草合同上下文，避免写入函数暴露过多独立参数。
     dict_artifact_context = {  # 起草合同写入上下文
@@ -1742,7 +1745,7 @@ def write_generated_documents(
     # 写入起草计划、模板槽位正文和预览哈希，锁定确认后的生成边界。
     write_draft_contract_artifacts(
         path_output_dir,
-        dict_document_context["markdown"],
+        str_marked_markdown,
         dict_artifact_context,
         module_runtime_support,
         module_quality_contract,
