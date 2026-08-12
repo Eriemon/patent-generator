@@ -14,6 +14,7 @@
 from __future__ import annotations
 # 引入参数解析和按路径加载模块能力，供导出入口解析参数并加载共享支持模块。
 import argparse
+import hashlib
 import importlib.util
 
 # 引入环境变量、正则和子进程能力，供运行时切换与正文解析逻辑复用。
@@ -2334,6 +2335,11 @@ def export_with_template_docx(
         list_formula_records,  # 文档顺序源公式清单
         list_conversion_evidence,  # Office 模式预改写与结构证据
     )
+
+    # 绑定最终保存文件的内容哈希，防止结构统计证据被复用于另一份 DOCX。
+    dict_formula_object_evidence["docx_sha256"] = hashlib.sha256(  # 最终 DOCX 内容哈希
+        dict_paths["path_output"].read_bytes()  # 已通过最终校验的 DOCX 字节
+    ).hexdigest()
 
     # 公式证据固定落在导出目录，供后续视觉审查和交付门读取。
     path_formula_evidence = dict_paths["path_output"].parent / FORMULA_EVIDENCE_FILENAME  # 最终公式对象证据路径
