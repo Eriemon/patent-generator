@@ -27,6 +27,9 @@ only enter formal delivery generation after explicit preview confirmation.
 
 Keep this root thin:
 
+- treat the installed skill directory as read-only; write runtime cases,
+  materials, and outputs only under the current local work folder or an
+  explicitly selected research root
 - route Python file creation or modification through `readable-python-generator`
 - route bat/cmd, shell/bash, PowerShell, and Tcl script creation or
   modification through `readable-script-generator`

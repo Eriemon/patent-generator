@@ -132,6 +132,33 @@
           ]
         }
       ]
+    },
+    {
+      "id": "runtime-workspace-boundary",
+      "title": "Runtime cases stay outside the read-only installed skill directory",
+      "with_skill_expected_pass": true,
+      "without_skill_expected_pass": false,
+      "without_skill_reason": "A baseline assistant may confuse the installed skill package with the user's writable runtime workspace.",
+      "required_files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ],
+      "required_terms": [
+        {
+          "file": "SKILL.md",
+          "terms": [
+            "installed skill directory as read-only",
+            "current local work folder"
+          ]
+        },
+        {
+          "file": "agents/openai.yaml",
+          "terms": [
+            "current local work folder",
+            "installed skill directory as read-only"
+          ]
+        }
+      ]
     }
   ]
 }

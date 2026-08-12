@@ -1,6 +1,6 @@
 interface:
   display_name: "Readable Patent Generator"
   short_description: "Generate governed Chinese patent drafts from local materials."
-  default_prompt: "Use $readable-patent-generator to extract invention points from local materials, run the preview-first disclosure workflow, generate governed Chinese patent drafts and review artifacts, and keep all work local-only inside the governed skill directory."
+  default_prompt: "Use $readable-patent-generator to extract invention points from local materials, run the preview-first disclosure workflow, generate governed Chinese patent drafts and review artifacts in the current local work folder or an explicitly selected research root, and treat the installed skill directory as read-only."
 policy:
   allow_implicit_invocation: true
